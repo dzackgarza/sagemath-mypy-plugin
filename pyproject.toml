@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sage-mypy-category-plugin"
+version = "0.1.0"
+description = "Mypy plugin for Sage's dynamic category method system"
+requires-python = ">=3.10"
+dependencies = [
+    "mypy>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
