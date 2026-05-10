@@ -1,8 +1,7 @@
-"""Test 6: Homsets override — B6.Homsets.ParentMethods.@override f.
+"""Test 6: Homsets override — HomsetSubcategory.ParentMethods.@override f.
 
-A6 has a Homsets nested category. B6.Homsets → A6.Homsets.
-A6.Homsets().ParentMethods defines f().
-B6.Homsets.ParentMethods.@override f → PASS.
+HomsetBase has a Homsets nested category. HomsetSubcategory.Homsets
+inherits from HomsetBase.Homsets, whose ParentMethods defines f().
 """
 
 from typing import override as _override
@@ -10,8 +9,8 @@ from typing import override as _override
 from sage.categories.category import Category
 
 
-class _A6_Homsets(Category):
-    """Nested Homsets category for A6."""
+class HomsetBaseHomsets(Category):
+    """Nested Homsets category for HomsetBase."""
 
     def super_categories(self):
         return []
@@ -26,7 +25,7 @@ class _A6_Homsets(Category):
             return 1
 
 
-class _A6(Category):
+class HomsetBase(Category):
     def super_categories(self):
         return []
 
@@ -36,14 +35,14 @@ class _A6(Category):
 
     @classmethod
     def Homsets(cls):
-        return _A6_Homsets
+        return HomsetBaseHomsets
 
 
-class _B6_Homsets(Category):
-    """Homsets category for B6 — inherits from A6.Homsets."""
+class HomsetSubcategoryHomsets(Category):
+    """Homsets category inheriting from HomsetBase.Homsets."""
 
     def super_categories(self):
-        return [_A6.Homsets().an_instance()]
+        return [HomsetBase.Homsets().an_instance()]
 
     @classmethod
     def an_instance(cls):
@@ -58,7 +57,7 @@ class _B6_Homsets(Category):
 
 class _B6(Category):
     def super_categories(self):
-        return [_A6.an_instance()]
+        return [HomsetBase.an_instance()]
 
     @classmethod
     def an_instance(cls):
@@ -66,4 +65,4 @@ class _B6(Category):
 
     @classmethod
     def Homsets(cls):
-        return _B6_Homsets
+        return HomsetSubcategoryHomsets

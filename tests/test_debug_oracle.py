@@ -33,9 +33,9 @@ def test_debug_rings():
     assert "Rngs.ParentMethods" in result, (
         f"Expected Rngs.ParentMethods in debug output, got:\n{result}"
     )
-    assert "static bases (from Sage)" in result, (
-        f"Expected 'static bases (from Sage)' header, got:\n{result}"
-    )
+    assert "dynamic class:" in result
+    assert "dynamic bases:" in result
+    assert "injected static bases:" in result
 
 
 # ---------------------------------------------------------------------------
@@ -48,9 +48,9 @@ def test_debug_sets():
     debug_proj, _ = _import_debug()
     result = debug_proj("sage.categories.sets_cat.Sets.ParentMethods")
 
-    assert "static bases" in result, (
-        f"Expected 'static bases' header in output, got:\n{result}"
-    )
+    assert "dynamic class:" in result
+    assert "dynamic bases:" in result
+    assert "injected static bases:" in result
     # Sets may or may not have bases depending on the Sage version, but the
     # debug oracle should at least print the header and not crash.
 
@@ -109,4 +109,6 @@ def test_debug_fields():
     assert "EuclideanDomains.ParentMethods" in result or "Rings.ParentMethods" in result, (
         f"Expected at least one known ancestor in Fields output, got:\n{result}"
     )
-    assert "static bases (from Sage)" in result
+    assert "dynamic class:" in result
+    assert "dynamic bases:" in result
+    assert "injected static bases:" in result

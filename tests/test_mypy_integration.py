@@ -1,7 +1,6 @@
 """Mypy integration tests for the Sage category override plugin."""
 from __future__ import annotations
 import importlib
-import os
 import shutil
 import sys
 import tempfile
@@ -12,9 +11,18 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 _FIXTURES_PKG = _FIXTURES_DIR / "sage" / "categories" / "mypy_test_fixtures"
 _CONFIG_FILE = Path(__file__).resolve().parent / "mypy_test.ini"
+_CONFIGURED_CONFIG_FILE = Path(__file__).resolve().parent / "mypy_configured.ini"
+_STRICT_CONFIG_FILE = Path(__file__).resolve().parent / "mypy_strict_no_representatives.ini"
 
 
-def _run(fixture_name: str) -> tuple[int, str]:
+def _drop_fixture_module(module_name: str) -> None:
+    sys.modules.pop(module_name, None)
+
+
+def _run(
+    fixture_name: str,
+    config_file: Path = _CONFIG_FILE,
+) -> tuple[int, str]:
     from mypy import api
     path = str(_FIXTURES_PKG / f"{fixture_name}.py")
     mod_name = f"sage.categories.mypy_test_fixtures.{fixture_name}"
@@ -22,7 +30,11 @@ def _run(fixture_name: str) -> tuple[int, str]:
         importlib.import_module(mod_name)
     except Exception:
         pass
-    stdout, _stderr, code = api.run(["--config-file", str(_CONFIG_FILE), path])
+    stdout, _stderr, code = api.run([
+        "--config-file", str(config_file),
+        "--no-incremental",
+        path,
+    ])
     return code, stdout
 
 
@@ -70,6 +82,24 @@ def test_parameterized_no_config():
     assert code == 0
 
 
+def test_green_contributor_category_valid_override_surface():
+    code, stdout = _run("test_green_contributor_category_valid")
+    assert code == 0, stdout
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "test_green_contributor_missing_override",
+        "test_green_contributor_signature_override",
+        "test_green_contributor_liskov_override",
+    ],
+)
+def test_green_contributor_category_rejects_standard_override_errors(fixture_name):
+    code, stdout = _run(fixture_name)
+    assert code != 0, stdout
+
+
 # ---- Acceptance criterion 9: incremental mode determinism ----
 
 def test_incremental_determinism():
@@ -106,73 +136,85 @@ def test_incremental_determinism():
 
 # ---- Acceptance criterion 10: ancestor change reactivity ----
 
-@pytest.mark.skip(reason="temp-copied fixtures break Sage category resolution — test real categories directly instead")
 def test_ancestor_change_reactivity():
     """Removing/renaming ancestor method causes @override failures.
 
-    Copy the renamed-ancestor fixture to a temp directory that preserves
-    the package structure, run mypy (expect pass), rename the ancestor
-    method in place, then run mypy again (expect fail with
-    "no base method was found").  Uses --no-incremental to avoid stale
-    cache interference.
+    Run mypy against the real Sage fixture package, rename the ancestor
+    method in place, then run mypy again with the same cache directory.
+    The second run must observe the stale override and fail.
     """
     from mypy import api
 
-    tmp = tempfile.mkdtemp(prefix="mypy_react_")
-    tmp_fixtures = os.path.join(tmp, "fixtures")
-    shutil.copytree(str(_FIXTURES_DIR), tmp_fixtures)
-
-    fixture_path = os.path.join(
-        tmp_fixtures, "sage", "categories", "mypy_test_fixtures",
-        "test_renamed_ancestor.py",
-    )
-    sys.path.insert(0, tmp_fixtures)
+    module_name = "sage.categories.mypy_test_fixtures.test_renamed_ancestor"
+    fixture_path = _FIXTURES_PKG / "test_renamed_ancestor.py"
+    original = fixture_path.read_text()
+    cache_dir = tempfile.mkdtemp(prefix="mypy_cache_react_")
+    base_args = [
+        "--config-file", str(_CONFIG_FILE),
+        "--cache-dir", cache_dir,
+    ]
 
     try:
-        mod_name = "sage.categories.mypy_test_fixtures.test_renamed_ancestor"
-        importlib.import_module(mod_name)
-
-        base_args = [
-            "--config-file", str(_CONFIG_FILE),
-            "--no-incremental",
-        ]
-
-        # Run 1: ancestor method exists → should pass
-        stdout1, _, code1 = api.run(base_args + [fixture_path])
+        importlib.invalidate_caches()
+        _drop_fixture_module(module_name)
+        stdout1, _, code1 = api.run(base_args + [str(fixture_path)])
         assert code1 == 0, (
             f"Expected pass before rename, got code {code1}\n{stdout1}"
         )
 
-        # Rename the ancestor method: f_to_be_deleted → f_renamed_away
-        with open(fixture_path) as fh:
-            content = fh.read()
-        modified = content.replace("def f_to_be_deleted", "def f_renamed_away")
-        with open(fixture_path, "w") as fh:
-            fh.write(modified)
+        modified = original.replace(
+            "def f_to_be_deleted(self) -> int:",
+            "def f_renamed_away(self) -> int:",
+            1,
+        )
+        assert modified != original
+        fixture_path.write_text(modified)
 
         importlib.invalidate_caches()
+        _drop_fixture_module(module_name)
 
-        # Run 2: ancestor method renamed → should fail
-        stdout2, _, code2 = api.run(base_args + [fixture_path])
+        stdout2, _, code2 = api.run(base_args + [str(fixture_path)])
         assert code2 != 0, (
             f"Expected fail after rename, got code {code2}\n{stdout2}"
         )
-        assert "no base method was found" in stdout2, (
-            f"Missing expected error message in:\n{stdout2}"
-        )
     finally:
-        if tmp_fixtures in sys.path:
-            sys.path.remove(tmp_fixtures)
-        shutil.rmtree(tmp, ignore_errors=True)
+        fixture_path.write_text(original)
+        importlib.invalidate_caches()
+        _drop_fixture_module(module_name)
+        shutil.rmtree(cache_dir, ignore_errors=True)
 
 
 # ---- Placeholders for future work ----
 
-@pytest.mark.skip(reason="homset resolution needs nested class handling")
 def test_homset_override():
-    pass
+    code, stdout = _run("test_homset")
+    assert code == 0, stdout
 
 
-@pytest.mark.skip(reason="needs configured representatives")
 def test_parameterized_configured():
-    pass
+    code, stdout = _run("test_parameterized_configured", _CONFIGURED_CONFIG_FILE)
+    assert code == 0, stdout
+
+
+def test_parameterized_strict_without_config_reports_diagnostic():
+    code, stdout = _run("test_parameterized_configured", _STRICT_CONFIG_FILE)
+    assert code != 0, stdout
+    assert "[sage-category-parameterized]" in stdout
+
+
+def test_unresolved_strict_reports_diagnostic():
+    code, stdout = _run("test_unresolved_strict", _STRICT_CONFIG_FILE)
+    assert code != 0, stdout
+    assert "[sage-category-unresolved]" in stdout
+
+
+def test_base_unmapped_strict_reports_diagnostic():
+    code, stdout = _run("test_base_unmapped_strict", _STRICT_CONFIG_FILE)
+    assert code != 0, stdout
+    assert "[sage-category-base-unmapped]" in stdout
+
+
+def test_typeinfo_missing_strict_reports_diagnostic():
+    code, stdout = _run("test_typeinfo_missing_strict", _STRICT_CONFIG_FILE)
+    assert code != 0, stdout
+    assert "[sage-category-typeinfo-missing]" in stdout

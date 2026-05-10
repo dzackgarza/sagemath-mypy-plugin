@@ -1,6 +1,7 @@
 """Test 11: Cache invalidation — simple hierarchy for incremental rechecking.
 
-Defines _A11 with ParentMethods.f and _B11 with ParentMethods.@override f.
+Defines CacheBase with ParentMethods.f and CacheSubcategory with
+ParentMethods.@override f.
 The test will:
   1. Run mypy once (fresh) → should pass.
   2. Modify _A11 to remove or rename f.
@@ -12,7 +13,7 @@ from typing import override as _override
 from sage.categories.category import Category
 
 
-class _A11(Category):
+class CacheBase(Category):
     def super_categories(self):
         return []
 
@@ -26,9 +27,9 @@ class _A11(Category):
             return 1
 
 
-class _B11(Category):
+class CacheSubcategory(Category):
     def super_categories(self):
-        return [_A11.an_instance()]
+        return [CacheBase.an_instance()]
 
     @classmethod
     def an_instance(cls):

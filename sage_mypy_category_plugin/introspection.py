@@ -18,6 +18,16 @@ import types
 from dataclasses import dataclass
 from typing import Any
 
+_SAGE_INITIALIZED = False
+
+
+def _ensure_sage_initialized() -> None:
+    global _SAGE_INITIALIZED
+    if _SAGE_INITIALIZED:
+        return
+    import sage.all  # noqa: F401
+    _SAGE_INITIALIZED = True
+
 
 # ---------------------------------------------------------------------------
 # Data types
@@ -43,6 +53,23 @@ class CategoryMethodContainer:
     module_name: str
     category_path: tuple[str, ...]
     method_kind: str
+
+
+@dataclass(frozen=True)
+class MethodContainerProjection:
+    source_fullname: str
+    dynamic_class: str
+    dynamic_bases: tuple[str, ...]
+    unmapped_dynamic_bases: tuple[str, ...]
+    static_bases: tuple[str, ...]
+
+
+class ProjectionError(RuntimeError):
+    """Base class for method-container projection failures."""
+
+
+class ParameterizedCategoryError(ProjectionError):
+    """Raised when a category requires explicit representative arguments."""
 
 
 # Accepted terminal method-container class names.
@@ -144,6 +171,7 @@ def _validate_category_path(
     :func:`instantiate_category_from_source_path` — they may be methods on
     category instances rather than static class attributes.
     """
+    _ensure_sage_initialized()
     from sage.categories.category import Category
 
     top_name = category_path[0]
@@ -175,6 +203,7 @@ def is_sage_method_container(fullname: str) -> bool:
 def instantiate_category_from_source_path(
     module: types.ModuleType,
     category_path: tuple[str, ...],
+    representative_args: dict[str, tuple[Any, ...]] | None = None,
 ) -> Any:
     """Instantiate a Sage category from a source-module and category path.
 
@@ -207,9 +236,11 @@ def instantiate_category_from_source_path(
     # First element: get the category class from the module.
     top_name = category_path[0]
     top_cls = getattr(module, top_name)
+    top_fullname = _fullname_of_class(top_cls)
 
-    # For the first element, call .an_instance() if available.
-    if hasattr(top_cls, "an_instance"):
+    if representative_args and top_fullname in representative_args:
+        cat = top_cls(*representative_args[top_fullname])
+    elif hasattr(top_cls, "an_instance"):
         cat = top_cls.an_instance()
     else:
         cat = top_cls()
@@ -232,7 +263,20 @@ def _fullname_of_class(cls: type) -> str:
     return cls.__module__ + "." + cls.__qualname__
 
 
-def method_container_direct_bases(source_fullname: str) -> list[str]:
+def method_container_direct_bases(
+    source_fullname: str,
+    representative_args: dict[str, tuple[Any, ...]] | None = None,
+) -> list[str]:
+    projection = method_container_projection(source_fullname, representative_args)
+    if projection is None:
+        return []
+    return list(projection.static_bases)
+
+
+def method_container_projection(
+    source_fullname: str,
+    representative_args: dict[str, tuple[Any, ...]] | None = None,
+) -> MethodContainerProjection | None:
     """Return the fullnames of method containers that are direct Sage
     semantic bases of the method container identified by *source_fullname*.
 
@@ -264,16 +308,24 @@ def method_container_direct_bases(source_fullname: str) -> list[str]:
     """
     parsed = parse_method_container_fullname(source_fullname)
     if parsed is None:
-        return []
+        return None
 
+    _ensure_sage_initialized()
     mod = importlib.import_module(parsed.module_name)
     try:
-        cat = instantiate_category_from_source_path(mod, parsed.category_path)
-    except Exception:
-        # Parameterized categories (e.g. Algebras) can't be instantiated
-        # without explicit arguments. Skip silently — the spec says no
-        # parameter guessing.
-        return []
+        cat = instantiate_category_from_source_path(
+            mod,
+            parsed.category_path,
+            representative_args,
+        )
+    except TypeError as exc:
+        raise ParameterizedCategoryError(
+            f"could not instantiate {parsed.module_name}.{'.'.join(parsed.category_path)}"
+        ) from exc
+    except Exception as exc:
+        raise ProjectionError(
+            f"could not resolve {parsed.module_name}.{'.'.join(parsed.category_path)}"
+        ) from exc
 
     dyn_attr = _METHOD_KIND_TO_DYN_ATTR[parsed.method_kind]
     dynamic_class = getattr(cat, dyn_attr)
@@ -289,7 +341,8 @@ def method_container_direct_bases(source_fullname: str) -> list[str]:
             dc = getattr(D, dyn_attr)
             dynamic_to_category[dc] = D
 
-    result: list[str] = []
+    static_bases: list[str] = []
+    unmapped_dynamic_bases: list[str] = []
     seen: set[str] = set()
 
     for B in dynamic_bases:
@@ -303,18 +356,26 @@ def method_container_direct_bases(source_fullname: str) -> list[str]:
             # from categories that don't appear in all_super_categories
             # (should be rare). Skip silently — mypy will handle transitive
             # resolution when it eventually encounters the base container.
+            unmapped_dynamic_bases.append(_fullname_of_class(B))
             continue
 
         source_container = getattr(type(D), parsed.method_kind, None)
         if source_container is None:
+            unmapped_dynamic_bases.append(_fullname_of_class(B))
             continue
 
         fn = _fullname_of_class(source_container)
         if fn not in seen:
             seen.add(fn)
-            result.append(fn)
+            static_bases.append(fn)
 
-    return result
+    return MethodContainerProjection(
+        source_fullname=source_fullname,
+        dynamic_class=_fullname_of_class(dynamic_class),
+        dynamic_bases=tuple(_fullname_of_class(base) for base in dynamic_bases),
+        unmapped_dynamic_bases=tuple(unmapped_dynamic_bases),
+        static_bases=tuple(static_bases),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -331,6 +392,7 @@ def _find_method_containers_in_module(
     Scans top-level names in *mod* for Category subclasses, then inspects
     those classes for nested ParentMethods / ElementMethods / etc.
     """
+    _ensure_sage_initialized()
     from sage.categories.category import Category
 
     containers: list[str] = []
@@ -360,6 +422,7 @@ def module_method_container_dependencies(module_fullname: str) -> list[str]:
     Returns:
         Sorted, deduplicated list of module names.
     """
+    _ensure_sage_initialized()
     mod = importlib.import_module(module_fullname)
     container_fullnames = _find_method_containers_in_module(mod, module_fullname)
 
@@ -455,15 +518,25 @@ def debug_projection(source_fullname: str) -> str:
         return f"{source_fullname}: not a valid Sage method container"
 
     try:
-        bases = method_container_direct_bases(source_fullname)
+        projection = method_container_projection(source_fullname)
     except Exception as exc:
         return f"{source_fullname}: error during projection — {exc}"
+    if projection is None:
+        return f"{source_fullname}: no projection"
 
-    lines = [f"{source_fullname} static bases (from Sage):"]
-    if not bases:
+    lines = [
+        f"source: {projection.source_fullname}",
+        f"dynamic class: {projection.dynamic_class}",
+        "dynamic bases:",
+    ]
+    if not projection.dynamic_bases:
         lines.append("  (none)")
     else:
-        for b in bases:
-            lines.append(f"  {b}")
+        lines.extend(f"  {base}" for base in projection.dynamic_bases)
+    lines.append("injected static bases:")
+    if not projection.static_bases:
+        lines.append("  (none)")
+    else:
+        lines.extend(f"  {base}" for base in projection.static_bases)
 
     return "\n".join(lines)
