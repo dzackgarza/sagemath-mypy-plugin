@@ -33,6 +33,6 @@ class _B9(Category):
 
     class ParentMethods:
         @_override
-        def f(self, x: str) -> int:  # type: ignore[misc]  # EXPECTED FAIL: signature mismatch
+        def f(self, x: str) -> int:
             """Invalid @override — parameter type changed from int to str."""
             return len(x)

@@ -32,6 +32,6 @@ class _B2(Category):
 
     class ParentMethods:
         @_override
-        def g(self) -> int:  # type: ignore[misc]  # EXPECTED FAIL: g not in any ancestor
+        def g(self) -> int:
             """Invalid @override — g does not exist in _A2.ParentMethods."""
             return 2

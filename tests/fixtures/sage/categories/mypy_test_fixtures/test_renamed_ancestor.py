@@ -24,6 +24,7 @@ class _A10(Category):
         return cls()
 
     class ParentMethods:
+        # TARGET_RENAME: f_to_be_deleted
         def f_to_be_deleted(self) -> int:
             """This method will be renamed/removed at test time."""
             return 1

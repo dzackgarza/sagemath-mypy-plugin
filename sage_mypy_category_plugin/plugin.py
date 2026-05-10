@@ -1,5 +1,14 @@
 """
 Mypy plugin for Sage's dynamic category method system.
+
+Injects Sage semantic bases into method container MRO so that standard
+@override (typing.override) works for ParentMethods, ElementMethods,
+MorphismMethods, and SubcategoryMethods.
+
+The hook fires after calculate_mro computes MRO from info.bases. Since
+@override checking walks info.mro (not info.bases), we must splice
+ancestor method containers directly into info.mro between the class
+itself and the final `object` entry.
 """
 from __future__ import annotations
 from typing import Any, Callable, TYPE_CHECKING, Tuple
@@ -28,25 +37,32 @@ class SageCategoryPlugin(Plugin):
     def _mro_hook(self, ctx: ClassDefContext) -> None:
         info = ctx.cls.info
         fullname = info.fullname
+
         base_fullnames = _resolve_direct_bases(fullname)
         if not base_fullnames:
             return
-        base_infos: list = []
+
+        base_tis: list = []
         deferred = False
         for base_fn in base_fullnames:
             ti = _lookup_typeinfo(ctx, base_fn)
             if ti is None:
                 deferred = True
                 continue
-            base_infos.append(ti)
+            base_tis.append(ti)
+
         if deferred:
             ctx.api.defer()
             return
-        if not base_infos:
+
+        if not base_tis:
             return
-        from mypy.types import Instance as _I
-        new_bases = [_I(ti, []) for ti in base_infos]
-        info.bases = list(info.bases) + new_bases
+
+        # Splice ancestor TypeInfos into MRO before the final 'object' entry
+        head = info.mro[:-1]  # everything except object
+        tail = [info.mro[-1]]  # object
+        info.mro = head + base_tis + tail
+
 
 _METHOD_KINDS = frozenset({
     "ParentMethods", "ElementMethods", "MorphismMethods", "SubcategoryMethods",
@@ -71,18 +87,6 @@ def _resolve_direct_bases(fullname: str) -> list[str] | None:
         return method_container_direct_bases(fullname)
     except Exception:
         return None
-
-def _resolve_module_deps(module_name: str) -> set[str]:
-    idx = module_name.find("sage.categories.")
-    if idx > 0:
-        module_name = module_name[idx:]
-    try:
-        from sage_mypy_category_plugin.introspection import (
-            module_method_container_dependencies,
-        )
-        return set(module_method_container_dependencies(module_name))
-    except Exception:
-        return set()
 
 def _lookup_typeinfo(ctx: ClassDefContext, fullname: str) -> Any | None:
     parts = fullname.split(".")
