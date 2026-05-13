@@ -1,6 +1,8 @@
 """Mypy integration tests for the Sage category override plugin."""
 from __future__ import annotations
 import importlib
+import os
+import subprocess
 import shutil
 import sys
 import tempfile
@@ -9,23 +11,31 @@ import pytest
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
-_FIXTURES_PKG = _FIXTURES_DIR / "sage" / "categories" / "mypy_test_fixtures"
+_SAGE_FIXTURES_PKG = _FIXTURES_DIR / "sage" / "categories" / "mypy_test_fixtures"
+_THIRD_PARTY_FIXTURES_PKG = (
+    _FIXTURES_DIR / "third_party_pkg" / "categories" / "mypy_test_fixtures"
+)
 _CONFIG_FILE = Path(__file__).resolve().parent / "mypy_test.ini"
 _CONFIGURED_CONFIG_FILE = Path(__file__).resolve().parent / "mypy_configured.ini"
 _STRICT_CONFIG_FILE = Path(__file__).resolve().parent / "mypy_strict_no_representatives.ini"
+_RESEARCH_ROOT = Path("/home/dzack/research")
+_RESEARCH_MYPY_CONFIG = Path("/home/dzack/ai/quality-control/mypy-global.ini")
 
 
 def _drop_fixture_module(module_name: str) -> None:
     sys.modules.pop(module_name, None)
 
 
-def _run(
+def _run_fixture(
+    fixture_dir: Path,
+    module_prefix: str,
     fixture_name: str,
     config_file: Path = _CONFIG_FILE,
 ) -> tuple[int, str]:
     from mypy import api
-    path = str(_FIXTURES_PKG / f"{fixture_name}.py")
-    mod_name = f"sage.categories.mypy_test_fixtures.{fixture_name}"
+    path = str(fixture_dir / f"{fixture_name}.py")
+    mod_name = f"{module_prefix}.{fixture_name}"
+    _drop_fixture_module(mod_name)
     try:
         importlib.import_module(mod_name)
     except Exception:
@@ -38,10 +48,51 @@ def _run(
     return code, stdout
 
 
+def _run(
+    fixture_name: str,
+    config_file: Path = _CONFIG_FILE,
+) -> tuple[int, str]:
+    return _run_fixture(
+        _SAGE_FIXTURES_PKG,
+        "sage.categories.mypy_test_fixtures",
+        fixture_name,
+        config_file,
+    )
+
+
+def _run_third_party(
+    fixture_name: str,
+    config_file: Path = _CONFIG_FILE,
+) -> tuple[int, str]:
+    return _run_fixture(
+        _THIRD_PARTY_FIXTURES_PKG,
+        "third_party_pkg.categories.mypy_test_fixtures",
+        fixture_name,
+        config_file,
+    )
+
+
 def _run_path(path: str) -> tuple[int, str]:
     from mypy import api
     stdout, _stderr, code = api.run(["--config-file", str(_CONFIG_FILE), path])
     return code, stdout
+
+
+def _projection_summary(
+    fullname: str,
+    representatives: dict[str, tuple[str, ...]] | None = None,
+) -> str:
+    from sage_mypy_category_plugin.introspection import method_container_projection
+
+    projection = method_container_projection(fullname, representatives)
+    assert projection is not None
+    return (
+        f"source={projection.source_fullname}\n"
+        f"dynamic_class={projection.dynamic_class}\n"
+        f"dynamic_bases={projection.dynamic_bases}\n"
+        f"static_bases={projection.static_bases}\n"
+        f"unmapped_dynamic_bases={projection.unmapped_dynamic_bases}"
+    )
 
 
 # ---- Core tests ----
@@ -100,6 +151,447 @@ def test_green_contributor_category_rejects_standard_override_errors(fixture_nam
     assert code != 0, stdout
 
 
+def test_third_party_valid_override():
+    code, stdout = _run_third_party("test_valid_override")
+    assert code == 0, stdout
+
+
+def test_third_party_invalid_override():
+    code, stdout = _run_third_party("test_invalid_override")
+    assert code != 0, stdout
+    assert "no base method was found" in stdout
+
+
+def test_third_party_namespace_matches_sage_namespace_behavior():
+    sage_valid_code, sage_valid_stdout = _run("test_valid_override")
+    third_valid_code, third_valid_stdout = _run_third_party("test_valid_override")
+    assert sage_valid_code == third_valid_code == 0, (
+        sage_valid_stdout,
+        third_valid_stdout,
+    )
+
+    sage_invalid_code, sage_invalid_stdout = _run("test_invalid_override")
+    third_invalid_code, third_invalid_stdout = _run_third_party("test_invalid_override")
+    assert sage_invalid_code != 0, sage_invalid_stdout
+    assert third_invalid_code != 0, third_invalid_stdout
+    assert "no base method was found" in sage_invalid_stdout
+    assert "no base method was found" in third_invalid_stdout
+
+
+def test_third_party_helper_alias_parent_methods_override():
+    code, stdout = _run_third_party("test_helper_alias_parent_methods")
+    summary = _projection_summary(
+        "third_party_pkg.categories.mypy_test_fixtures.test_helper_alias_parent_methods._AliasSubParentMethods"
+    )
+    assert code == 0, f"{stdout}\n{summary}"
+
+
+def test_third_party_helper_alias_element_methods_override():
+    code, stdout = _run_third_party("test_helper_alias_element_methods")
+    summary = _projection_summary(
+        "third_party_pkg.categories.mypy_test_fixtures.test_helper_alias_element_methods._AliasSubElementMethods"
+    )
+    assert code == 0, f"{stdout}\n{summary}"
+
+
+def test_third_party_helper_alias_parameterized_override():
+    code, stdout = _run_third_party(
+        "test_helper_alias_parameterized",
+        _CONFIGURED_CONFIG_FILE,
+    )
+    summary = _projection_summary(
+        "third_party_pkg.categories.mypy_test_fixtures.test_helper_alias_parameterized._ConfiguredAliasSubElementMethods",
+        {
+            "third_party_pkg.categories.mypy_test_fixtures.test_helper_alias_parameterized._ConfiguredAliasSub": (
+                "ZZ",
+            )
+        },
+    )
+    assert code == 0, f"{stdout}\n{summary}"
+
+
+def test_third_party_helper_alias_parent_methods_transitive_override():
+    code, stdout = _run_third_party("test_helper_alias_parent_methods_transitive")
+    summary = _projection_summary(
+        "third_party_pkg.categories.mypy_test_fixtures.test_helper_alias_parent_methods_transitive._TransitiveSubParentMethods"
+    )
+    assert code == 0, f"{stdout}\n{summary}"
+
+
+def test_third_party_helper_alias_element_methods_transitive_override():
+    code, stdout = _run_third_party("test_helper_alias_element_methods_transitive")
+    summary = _projection_summary(
+        "third_party_pkg.categories.mypy_test_fixtures.test_helper_alias_element_methods_transitive._TransitiveSubElementMethods"
+    )
+    assert code == 0, f"{stdout}\n{summary}"
+
+
+def test_third_party_helper_alias_parameterized_parent_methods_override():
+    code, stdout = _run_third_party(
+        "test_helper_alias_parameterized_parent_methods",
+        _CONFIGURED_CONFIG_FILE,
+    )
+    summary = _projection_summary(
+        "third_party_pkg.categories.mypy_test_fixtures.test_helper_alias_parameterized_parent_methods._ConfiguredAliasSubParentMethods",
+        {
+            "third_party_pkg.categories.mypy_test_fixtures.test_helper_alias_parameterized_parent_methods._ConfiguredAliasSub": (
+                "ZZ",
+            )
+        },
+    )
+    assert code == 0, f"{stdout}\n{summary}"
+
+def test_third_party_helper_alias_invalid_override():
+    code, stdout = _run_third_party("test_helper_alias_invalid_override")
+    assert code != 0, stdout
+    assert "no base method was found" in stdout
+
+
+def test_third_party_final_method_override_rejected():
+    code, stdout = _run_third_party("test_final_method_override")
+    assert code != 0, stdout
+    assert "Cannot override final attribute" in stdout
+
+
+def test_third_party_final_classmethod_override_rejected():
+    code, stdout = _run_third_party("test_final_classmethod_override")
+    assert code != 0, stdout
+    assert "Cannot override final attribute" in stdout
+
+
+def test_third_party_final_attribute_override_rejected():
+    code, stdout = _run_third_party("test_final_attribute_override")
+    assert code != 0, stdout
+    assert (
+        "Cannot override final attribute" in stdout
+        or "Cannot assign to final name" in stdout
+    ), stdout
+
+
+def test_third_party_final_signature_override_rejected():
+    code, stdout = _run_third_party("test_final_signature_override")
+    assert code != 0, stdout
+    assert "Cannot override final attribute" in stdout
+    assert "Signature of \"Of\" incompatible with supertype" in stdout
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "test_final_dynamic_parent_methods_override",
+        "test_final_dynamic_element_methods_override",
+        "test_final_dynamic_morphism_methods_override",
+        "test_final_dynamic_subcategory_methods_override",
+        "test_final_helper_alias_parent_methods_override",
+        "test_final_helper_alias_element_methods_override",
+        "test_final_helper_alias_parent_methods_transitive_override",
+        "test_final_helper_alias_element_methods_transitive_override",
+    ],
+)
+def test_third_party_dynamic_final_overrides_rejected(fixture_name):
+    code, stdout = _run_third_party(fixture_name)
+    assert code != 0, stdout
+    assert "Cannot override final attribute" in stdout
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "test_final_helper_alias_parameterized_element_methods_override",
+        "test_final_helper_alias_parameterized_parent_methods_override",
+    ],
+)
+def test_third_party_parameterized_dynamic_final_overrides_rejected(fixture_name):
+    code, stdout = _run_third_party(fixture_name, _CONFIGURED_CONFIG_FILE)
+    assert code != 0, stdout
+    assert "Cannot override final attribute" in stdout
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "test_assigned_parent_methods_plain_override",
+        "test_assigned_parent_methods_classmethod_override",
+        "test_assigned_parent_methods_staticmethod_override",
+        "test_assigned_parent_methods_property_override",
+        "test_assigned_parent_methods_overload_override",
+        "test_assigned_subcategory_methods_plain_override",
+        "test_assigned_subcategory_methods_cached_method_override",
+    ],
+)
+def test_third_party_assigned_member_surfaces_match_static_behavior(fixture_name):
+    code, stdout = _run_third_party(fixture_name)
+    assert code == 0, stdout
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "test_assigned_element_methods_decorator_matrix",
+        "test_assigned_morphism_methods_decorator_matrix",
+        "test_assigned_subcategory_methods_decorator_matrix",
+    ],
+)
+def test_third_party_additional_assigned_member_matrices_match_static_behavior(
+    fixture_name,
+):
+    code, stdout = _run_third_party(fixture_name)
+    assert code == 0, stdout
+
+
+def test_third_party_final_assigned_parent_method_surface():
+    code, stdout = _run_third_party("test_final_assigned_parent_method")
+    assert code == 0, stdout
+
+
+def test_third_party_final_assigned_helper_alias_override_rejected():
+    code, stdout = _run_third_party("test_final_assigned_helper_alias_override")
+    assert code != 0, stdout
+    assert "Cannot override final attribute" in stdout
+    assert "@final cannot be used with non-method functions" not in stdout
+
+
+def test_third_party_final_assigned_subcategory_method_surface():
+    code, stdout = _run_third_party("test_final_assigned_subcategory_method")
+    assert code == 0, stdout
+
+
+def test_third_party_final_postbind_parent_method_override_rejected():
+    code, stdout = _run_third_party("test_final_postbind_parent_method_override")
+    assert code != 0, stdout
+    assert "Cannot override final attribute" in stdout
+    assert "@final cannot be used with non-method functions" not in stdout
+    assert "no base method was found" not in stdout
+
+
+def test_third_party_abstract_assigned_parent_method_surface():
+    code, stdout = _run_third_party("test_abstract_assigned_parent_method")
+    assert code == 0, stdout
+
+
+def test_third_party_abstract_assigned_helper_alias_override_surface():
+    code, stdout = _run_third_party("test_abstract_assigned_helper_alias_override")
+    assert code == 0, stdout
+
+
+def test_third_party_abstract_assigned_subcategory_method_surface():
+    code, stdout = _run_third_party("test_abstract_assigned_subcategory_method")
+    assert code == 0, stdout
+
+
+def test_third_party_abstract_postbind_parent_method_override_surface():
+    code, stdout = _run_third_party("test_abstract_postbind_parent_method_override")
+    assert code == 0, stdout
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "test_final_assigned_element_method",
+        "test_final_assigned_morphism_method",
+    ],
+)
+def test_third_party_final_assigned_non_parent_method_surfaces(fixture_name):
+    code, stdout = _run_third_party(fixture_name)
+    assert code == 0, stdout
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "test_final_helper_alias_element_override",
+        "test_final_helper_alias_morphism_override",
+        "test_final_helper_alias_subcategory_override",
+    ],
+)
+def test_third_party_final_helper_alias_non_parent_overrides_rejected(fixture_name):
+    code, stdout = _run_third_party(fixture_name)
+    assert code != 0, stdout
+    assert "Cannot override final attribute" in stdout
+    assert "@final cannot be used with non-method functions" not in stdout
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "test_final_postbind_element_override",
+        "test_final_postbind_morphism_override",
+        "test_final_postbind_subcategory_override",
+    ],
+)
+def test_third_party_final_postbind_non_parent_overrides_rejected(fixture_name):
+    code, stdout = _run_third_party(fixture_name)
+    assert code != 0, stdout
+    assert "Cannot override final attribute" in stdout
+    assert "@final cannot be used with non-method functions" not in stdout
+    assert "no base method was found" not in stdout
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "test_abstract_assigned_element_method",
+        "test_abstract_assigned_morphism_method",
+    ],
+)
+def test_third_party_abstract_assigned_non_parent_method_surfaces(fixture_name):
+    code, stdout = _run_third_party(fixture_name)
+    assert code == 0, stdout
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "test_abstract_helper_alias_element_override",
+        "test_abstract_helper_alias_morphism_override",
+        "test_abstract_helper_alias_subcategory_override",
+    ],
+)
+def test_third_party_abstract_helper_alias_non_parent_override_surfaces(fixture_name):
+    code, stdout = _run_third_party(fixture_name)
+    assert code == 0, stdout
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "test_abstract_postbind_element_override",
+        "test_abstract_postbind_morphism_override",
+        "test_abstract_postbind_subcategory_override",
+    ],
+)
+def test_third_party_abstract_postbind_non_parent_override_surfaces(fixture_name):
+    code, stdout = _run_third_party(fixture_name)
+    assert code == 0, stdout
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "test_helper_alias_assigned_parent_methods_plain_override",
+        "test_helper_alias_assigned_parent_methods_classmethod_override",
+        "test_helper_alias_assigned_parent_methods_staticmethod_override",
+        "test_helper_alias_assigned_parent_methods_property_override",
+        "test_helper_alias_assigned_parent_methods_overload_override",
+        "test_helper_alias_assigned_subcategory_methods_cached_method_override",
+    ],
+)
+def test_third_party_helper_alias_assigned_member_surfaces_match_static_behavior(
+    fixture_name,
+):
+    code, stdout = _run_third_party(fixture_name)
+    assert code == 0, stdout
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "test_helper_alias_assigned_element_methods_decorator_matrix",
+        "test_helper_alias_assigned_morphism_methods_decorator_matrix",
+        "test_helper_alias_assigned_subcategory_methods_decorator_matrix",
+        "test_helper_alias_assigned_parent_methods_transitive_matrix",
+        "test_helper_alias_assigned_element_methods_transitive_matrix",
+        "test_helper_alias_assigned_morphism_methods_transitive_matrix",
+        "test_helper_alias_assigned_subcategory_methods_transitive_matrix",
+    ],
+)
+def test_third_party_additional_helper_alias_assigned_matrices_match_static_behavior(
+    fixture_name,
+):
+    code, stdout = _run_third_party(fixture_name)
+    assert code == 0, stdout
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "test_helper_alias_assigned_parent_methods_parameterized_matrix",
+        "test_helper_alias_assigned_element_methods_parameterized_matrix",
+        "test_helper_alias_assigned_morphism_methods_parameterized_matrix",
+        "test_helper_alias_assigned_subcategory_methods_parameterized_matrix",
+    ],
+)
+def test_third_party_parameterized_helper_alias_assigned_matrices_match_static_behavior(
+    fixture_name,
+):
+    code, stdout = _run_third_party(fixture_name, _CONFIGURED_CONFIG_FILE)
+    assert code == 0, stdout
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "test_helper_alias_postbind_parent_methods_decorator_matrix",
+        "test_helper_alias_postbind_element_methods_decorator_matrix",
+        "test_helper_alias_postbind_morphism_methods_decorator_matrix",
+        "test_helper_alias_postbind_subcategory_methods_decorator_matrix",
+    ],
+)
+def test_third_party_helper_alias_postbind_matrices_match_static_behavior(fixture_name):
+    code, stdout = _run_third_party(fixture_name)
+    assert code == 0, stdout
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "test_final_helper_alias_postbind_parent_method_override",
+        "test_final_helper_alias_postbind_element_override",
+        "test_final_helper_alias_postbind_morphism_override",
+        "test_final_helper_alias_postbind_subcategory_override",
+    ],
+)
+def test_third_party_final_helper_alias_postbind_overrides_rejected(fixture_name):
+    code, stdout = _run_third_party(fixture_name)
+    assert code != 0, stdout
+    assert "Cannot override final attribute" in stdout
+    assert "@final cannot be used with non-method functions" not in stdout
+    assert "no base method was found" not in stdout
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "test_abstract_helper_alias_postbind_parent_method_override",
+        "test_abstract_helper_alias_postbind_element_override",
+        "test_abstract_helper_alias_postbind_morphism_override",
+        "test_abstract_helper_alias_postbind_subcategory_override",
+    ],
+)
+def test_third_party_abstract_helper_alias_postbind_override_surfaces(fixture_name):
+    code, stdout = _run_third_party(fixture_name)
+    assert code == 0, stdout
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "test_postbind_parent_methods_plain_override",
+        "test_postbind_parent_methods_classmethod_override",
+        "test_postbind_parent_methods_staticmethod_override",
+        "test_postbind_parent_methods_property_override",
+        "test_postbind_parent_methods_overload_override",
+        "test_postbind_subcategory_methods_cached_method_override",
+    ],
+)
+def test_third_party_postbind_member_surfaces_match_static_behavior(fixture_name):
+    code, stdout = _run_third_party(fixture_name)
+    assert code == 0, stdout
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    [
+        "test_postbind_element_methods_decorator_matrix",
+        "test_postbind_morphism_methods_decorator_matrix",
+        "test_postbind_subcategory_methods_decorator_matrix",
+    ],
+)
+def test_third_party_additional_postbind_matrices_match_static_behavior(fixture_name):
+    code, stdout = _run_third_party(fixture_name)
+    assert code == 0, stdout
+
+
 # ---- Acceptance criterion 9: incremental mode determinism ----
 
 def test_incremental_determinism():
@@ -110,7 +602,7 @@ def test_incremental_determinism():
     """
     from mypy import api
 
-    fixture_path = str(_FIXTURES_PKG / "test_valid_override.py")
+    fixture_path = str(_SAGE_FIXTURES_PKG / "test_valid_override.py")
     cache_dir = tempfile.mkdtemp(prefix="mypy_cache_det_")
     try:
         base_args = [
@@ -146,7 +638,7 @@ def test_ancestor_change_reactivity():
     from mypy import api
 
     module_name = "sage.categories.mypy_test_fixtures.test_renamed_ancestor"
-    fixture_path = _FIXTURES_PKG / "test_renamed_ancestor.py"
+    fixture_path = _SAGE_FIXTURES_PKG / "test_renamed_ancestor.py"
     original = fixture_path.read_text()
     cache_dir = tempfile.mkdtemp(prefix="mypy_cache_react_")
     base_args = [
@@ -182,6 +674,38 @@ def test_ancestor_change_reactivity():
         importlib.invalidate_caches()
         _drop_fixture_module(module_name)
         shutil.rmtree(cache_dir, ignore_errors=True)
+
+
+def test_research_homsets_run_does_not_segfault():
+    if not _RESEARCH_ROOT.exists():
+        pytest.skip("local research checkout not available")
+    if not _RESEARCH_MYPY_CONFIG.exists():
+        pytest.skip("local research mypy config not available")
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(_PROJECT_ROOT)
+    result = subprocess.run(
+        [
+            "mypy",
+            "--config-file",
+            str(_RESEARCH_MYPY_CONFIG),
+            "category_specs/homsets/homsets.py",
+            "category_specs/homsets/endsets.py",
+            "category_specs/homsets/autsets.py",
+            "category_specs/sets/homsets.py",
+            "category_specs/topological_spaces/homsets.py",
+        ],
+        cwd=_RESEARCH_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    combined_output = result.stdout + result.stderr
+
+    assert result.returncode != 139, combined_output
+    assert "INTERNAL ERROR" not in combined_output
+    assert "Unhandled SIGSEGV" not in combined_output, combined_output
+    assert "Segmentation fault" not in combined_output, combined_output
 
 
 # ---- Placeholders for future work ----

@@ -14,8 +14,14 @@ edge for mypy.
 from __future__ import annotations
 
 import importlib
+import importlib.util
+import re
+import sys
 import types
+from pathlib import Path
 from dataclasses import dataclass
+from contextlib import contextmanager
+from functools import lru_cache
 from typing import Any
 
 _SAGE_INITIALIZED = False
@@ -89,6 +95,8 @@ _METHOD_KIND_TO_DYN_ATTR: dict[str, str] = {
     "SubcategoryMethods": "subcategory_class",
 }
 
+_CLASSLIKE_SEGMENT = re.compile(r"^[A-Z_]")
+
 
 # ---------------------------------------------------------------------------
 # Fullname parsing
@@ -103,11 +111,11 @@ def parse_method_container_fullname(
     Splits the last component off as method_kind. The remaining components
     are interpreted as ``module_name . category_path[0] . category_path[1] ...``.
 
-    The module must reside under ``sage.categories.``.  After the structural
-    parse we attempt to import the module and verify that each element of
-    ``category_path`` is a Category subclass (or, for the trailing element,
-    at least that the module/class graph looks like a Sage category tree).
-    If anything fails, the function returns None.
+    This parse is namespace-agnostic. It separates the importable module prefix
+    from the category path using the first class-like segment (capitalized or
+    underscore-prefixed) and leaves semantic Sage validation to later
+    instantiation/projection steps. A third-party subtree is therefore eligible
+    even when it does not live under ``sage.categories.*``.
 
     Args:
         fullname: Dotted Python fullname, e.g.
@@ -129,26 +137,11 @@ def parse_method_container_fullname(
         return None
 
     prefix = parts[:-1]
-
-    # Must start with "sage.categories" structurally
-    joined = ".".join(prefix)
-    if not (joined.startswith("sage.categories.") or joined == "sage.categories"):
-        return None
-
-    # Find the first CamelCase / underscore-start element after
-    # the "categories" segment. Everything before it is the module,
-    # everything from there is the category path.
-    import re
-    _camel = re.compile(r'^[A-Z_]')
-    cat_start = None
-    for i, p in enumerate(prefix):
-        if p == "categories" and i > 0 and prefix[i - 1] == "sage":
-            for j in range(i + 1, len(prefix)):
-                if _camel.match(prefix[j]):
-                    cat_start = j
-                    break
-            break
-    if cat_start is None:
+    cat_start = next(
+        (index for index, segment in enumerate(prefix) if _CLASSLIKE_SEGMENT.match(segment)),
+        None,
+    )
+    if cat_start in (None, 0):
         return None
 
     return CategoryMethodContainer(
@@ -277,6 +270,47 @@ def method_container_projection(
     source_fullname: str,
     representative_args: dict[str, tuple[Any, ...]] | None = None,
 ) -> MethodContainerProjection | None:
+    aliases = resolve_method_container_aliases(source_fullname)
+    if not aliases:
+        return None
+
+    projections = [
+        _project_method_container_alias(alias, representative_args)
+        for alias in aliases
+    ]
+
+    dynamic_classes = _dedupe_strings(
+        projection.dynamic_class for projection in projections
+    )
+    dynamic_bases = _dedupe_strings(
+        base
+        for projection in projections
+        for base in projection.dynamic_bases
+    )
+    unmapped_dynamic_bases = _dedupe_strings(
+        base
+        for projection in projections
+        for base in projection.unmapped_dynamic_bases
+    )
+    static_bases = _dedupe_strings(
+        base
+        for projection in projections
+        for base in projection.static_bases
+    )
+
+    return MethodContainerProjection(
+        source_fullname=source_fullname,
+        dynamic_class=" | ".join(dynamic_classes),
+        dynamic_bases=tuple(dynamic_bases),
+        unmapped_dynamic_bases=tuple(unmapped_dynamic_bases),
+        static_bases=tuple(static_bases),
+    )
+
+
+def _project_method_container_alias(
+    source_fullname: str,
+    representative_args: dict[str, tuple[Any, ...]] | None = None,
+) -> MethodContainerProjection:
     """Return the fullnames of method containers that are direct Sage
     semantic bases of the method container identified by *source_fullname*.
 
@@ -308,10 +342,10 @@ def method_container_projection(
     """
     parsed = parse_method_container_fullname(source_fullname)
     if parsed is None:
-        return None
+        raise ProjectionError(f"{source_fullname!r} is not a canonical method container")
 
     _ensure_sage_initialized()
-    mod = importlib.import_module(parsed.module_name)
+    mod = _canonical_import_module(parsed.module_name)
     try:
         cat = instantiate_category_from_source_path(
             mod,
@@ -376,6 +410,205 @@ def method_container_projection(
         unmapped_dynamic_bases=tuple(unmapped_dynamic_bases),
         static_bases=tuple(static_bases),
     )
+
+
+@lru_cache(maxsize=None)
+def resolve_method_container_aliases(source_fullname: str) -> tuple[str, ...]:
+    parsed = parse_method_container_fullname(source_fullname)
+    if parsed is not None:
+        return (source_fullname,)
+
+    module_name, _ = _split_module_and_class_path(source_fullname)
+    if module_name is None:
+        return ()
+
+    try:
+        _ensure_sage_initialized()
+        mod = _canonical_import_module(module_name)
+    except Exception:
+        return ()
+    from sage.categories.category import Category
+
+    aliases: list[str] = []
+    for name in dir(mod):
+        obj = getattr(mod, name)
+        if not (isinstance(obj, type) and issubclass(obj, Category)):
+            continue
+        owner_fullname = _fullname_of_class(obj)
+        for kind in _METHOD_KINDS:
+            if not hasattr(obj, kind):
+                continue
+            container_cls = getattr(obj, kind)
+            if _fullname_of_class(container_cls) != source_fullname:
+                continue
+            aliases.append(f"{owner_fullname}.{kind}")
+    return tuple(_dedupe_strings(aliases))
+
+
+def _canonical_import_module(module_name: str) -> types.ModuleType:
+    """Import the shortest importable suffix of *module_name*.
+
+    Mypy can analyze the same file under a package-prefixed fullname such as
+    ``tests.fixtures.sage.categories...`` while the runtime-importable module is
+    the canonical suffix ``sage.categories...``. Choosing the shortest
+    importable suffix keeps representative lookup and source-container mapping
+    stable without reintroducing namespace allowlists.
+    """
+    parts = module_name.split(".")
+    best_module: types.ModuleType | None = None
+    last_error: Exception | None = None
+    for start in range(len(parts)):
+        candidate = ".".join(parts[start:])
+        try:
+            best_module = importlib.import_module(candidate)
+        except Exception as exc:
+            last_error = exc
+            try:
+                best_module = _load_module_from_source_tree(candidate)
+            except Exception as fallback_exc:
+                last_error = fallback_exc
+
+    if best_module is not None:
+        return best_module
+
+    if last_error is not None:
+        raise last_error
+    raise ModuleNotFoundError(module_name)
+
+
+def _split_module_and_class_path(fullname: str) -> tuple[str | None, tuple[str, ...]]:
+    parts = fullname.split(".")
+    class_start = next(
+        (index for index, segment in enumerate(parts) if _CLASSLIKE_SEGMENT.match(segment)),
+        None,
+    )
+    if class_start in (None, 0):
+        return None, ()
+    return ".".join(parts[:class_start]), tuple(parts[class_start:])
+
+
+def _dedupe_strings(items) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        deduped.append(item)
+    return deduped
+
+
+def _load_module_from_source_tree(module_name: str) -> types.ModuleType:
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+
+    parts = module_name.split(".")
+    for size in range(1, len(parts)):
+        prefix = ".".join(parts[:size])
+        if prefix in sys.modules:
+            continue
+        module_path = _find_module_path(prefix)
+        if module_path is None:
+            raise ModuleNotFoundError(prefix)
+        file_path, is_package = module_path
+        if size == 1:
+            if not is_package:
+                raise ModuleNotFoundError(prefix)
+            _install_namespace_package(prefix, file_path.parent)
+            continue
+        if is_package:
+            _load_module_file(prefix, file_path, is_package=True)
+        else:
+            raise ModuleNotFoundError(prefix)
+
+    module_path = _find_module_path(module_name)
+    if module_path is None:
+        raise ModuleNotFoundError(module_name)
+    file_path, is_package = module_path
+    return _load_module_file(module_name, file_path, is_package=is_package)
+
+
+def _find_module_path(module_name: str) -> tuple[Path, bool] | None:
+    rel = Path(*module_name.split("."))
+    for entry in sys.path:
+        if not entry:
+            entry = "."
+        root = Path(entry)
+        package_init = root / rel / "__init__.py"
+        if package_init.is_file():
+            return package_init, True
+        module_file = root / f"{rel}.py"
+        if module_file.is_file():
+            return module_file, False
+    return None
+
+
+def _install_namespace_package(module_name: str, package_dir: Path) -> types.ModuleType:
+    module = types.ModuleType(module_name)
+    module.__file__ = str(package_dir)
+    module.__package__ = module_name
+    module.__path__ = [str(package_dir)]
+    spec = importlib.util.spec_from_loader(module_name, loader=None, origin=str(package_dir))
+    if spec is not None:
+        spec.submodule_search_locations = [str(package_dir)]
+        module.__spec__ = spec
+    sys.modules[module_name] = module
+    return module
+
+
+def _load_module_file(
+    module_name: str,
+    file_path: Path,
+    *,
+    is_package: bool,
+) -> types.ModuleType:
+    if module_name in sys.modules and getattr(sys.modules[module_name], "__file__", None):
+        return sys.modules[module_name]
+
+    if is_package:
+        spec = importlib.util.spec_from_file_location(
+            module_name,
+            file_path,
+            submodule_search_locations=[str(file_path.parent)],
+        )
+    else:
+        spec = importlib.util.spec_from_file_location(module_name, file_path)
+    if spec is None or spec.loader is None:
+        raise ModuleNotFoundError(module_name)
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        with _compat_abstractmethod_signature():
+            spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(module_name, None)
+        raise
+    return module
+
+
+@contextmanager
+def _compat_abstractmethod_signature():
+    import abc
+
+    original = abc.abstractmethod
+
+    def compat(func=None, /, **kwargs):
+        kwargs.pop("optional", None)
+        if kwargs:
+            unexpected = ", ".join(sorted(kwargs))
+            raise TypeError(f"abstractmethod() got unexpected keyword arguments: {unexpected}")
+        if func is None:
+            def decorate(inner):
+                return original(inner)
+            return decorate
+        return original(func)
+
+    abc.abstractmethod = compat
+    try:
+        yield
+    finally:
+        abc.abstractmethod = original
 
 
 # ---------------------------------------------------------------------------
