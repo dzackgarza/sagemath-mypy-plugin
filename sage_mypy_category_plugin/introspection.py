@@ -273,11 +273,30 @@ def method_container_projection(
     aliases = resolve_method_container_aliases(source_fullname)
     if not aliases:
         return None
+    return method_container_projection_for_aliases(
+        source_fullname,
+        aliases,
+        representative_args,
+    )
 
-    projections = [
-        _project_method_container_alias(alias, representative_args)
-        for alias in aliases
-    ]
+
+def method_container_projection_for_aliases(
+    source_fullname: str,
+    aliases: tuple[str, ...] | list[str],
+    representative_args: dict[str, tuple[Any, ...]] | None = None,
+) -> MethodContainerProjection | None:
+    projections: list[MethodContainerProjection] = []
+    last_error: Exception | None = None
+    for alias in aliases:
+        try:
+            projections.append(_project_method_container_alias(alias, representative_args))
+        except (ParameterizedCategoryError, ProjectionError) as exc:
+            last_error = exc
+
+    if not projections:
+        if last_error is not None:
+            raise last_error
+        return None
 
     dynamic_classes = _dedupe_strings(
         projection.dynamic_class for projection in projections
@@ -418,8 +437,8 @@ def resolve_method_container_aliases(source_fullname: str) -> tuple[str, ...]:
     if parsed is not None:
         return (source_fullname,)
 
-    module_name, _ = _split_module_and_class_path(source_fullname)
-    if module_name is None:
+    module_name, source_class_path = _split_module_and_class_path(source_fullname)
+    if module_name is None or not source_class_path:
         return ()
 
     try:
@@ -435,13 +454,17 @@ def resolve_method_container_aliases(source_fullname: str) -> tuple[str, ...]:
         if not (isinstance(obj, type) and issubclass(obj, Category)):
             continue
         owner_fullname = _fullname_of_class(obj)
+        _owner_module_name, owner_class_path = _split_module_and_class_path(owner_fullname)
         for kind in _METHOD_KINDS:
             if not hasattr(obj, kind):
                 continue
             container_cls = getattr(obj, kind)
-            if _fullname_of_class(container_cls) != source_fullname:
+            _container_module_name, container_class_path = _split_module_and_class_path(
+                _fullname_of_class(container_cls)
+            )
+            if container_class_path != source_class_path:
                 continue
-            aliases.append(f"{owner_fullname}.{kind}")
+            aliases.append(f"{module_name}.{'.'.join(owner_class_path)}.{kind}")
     return tuple(_dedupe_strings(aliases))
 
 
@@ -530,7 +553,11 @@ def _load_module_from_source_tree(module_name: str) -> types.ModuleType:
 
 def _find_module_path(module_name: str) -> tuple[Path, bool] | None:
     rel = Path(*module_name.split("."))
-    for entry in sys.path:
+    search_roots: list[str] = list(sys.path)
+    cwd = str(Path.cwd())
+    if cwd not in search_roots:
+        search_roots.append(cwd)
+    for entry in search_roots:
         if not entry:
             entry = "."
         root = Path(entry)

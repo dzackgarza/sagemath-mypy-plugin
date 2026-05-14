@@ -1,4 +1,4 @@
-"""Spurious final error: helper function assigned into SubcategoryMethods."""
+"""Spurious final error: helper assigned into SubcategoryMethods."""
 
 from typing import final
 

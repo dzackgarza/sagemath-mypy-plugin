@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sage-mypy-category-plugin"
-version = "0.1.0"
+version = "0.3.0"
 description = "Mypy plugin for Sage's dynamic category method system"
 requires-python = ">=3.10"
 dependencies = [
@@ -18,3 +18,10 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[tool.setuptools.data-files]
+"sage-stubs" = ["sage-stubs/__init__.pyi"]
+"sage-stubs/categories" = ["sage-stubs/categories/*.pyi"]
+"sage-stubs/misc" = ["sage-stubs/misc/*.pyi"]
+"sage-stubs/sets" = ["sage-stubs/sets/*.pyi"]
+"sage-stubs/structure" = ["sage-stubs/structure/*.pyi"]

@@ -1,4 +1,4 @@
-"""Spurious final error: helper function assigned into ParentMethods."""
+"""Spurious final error: helper assigned into ParentMethods."""
 
 from typing import final
 
