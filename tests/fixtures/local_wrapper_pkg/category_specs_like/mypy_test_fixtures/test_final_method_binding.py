@@ -1,13 +1,17 @@
-"""@final on method container assignment in a local-wrapper hierarchy.
+"""@final decorator propagation through method container assignment.
 
-A category's ParentMethods defines a @final method. A subcategory assigns
-ParentMethods to a helper class that also uses @final. The plugin must
-propagate @final semantics through the alias so that mypy correctly
-treats the method as final (and rejects overrides).
+Mypy fires "@final cannot be used with non-method functions" when a module-level
+helper is assigned as a method container alias and that helper uses @final.
+The plugin must suppress this because the helper IS semantically a method.
 """
-from typing import final, override as _override
+from typing import final
 
 from local_wrapper_pkg.category_specs_like.base_types import LocalCategoryBase
+
+
+@final
+def final_of(self) -> int:
+    return 1
 
 
 class _LocalBase(LocalCategoryBase):
@@ -19,15 +23,8 @@ class _LocalBase(LocalCategoryBase):
         return cls()
 
     class ParentMethods:
-        @final
-        def of(self) -> int:
+        def of(self, *args) -> int:
             return 0
-
-
-class _FinalHelper:
-    @final
-    def of(self) -> int:
-        return 1
 
 
 class _LocalSub(LocalCategoryBase):
@@ -38,4 +35,5 @@ class _LocalSub(LocalCategoryBase):
     def an_instance(cls) -> "_LocalSub":
         return cls()
 
-    ParentMethods = _FinalHelper
+    class ParentMethods:
+        of = final_of  # assigned helper — triggers [misc] without plugin

@@ -10,8 +10,17 @@ Surfaces covered:
     ElementMethods @override   — test_plugin_elementmethods_override_correctness
     SubcategoryMethods @override  — test_plugin_subcategorymethods_override_correctness
     MorphismMethods @override  — test_plugin_morphismmethods_override_correctness
-    SubcategoryMethods._with_axiom  — test_plugin_with_axiom_correctness
-    Covariant container assignment  — test_plugin_covariant_assignment_correctness
+    Helper-alias @override     — test_plugin_helper_alias_override_correctness
+    @final method binding      — test_plugin_final_method_binding_correctness
+    @abstractmethod binding    — test_plugin_abstract_method_binding_correctness
+    cached_method decorator    — test_plugin_cached_method_decorator_correctness
+    Constructors zero-arg      — test_plugin_constructors_zero_arg_correctness
+    FunctorialConstruction zero-arg — test_plugin_functorial_construction_zero_arg_correctness
+    __classcall_private__ kwargs   — test_plugin_classcall_private_kwargs_correctness
+    Operator surfaces          — test_plugin_operator_surfaces_correctness
+    Covariant return narrowing — test_plugin_covariant_return_narrowing_correctness
+    _with_axiom attribute      — test_plugin_with_axiom_correctness
+    Covariant container assignment — test_plugin_covariant_assignment_correctness
 """
 from __future__ import annotations
 
@@ -141,6 +150,21 @@ def test_plugin_subcategorymethods_override_correctness() -> None:
 def test_plugin_morphismmethods_override_correctness() -> None:
     """MorphismMethods @override: plugin on + valid → exit 0; all other cases → error."""
     _assert_override_conjunction("test_morphism_methods_override", "test_invalid_override")
+
+
+def test_plugin_helper_alias_override_correctness() -> None:
+    """Helper-alias @override: ParentMethods assigned to helper class; @override resolves through alias."""
+    _assert_override_conjunction("test_helper_alias_override", "test_helper_alias_invalid_override")
+
+
+def test_plugin_final_method_binding_correctness() -> None:
+    """@final on method container assignment: plugin suppresses non-method @final error."""
+    _assert_clean_conjunction("test_final_method_binding", "[misc]")
+
+
+def test_plugin_abstract_method_binding_correctness() -> None:
+    """@abstractmethod on method container assignment: plugin suppresses non-method error."""
+    _assert_clean_conjunction("test_abstract_method_binding", "[misc]")
 
 
 def test_plugin_with_axiom_correctness() -> None:
