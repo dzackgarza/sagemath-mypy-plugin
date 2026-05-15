@@ -78,6 +78,11 @@ class SageCategoryPlugin(Plugin):
             return self._mro_hook
         return None
 
+    def get_base_class_hook(self, fullname: str) -> Callable | None:
+        if _looks_like_category_constructor(fullname):
+            return self._category_base_hook
+        return None
+
     def get_function_hook(self, fullname: str) -> Callable | None:
         if fullname in {
             "typing.final",
@@ -128,13 +133,18 @@ class SageCategoryPlugin(Plugin):
         fullname = info.fullname
         module = ctx.api.modules.get(info.module_name)
         _recover_method_helper_bindings(ctx.api, module, info, materialize=False)
-        _filter_method_container_untyped_decorator_errors(ctx.api.errors, module)
+        if module is not None:
+            _filter_method_container_untyped_decorator_errors(ctx.api.errors, module)
         _materialize_subcategory_helpers(ctx, info)
         _materialize_operator_helpers(ctx, info)
+        if _has_explicit_non_object_base(info):
+            return
 
         projection = self._resolve_projection(ctx, fullname)
         if projection is None:
-            if not ctx.api.final_iteration and _class_is_postbind_helper(module, fullname):
+            if ctx.api.final_iteration:
+                _inject_postbind_helper_bases(ctx, info, fullname)
+            elif module is not None and _class_is_postbind_helper(module, fullname):
                 ctx.api.defer()
             return
 
@@ -147,7 +157,17 @@ class SageCategoryPlugin(Plugin):
                 )
 
         if not projection.static_bases:
-            return
+            enclosing_cat = _lookup_enclosing_category_typeinfo(ctx, info)
+            if enclosing_cat is not None:
+                fallback_bases = _resolve_python_category_method_container_bases(
+                    ctx, enclosing_cat, info.name
+                )
+            else:
+                fallback_bases = ()
+            if not fallback_bases:
+                return
+            # Override projection with Python-MRO-resolved bases.
+            projection = _projection_with_static_bases(projection, fallback_bases)
 
         base_tis: list = []
         deferred = False
@@ -209,6 +229,12 @@ class SageCategoryPlugin(Plugin):
         info.bases = retained_bases
         info.mro = []
         calculate_mro(info)
+
+    def _category_base_hook(self, ctx: ClassDefContext) -> None:
+        module = ctx.api.modules.get(ctx.cls.info.module_name)
+        if module is None:
+            return
+        _inject_class_body_method_container_bases(ctx, ctx.cls.info, module)
 
     def _resolve_projection(self, ctx: ClassDefContext, fullname: str) -> Any | None:
         try:
@@ -295,6 +321,10 @@ def _looks_like_category_constructor(fullname: str) -> bool:
         or fullname.startswith("sage.categories.")
     )
 
+def _has_explicit_non_object_base(info: TypeInfo) -> bool:
+    return any(base.type.fullname != "builtins.object" for base in info.bases)
+
+
 def _sage_constructor_signature(signature: CallableType, api: Any) -> CallableType:
     arg_types = list(signature.arg_types)
     arg_kinds = list(signature.arg_kinds)
@@ -345,6 +375,30 @@ def _sage_version() -> str | None:
         return str(version)
     except Exception:
         return None
+
+
+def _resolve_python_category_method_container_bases(
+    ctx: ClassDefContext,
+    enclosing_cat: TypeInfo,
+    method_kind: str,
+) -> tuple[str, ...]:
+    """Walk enclosing_cat's Python MRO to find sibling ParentMethods TypeInfos."""
+    bases: list[str] = []
+    for base in getattr(enclosing_cat, "mro", [])[1:]:
+        if base.fullname == "builtins.object":
+            break
+        container_fn = f"{base.fullname}.{method_kind}"
+        ti = _lookup_typeinfo(ctx, container_fn)
+        if ti is not None:
+            bases.append(ti.fullname)
+    return tuple(dict.fromkeys(bases))
+
+
+def _projection_with_static_bases(projection: Any, static_bases: tuple[str, ...]) -> Any:
+    """Return a shallow copy of *projection* with *static_bases* replaced."""
+    from dataclasses import replace
+    return replace(projection, static_bases=static_bases)
+
 
 def _lookup_typeinfo(ctx: ClassDefContext, fullname: str) -> Any | None:
     parts = fullname.split(".")
@@ -668,15 +722,16 @@ def _filter_postbind_method_assign_errors(
     module: Any,
     bindings: tuple[tuple[str, str, str, bool], ...],
 ) -> None:
-    postbind_lines = set(_postbind_binding_lines(module, bindings))
-    if not postbind_lines:
+    assignment_lines = set(_postbind_binding_lines(module, bindings))
+    assignment_lines.update(_class_body_method_container_binding_lines(module, bindings))
+    if not assignment_lines:
         return
     for path, items in list(getattr(errors, "error_info_map", {}).items()):
         filtered = [
             error
             for error in items
             if not (
-                getattr(error, "line", None) in postbind_lines
+                getattr(error, "line", None) in assignment_lines
                 and (
                     getattr(error, "message", None) == "Cannot assign to a method"
                     or str(getattr(error, "message", "")).startswith(
@@ -798,6 +853,54 @@ def _postbind_binding_lines(
             and (target_fullname, target_name, helper_name) in postbind_targets
         ):
             lines.append(statement.line)
+
+    # Also scan inside category class bodies.
+    for class_def in top_level_classes.values():
+        for kind in _METHOD_KINDS:
+            for statement in class_def.defs.body:
+                if not isinstance(statement, AssignmentStmt) or len(statement.lvalues) != 1:
+                    continue
+                target = statement.lvalues[0]
+                if not isinstance(target, NameExpr) or target.name != kind:
+                    continue
+                helper_name = _assigned_method_container_name(statement.rvalue)
+                if helper_name is None:
+                    continue
+                target_fullname = f"{_fullname_for_class(module_fullname, class_def)}.{kind}"
+                if (target_fullname, kind, helper_name) in postbind_targets:
+                    lines.append(statement.line)
+
+    return tuple(lines)
+
+
+def _class_body_method_container_binding_lines(
+    module: Any,
+    bindings: tuple[tuple[str, str, str, bool], ...],
+) -> tuple[int, ...]:
+    class_body_targets = {
+        (target_fullname, target_name, helper_name)
+        for target_fullname, target_name, helper_name, is_postbind in bindings
+        if not is_postbind and target_name in _METHOD_KINDS
+    }
+    if not class_body_targets:
+        return ()
+    module_fullname = getattr(module, "fullname", "")
+    lines: list[int] = []
+    for statement in _module_statements(module):
+        if not isinstance(statement, ClassDef):
+            continue
+        target_fullname = _fullname_for_class(module_fullname, statement)
+        for nested in statement.defs.body:
+            if not isinstance(nested, AssignmentStmt) or len(nested.lvalues) != 1:
+                continue
+            target = nested.lvalues[0]
+            if not isinstance(target, NameExpr):
+                continue
+            helper_name = _helper_name_from_expr(nested.rvalue)
+            if helper_name is None:
+                continue
+            if (target_fullname, target.name, helper_name) in class_body_targets:
+                lines.append(nested.line)
     return tuple(lines)
 
 
@@ -967,6 +1070,19 @@ def _method_container_symbol_bindings(module: Any) -> tuple[tuple[str, str, str,
         if _is_method_container_fullname(target_fullname, aliases):
             bindings.append((target_fullname, target_name, helper_name, True))
 
+    for class_def in top_level_classes.values():
+        target_fullname = _fullname_for_class(module_fullname, class_def)
+        for statement in class_def.defs.body:
+            if not isinstance(statement, AssignmentStmt) or len(statement.lvalues) != 1:
+                continue
+            target = statement.lvalues[0]
+            if not isinstance(target, NameExpr) or target.name not in _METHOD_KINDS:
+                continue
+            helper_name = _helper_name_from_expr(statement.rvalue)
+            if helper_name is None:
+                continue
+            bindings.append((target_fullname, target.name, helper_name, False))
+
     return tuple(dict.fromkeys(bindings))
 
 
@@ -1071,6 +1187,100 @@ def _class_is_postbind_helper(module: Any, fullname: str) -> bool:
                 if fullname == rhs_fullname:
                     return True
     return False
+
+
+def _inject_postbind_helper_bases(
+    ctx: ClassDefContext, info: TypeInfo, fullname: str,
+) -> None:
+    """Inject the base method container TypeInfo into info.mro for a postbind helper."""
+    module = ctx.api.modules.get(info.module_name)
+    if module is None:
+        for mod_key, mod in ctx.api.modules.items():
+            if mod_key.endswith(info.module_name) or info.module_name.endswith(mod_key):
+                module = mod
+                break
+    if module is None:
+        return
+    module_fullname = getattr(module, "fullname", "")
+    top_level_classes = {
+        statement.name: statement
+        for statement in _module_statements(module)
+        if isinstance(statement, ClassDef)
+    }
+    short_name = fullname.rsplit(".", 1)[-1]
+
+    for owner in top_level_classes.values():
+        for statement in owner.defs.body:
+            if not isinstance(statement, AssignmentStmt):
+                continue
+            if len(statement.lvalues) != 1:
+                continue
+            target = statement.lvalues[0]
+            if not isinstance(target, NameExpr) or target.name not in _METHOD_KINDS:
+                continue
+            rhs_name = _assigned_method_container_name(statement.rvalue)
+            if rhs_name != short_name:
+                continue
+            # owner is the category class doing the postbind.
+            owner_ti = _lookup_typeinfo(ctx, _fullname_for_class(module_fullname, owner))
+            if owner_ti is None:
+                continue
+            method_kind = target.name
+            # Walk owner's Python MRO to find base category's method container.
+            for base in getattr(owner_ti, "mro", [])[1:]:
+                if base.fullname == "builtins.object":
+                    break
+                container_fn = f"{base.fullname}.{method_kind}"
+                base_ti = _lookup_typeinfo(ctx, container_fn)
+                if base_ti is None or base_ti.fullname == info.fullname:
+                    continue
+                # Splice base_ti into info.mro
+                if base_ti not in info.mro:
+                    info.mro = info.mro[:-1] + [base_ti] + [info.mro[-1]]
+                return
+
+
+def _inject_class_body_method_container_bases(
+    ctx: ClassDefContext,
+    owner_info: TypeInfo,
+    module: Any,
+) -> None:
+    module_fullname = getattr(module, "fullname", "")
+    for statement in ctx.cls.defs.body:
+        if not isinstance(statement, AssignmentStmt) or len(statement.lvalues) != 1:
+            continue
+        target = statement.lvalues[0]
+        if not isinstance(target, NameExpr) or target.name not in _METHOD_KINDS:
+            continue
+        helper_name = _assigned_method_container_name(statement.rvalue)
+        if helper_name is None:
+            continue
+        helper_ti = _lookup_typeinfo(ctx, ".".join((module_fullname, helper_name)))
+        if helper_ti is None:
+            continue
+        method_kind = target.name
+        for base in getattr(owner_info, "mro", [])[1:]:
+            if base.fullname == "builtins.object":
+                break
+            base_ti = _lookup_typeinfo(ctx, f"{base.fullname}.{method_kind}")
+            if base_ti is None or base_ti.fullname == helper_ti.fullname:
+                continue
+            _append_typeinfo_base(helper_ti, base_ti)
+            break
+
+
+def _append_typeinfo_base(info: TypeInfo, base_ti: TypeInfo) -> None:
+    if base_ti.fullname in {base.type.fullname for base in info.bases}:
+        return
+    if base_ti in getattr(info, "mro", [])[1:]:
+        return
+    retained_bases = [
+        base for base in info.bases if base.type.fullname != "builtins.object"
+    ]
+    retained_bases.append(fill_typevars(base_ti))
+    info.bases = retained_bases
+    info.mro = []
+    calculate_mro(info)
 
 
 def _fullname_for_class(module_fullname: str, class_def: ClassDef) -> str:
