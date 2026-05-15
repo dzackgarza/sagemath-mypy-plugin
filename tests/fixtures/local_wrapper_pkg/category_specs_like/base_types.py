@@ -4,7 +4,7 @@ This module defines a thin local wrapper around Sage's Category_singleton.
 Fixtures that inherit from these classes (not from sage.categories directly)
 expose whether the plugin correctly handles non-sage.categories namespaces.
 """
-from sage.categories.category_singleton import Category_singleton as _SageBase
+from sage.categories.category import Category as _SageBase
 
 
 class LocalCategoryBase(_SageBase):
