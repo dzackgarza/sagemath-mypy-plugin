@@ -18,6 +18,9 @@ from mypy.build import PRI_MED
 from mypy.errorcodes import ErrorCode
 from mypy.mro import calculate_mro
 from mypy.nodes import (
+    ARG_POS,
+    ARG_OPT,
+    ARG_NAMED_OPT,
     AssignmentStmt,
     CallExpr,
     ClassDef,
@@ -29,6 +32,7 @@ from mypy.nodes import (
     RefExpr,
     SymbolTableNode,
     TypeInfo,
+    FuncDef,
     OverloadedFuncDef,
     Var,
 )
@@ -82,6 +86,18 @@ class SageCategoryPlugin(Plugin):
             "typing_extensions.override",
         }:
             return self._decorator_typecheck_hook
+        if fullname.rsplit(".", 1)[-1].endswith("cached_method"):
+            return self._cached_method_typecheck_hook
+        return None
+
+    def get_function_signature_hook(self, fullname: str) -> Callable | None:
+        if _looks_like_category_constructor(fullname):
+            return self._category_constructor_signature_hook
+        return None
+
+    def get_method_signature_hook(self, fullname: str) -> Callable | None:
+        if fullname.rsplit(".", 1)[-1] == "Constructors":
+            return self._category_constructor_signature_hook
         return None
 
     def get_additional_deps(self, file: Any) -> list[Tuple[int, str, int]]:
@@ -112,9 +128,14 @@ class SageCategoryPlugin(Plugin):
         fullname = info.fullname
         module = ctx.api.modules.get(info.module_name)
         _recover_method_helper_bindings(ctx.api, module, info, materialize=False)
+        _filter_method_container_untyped_decorator_errors(ctx.api.errors, module)
+        _materialize_subcategory_helpers(ctx, info)
+        _materialize_operator_helpers(ctx, info)
 
         projection = self._resolve_projection(ctx, fullname)
         if projection is None:
+            if not ctx.api.final_iteration and _class_is_postbind_helper(module, fullname):
+                ctx.api.defer()
             return
 
         if projection.unmapped_dynamic_bases and self._strict:
@@ -182,9 +203,6 @@ class SageCategoryPlugin(Plugin):
         for ti in base_tis:
             if ti.fullname in existing_bases:
                 continue
-            # Persist the projected edge in the declared bases as well as the
-            # computed MRO so later mypy passes observe the same synthetic
-            # inheritance that override checking expects.
             retained_bases.append(fill_typevars(ti))
             existing_bases.add(ti.fullname)
 
@@ -231,6 +249,17 @@ class SageCategoryPlugin(Plugin):
             _filter_postbind_method_assign_errors(ctx.api.errors, module, bindings)
         return ctx.default_return_type
 
+    def _cached_method_typecheck_hook(self, ctx: Any) -> Any:
+        module = getattr(ctx.api, "tree", None)
+        _filter_method_container_untyped_decorator_errors(ctx.api.errors, module)
+        return ctx.default_return_type
+
+    def _category_constructor_signature_hook(self, ctx: Any) -> Any:
+        module = getattr(ctx.api, "tree", None)
+        if module is not None:
+            _filter_constructors_no_redef_errors(ctx.api.errors, module)
+        return _sage_constructor_signature(ctx.default_signature, ctx.api)
+
     def _load_config(self, config_file: str | None) -> None:
         if not config_file:
             return
@@ -256,6 +285,40 @@ _METHOD_KINDS = frozenset({
 
 def _looks_like_method_container(fullname: str) -> bool:
     return fullname.rsplit(".", 1)[-1].endswith("Methods")
+
+def _looks_like_category_constructor(fullname: str) -> bool:
+    short_name = fullname.rsplit(".", 1)[-1]
+    return (
+        short_name == "Constructors"
+        or short_name.endswith("Category")
+        or "category_specs" in fullname
+        or fullname.startswith("sage.categories.")
+    )
+
+def _sage_constructor_signature(signature: CallableType, api: Any) -> CallableType:
+    arg_types = list(signature.arg_types)
+    arg_kinds = list(signature.arg_kinds)
+    arg_names = list(signature.arg_names)
+    changed = False
+
+    for index, name in enumerate(arg_names):
+        if name in {"base_category", "category"} and arg_kinds[index] == ARG_POS:
+            arg_kinds[index] = ARG_OPT
+            changed = True
+
+    if "dispatch" not in arg_names:
+        arg_types.append(api.named_type("builtins.bool"))
+        arg_kinds.append(ARG_NAMED_OPT)
+        arg_names.append("dispatch")
+        changed = True
+
+    if not changed:
+        return signature
+    return signature.copy_modified(
+        arg_types=arg_types,
+        arg_kinds=arg_kinds,
+        arg_names=arg_names,
+    )
 
 def _resolve_direct_bases(fullname: str) -> list[str] | None:
     idx = fullname.find("sage.categories.")
@@ -346,6 +409,84 @@ def _base_alias_candidate_names(short_name: str) -> tuple[str, ...]:
     if all_replaced != short_name:
         candidates.append(all_replaced)
     return tuple(dict.fromkeys(candidates))
+
+
+def _materialize_subcategory_helpers(ctx: ClassDefContext, info: TypeInfo) -> None:
+    if info.name != "SubcategoryMethods" or "_with_axiom" in info.names:
+        return
+    owner = _lookup_enclosing_category_typeinfo(ctx, info)
+    if owner is None:
+        return
+    method_type = CallableType(
+        [ctx.api.named_type("builtins.str")],
+        [ARG_POS],
+        [None],
+        fill_typevars(owner),
+        ctx.api.named_type("builtins.function"),
+        name="_with_axiom",
+    )
+    var = Var("_with_axiom", method_type)
+    var.info = info
+    var._fullname = f"{info.fullname}._with_axiom"
+    info.names["_with_axiom"] = SymbolTableNode(MDEF, var, plugin_generated=True)
+
+
+def _lookup_enclosing_category_typeinfo(
+    ctx: ClassDefContext,
+    info: TypeInfo,
+) -> TypeInfo | None:
+    return _lookup_typeinfo(ctx, info.fullname.rsplit(".", 1)[0])
+
+
+def _materialize_operator_helpers(ctx: ClassDefContext, info: TypeInfo) -> None:
+    if info.name == "SubcategoryMethods":
+        _materialize_method(
+            ctx,
+            info,
+            "__contains__",
+            [ctx.api.named_type("builtins.object")],
+            ctx.api.named_type("builtins.bool"),
+        )
+    elif info.name == "ElementMethods":
+        _materialize_method(
+            ctx,
+            info,
+            "__ne__",
+            [ctx.api.named_type("builtins.object")],
+            ctx.api.named_type("builtins.bool"),
+        )
+
+
+def _materialize_method(
+    ctx: ClassDefContext,
+    info: TypeInfo,
+    name: str,
+    arg_types: list[Instance],
+    return_type: Instance,
+) -> None:
+    if name in info.names or _class_body_defines(ctx.cls, name):
+        return
+    method_type = CallableType(
+        arg_types,
+        [ARG_POS for _arg_type in arg_types],
+        [None for _arg_type in arg_types],
+        return_type,
+        ctx.api.named_type("builtins.function"),
+        name=name,
+    )
+    var = Var(name, method_type)
+    var.info = info
+    var._fullname = f"{info.fullname}.{name}"
+    info.names[name] = SymbolTableNode(MDEF, var, plugin_generated=True)
+
+
+def _class_body_defines(cls: ClassDef, name: str) -> bool:
+    for statement in cls.defs.body:
+        if isinstance(statement, (FuncDef, Decorator, OverloadedFuncDef)):
+            if statement.name == name:
+                return True
+    return False
+
 
 def _walk_chain(container: Any, name_chain: str) -> Any | None:
     for p in name_chain.split("."):
@@ -548,6 +689,81 @@ def _filter_postbind_method_assign_errors(
             errors.error_info_map[path] = filtered
         else:
             del errors.error_info_map[path]
+
+
+def _filter_constructors_no_redef_errors(errors: Any, module: Any) -> None:
+    lines = set(_constructors_method_lines(module))
+    if not lines:
+        return
+    for path, items in list(getattr(errors, "error_info_map", {}).items()):
+        filtered = [
+            error
+            for error in items
+            if not (
+                getattr(error, "line", None) in lines
+                and str(getattr(error, "message", "")).startswith(
+                    'Name "Constructors" already defined'
+                )
+            )
+        ]
+        if filtered:
+            errors.error_info_map[path] = filtered
+        else:
+            del errors.error_info_map[path]
+
+
+def _filter_method_container_untyped_decorator_errors(errors: Any, module: Any) -> None:
+    if module is None:
+        return
+    lines = set(_method_container_decorated_method_lines(module))
+    if not lines:
+        return
+    for path, items in list(getattr(errors, "error_info_map", {}).items()):
+        filtered = [
+            error
+            for error in items
+            if not (
+                getattr(error, "line", None) in lines
+                and str(getattr(error, "message", "")).startswith(
+                    "Untyped decorator makes function"
+                )
+            )
+        ]
+        if filtered:
+            errors.error_info_map[path] = filtered
+        else:
+            del errors.error_info_map[path]
+
+
+def _method_container_decorated_method_lines(module: Any) -> tuple[int, ...]:
+    lines: list[int] = []
+    for class_def in _module_statements(module):
+        if not isinstance(class_def, ClassDef):
+            continue
+        for nested in class_def.defs.body:
+            if not isinstance(nested, ClassDef) or nested.name not in _METHOD_KINDS:
+                continue
+            for statement in nested.defs.body:
+                if isinstance(statement, Decorator):
+                    lines.append(statement.line)
+    return tuple(lines)
+
+
+def _constructors_method_lines(module: Any) -> tuple[int, ...]:
+    lines: list[int] = []
+    for class_def in _module_statements(module):
+        if not isinstance(class_def, ClassDef):
+            continue
+        has_collector = any(
+            isinstance(statement, ClassDef) and statement.name == "Constructors"
+            for statement in class_def.defs.body
+        )
+        if not has_collector:
+            continue
+        for statement in class_def.defs.body:
+            if isinstance(statement, FuncDef) and statement.name == "Constructors":
+                lines.append(statement.line)
+    return tuple(lines)
 
 
 def _postbind_binding_lines(
@@ -827,6 +1043,34 @@ def _is_method_container_fullname(
     aliases: frozenset[str],
 ) -> bool:
     return fullname in aliases or fullname.rsplit(".", 1)[-1] in _METHOD_KINDS
+
+
+def _class_is_postbind_helper(module: Any, fullname: str) -> bool:
+    """Return True if *fullname* is used as a postbind method container assignment."""
+    short_name = fullname.rsplit(".", 1)[-1]
+    module_fullname = getattr(module, "fullname", "")
+    top_level_classes = {
+        statement.name: statement
+        for statement in _module_statements(module)
+        if isinstance(statement, ClassDef)
+    }
+
+    for owner in top_level_classes.values():
+        for statement in owner.defs.body:
+            if not isinstance(statement, AssignmentStmt):
+                continue
+            if len(statement.lvalues) != 1:
+                continue
+            target = statement.lvalues[0]
+            if not isinstance(target, NameExpr) or target.name not in _METHOD_KINDS:
+                continue
+            rhs_name = _assigned_method_container_name(statement.rvalue)
+            if rhs_name == short_name and rhs_name in top_level_classes:
+                rhs_class = top_level_classes[rhs_name]
+                rhs_fullname = _fullname_for_class(module_fullname, rhs_class)
+                if fullname == rhs_fullname:
+                    return True
+    return False
 
 
 def _fullname_for_class(module_fullname: str, class_def: ClassDef) -> str:
