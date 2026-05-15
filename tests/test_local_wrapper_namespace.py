@@ -8,6 +8,8 @@ Surfaces covered:
 
     ParentMethods @override    — test_plugin_parentmethods_override_correctness
     ElementMethods @override   — test_plugin_elementmethods_override_correctness
+    SubcategoryMethods @override  — test_plugin_subcategorymethods_override_correctness
+    MorphismMethods @override  — test_plugin_morphismmethods_override_correctness
     SubcategoryMethods._with_axiom  — test_plugin_with_axiom_correctness
     Covariant container assignment  — test_plugin_covariant_assignment_correctness
 """
@@ -129,6 +131,16 @@ def test_plugin_parentmethods_override_correctness() -> None:
 def test_plugin_elementmethods_override_correctness() -> None:
     """ElementMethods @override: plugin on + valid → exit 0; all other cases → error."""
     _assert_override_conjunction("test_valid_element_methods_override", "test_invalid_override")
+
+
+def test_plugin_subcategorymethods_override_correctness() -> None:
+    """SubcategoryMethods @override: plugin on + valid → exit 0; all other cases → error."""
+    _assert_override_conjunction("test_subcategory_methods_override", "test_invalid_override")
+
+
+def test_plugin_morphismmethods_override_correctness() -> None:
+    """MorphismMethods @override: plugin on + valid → exit 0; all other cases → error."""
+    _assert_override_conjunction("test_morphism_methods_override", "test_invalid_override")
 
 
 def test_plugin_with_axiom_correctness() -> None:
