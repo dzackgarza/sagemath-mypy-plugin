@@ -179,19 +179,6 @@ def test_third_party_final_signature_override_rejected():
     assert "Signature of \"Of\" incompatible with supertype" in stdout
 
 
-@pytest.mark.parametrize(
-    "fixture_name",
-    [
-        "test_final_dynamic_parent_methods_override",
-        "test_final_dynamic_element_methods_override",
-        "test_final_dynamic_morphism_methods_override",
-        "test_final_dynamic_subcategory_methods_override",
-        "test_final_helper_alias_parent_methods_override",
-        "test_final_helper_alias_element_methods_override",
-        "test_final_helper_alias_parent_methods_transitive_override",
-        "test_final_helper_alias_element_methods_transitive_override",
-    ],
-)
 def test_incremental_determinism():
     """Plugin behavior is deterministic under mypy incremental mode.
 
