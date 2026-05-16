@@ -190,6 +190,11 @@ class SageCategoryPlugin(Plugin):
                 ti,
                 materialize=True,
             )
+            if (
+                self._ensure_projected_base_mro(ctx, ti, {info.fullname})
+                and not ctx.api.final_iteration
+            ):
+                deferred = True
             base_tis.append(ti)
 
         if deferred:
@@ -229,6 +234,66 @@ class SageCategoryPlugin(Plugin):
         info.bases = retained_bases
         info.mro = []
         calculate_mro(info)
+
+    def _ensure_projected_base_mro(
+        self,
+        ctx: ClassDefContext,
+        info: TypeInfo,
+        seen: set[str],
+    ) -> bool:
+        if info.fullname in seen:
+            return False
+        seen.add(info.fullname)
+        if _has_explicit_non_object_base(info):
+            return False
+
+        projection = self._resolve_projection(ctx, info.fullname)
+        if projection is None or not projection.static_bases:
+            return False
+
+        retained_bases = [
+            base for base in info.bases if base.type.fullname != "builtins.object"
+        ]
+        base_tis: list[TypeInfo] = []
+        deferred = False
+        for base_fn in projection.static_bases:
+            ti = _lookup_typeinfo(ctx, base_fn)
+            if ti is None:
+                if not ctx.api.final_iteration:
+                    deferred = True
+                continue
+            _recover_method_helper_bindings(
+                ctx.api,
+                ctx.api.modules.get(ti.module_name),
+                ti,
+                materialize=True,
+            )
+            if self._ensure_projected_base_mro(ctx, ti, seen):
+                deferred = True
+            base_tis.append(ti)
+
+        if deferred:
+            return True
+
+        base_tis = [
+            ti for ti in base_tis
+            if ti.fullname != info.fullname
+            and info not in getattr(ti, "mro", [])[1:]
+        ]
+        base_tis = _prune_redundant_projected_bases(base_tis, retained_bases)
+        existing_bases = {base.type.fullname for base in retained_bases}
+        for ti in base_tis:
+            if ti.fullname in existing_bases:
+                continue
+            retained_bases.append(fill_typevars(ti))
+            existing_bases.add(ti.fullname)
+
+        if not retained_bases:
+            return False
+        info.bases = retained_bases
+        info.mro = []
+        calculate_mro(info)
+        return False
 
     def _category_base_hook(self, ctx: ClassDefContext) -> None:
         module = ctx.api.modules.get(ctx.cls.info.module_name)

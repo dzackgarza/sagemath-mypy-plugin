@@ -19,6 +19,7 @@ Surfaces covered:
     __classcall_private__ kwargs   — test_plugin_classcall_private_kwargs_correctness
     Operator surfaces          — test_plugin_operator_surfaces_correctness
     Covariant return narrowing — test_plugin_covariant_return_narrowing_correctness
+    Transitive covariant return narrowing — test_plugin_transitive_covariant_return_narrowing_correctness
     _with_axiom attribute      — test_plugin_with_axiom_correctness
     Covariant container assignment — test_plugin_covariant_assignment_correctness
 """
@@ -130,6 +131,11 @@ def test_plugin_operator_surfaces_correctness() -> None:
 def test_plugin_covariant_return_narrowing_correctness() -> None:
     """Covariant ParentMethods return narrowing must not produce [return-value]."""
     _assert_clean_conjunction("test_covariant_return_narrowing", "[return-value]")
+
+
+def test_plugin_transitive_covariant_return_narrowing_correctness() -> None:
+    """Transitive semantic ParentMethods bases must support covariant returns."""
+    _assert_clean_conjunction("test_transitive_covariant_return_narrowing", "[return-value]")
 
 
 def test_plugin_parentmethods_override_correctness() -> None:
