@@ -153,12 +153,27 @@ class SageCategoryPlugin(Plugin):
             return
 
         projection = self._resolve_projection(ctx, fullname)
+        construction_bases = _construction_owner_method_container_bases(ctx, info)
+        if "test_construction_extra_super_category_methods" in fullname:
+            ctx.api.fail(f"DEBUG construction_bases={construction_bases}", ctx.cls)
         if projection is None:
             value_dependent_bases = _completion_self_return_base_tis(ctx, ctx.cls, info)
-            if value_dependent_bases:
+            if construction_bases:
+                pass
+            elif value_dependent_bases:
                 base_tis = value_dependent_bases
             elif (
                 _has_completion_self_return(ctx.cls, info)
+                and not ctx.api.final_iteration
+            ):
+                ctx.api.defer()
+                return
+            elif (
+                _method_container_enclosing_class_defines(
+                    ctx,
+                    info,
+                    "extra_super_categories",
+                )
                 and not ctx.api.final_iteration
             ):
                 ctx.api.defer()
@@ -201,7 +216,11 @@ class SageCategoryPlugin(Plugin):
 
         base_tis: list = list(value_dependent_bases)
         deferred = False
-        for base_fn in (projection.static_bases if projection is not None else ()):
+        static_base_fns = (
+            tuple(construction_bases)
+            + (projection.static_bases if projection is not None else ())
+        )
+        for base_fn in static_base_fns:
             ti = _lookup_typeinfo(ctx, base_fn)
             if ti is None:
                 if ctx.api.final_iteration:
@@ -499,6 +518,71 @@ def _resolve_python_category_method_container_bases(
         if ti is not None:
             bases.append(ti.fullname)
     return tuple(dict.fromkeys(bases))
+
+
+def _construction_owner_method_container_bases(
+    ctx: ClassDefContext,
+    info: TypeInfo,
+) -> tuple[str, ...]:
+    if info.name not in _METHOD_KINDS:
+        return ()
+    enclosing = _lookup_enclosing_category_typeinfo(ctx, info)
+    if enclosing is None:
+        return ()
+    bases: list[str] = []
+    for module in getattr(ctx.api, "modules", {}).values():
+        module_defs = getattr(getattr(module, "defs", None), "body", ())
+        for statement in module_defs:
+            if not isinstance(statement, ClassDef):
+                continue
+            if not _class_assigns_construction_category(statement, enclosing):
+                continue
+            owner_fullname = statement.fullname or ".".join(
+                part
+                for part in (getattr(module, "fullname", ""), statement.name)
+                if part
+            )
+            ti = _class_method_container_typeinfo(statement, info.name)
+            if ti is None:
+                container_fn = f"{owner_fullname}.{info.name}"
+                ti = _lookup_typeinfo(ctx, container_fn)
+            if ti is not None:
+                bases.append(ti.fullname)
+    return tuple(dict.fromkeys(bases))
+
+
+def _method_container_enclosing_class_defines(
+    ctx: ClassDefContext,
+    info: TypeInfo,
+    name: str,
+) -> bool:
+    enclosing = _lookup_enclosing_category_typeinfo(ctx, info)
+    return enclosing is not None and _class_body_defines(enclosing.defn, name)
+
+
+def _class_assigns_construction_category(
+    owner: ClassDef,
+    construction: TypeInfo,
+) -> bool:
+    for statement in owner.defs.body:
+        if not isinstance(statement, AssignmentStmt) or len(statement.lvalues) != 1:
+            continue
+        target = statement.lvalues[0]
+        if not isinstance(target, NameExpr):
+            continue
+        if target.name not in _CONSTRUCTION_SELECTOR_NAMES:
+            continue
+        assigned = _typeinfo_from_symbol_node(getattr(statement.rvalue, "node", None))
+        if assigned is construction:
+            return True
+    return False
+
+
+def _class_method_container_typeinfo(owner: ClassDef, kind: str) -> TypeInfo | None:
+    symbol = owner.info.names.get(kind)
+    if symbol is None:
+        return None
+    return _typeinfo_from_symbol_node(symbol.node)
 
 
 def _projection_with_static_bases(projection: Any, static_bases: tuple[str, ...]) -> Any:
