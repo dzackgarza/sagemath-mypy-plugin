@@ -154,8 +154,6 @@ class SageCategoryPlugin(Plugin):
 
         projection = self._resolve_projection(ctx, fullname)
         construction_bases = _construction_owner_method_container_bases(ctx, info)
-        if "test_construction_extra_super_category_methods" in fullname:
-            ctx.api.fail(f"DEBUG construction_bases={construction_bases}", ctx.cls)
         if projection is None:
             value_dependent_bases = _completion_self_return_base_tis(ctx, ctx.cls, info)
             if construction_bases:
@@ -531,8 +529,11 @@ def _construction_owner_method_container_bases(
         return ()
     bases: list[str] = []
     for module in getattr(ctx.api, "modules", {}).values():
-        module_defs = getattr(getattr(module, "defs", None), "body", ())
-        for statement in module_defs:
+        module_defs = getattr(module, "defs", None)
+        if module_defs is None:
+            continue
+        module_body = module_defs.body if hasattr(module_defs, "body") else module_defs
+        for statement in module_body:
             if not isinstance(statement, ClassDef):
                 continue
             if not _class_assigns_construction_category(statement, enclosing):
