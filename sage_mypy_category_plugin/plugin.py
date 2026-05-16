@@ -329,6 +329,7 @@ class SageCategoryPlugin(Plugin):
         module = ctx.api.modules.get(ctx.cls.info.module_name)
         if module is None:
             return
+        _materialize_construction_selector_methods(ctx, ctx.cls.info)
         _inject_class_body_method_container_bases(ctx, ctx.cls.info, module)
 
     def _resolve_projection(self, ctx: ClassDefContext, fullname: str) -> Any | None:
@@ -402,6 +403,17 @@ class SageCategoryPlugin(Plugin):
 
 _METHOD_KINDS = frozenset({
     "ParentMethods", "ElementMethods", "MorphismMethods", "SubcategoryMethods",
+})
+_CONSTRUCTION_SELECTOR_NAMES = frozenset({
+    "Subobjects",
+    "Quotients",
+    "Subquotients",
+    "ObjectsOver",
+    "ObjectsUnder",
+    "CartesianProducts",
+    "HomCategory",
+    "EndCategory",
+    "AutCategory",
 })
 
 def _looks_like_method_container(fullname: str) -> bool:
@@ -604,6 +616,40 @@ def _materialize_operator_helpers(ctx: ClassDefContext, info: TypeInfo) -> None:
             [ctx.api.named_type("builtins.object")],
             ctx.api.named_type("builtins.bool"),
         )
+
+
+def _materialize_construction_selector_methods(
+    ctx: ClassDefContext,
+    info: TypeInfo,
+) -> None:
+    for statement in ctx.cls.defs.body:
+        if not isinstance(statement, AssignmentStmt) or len(statement.lvalues) != 1:
+            continue
+        target = statement.lvalues[0]
+        if not isinstance(target, NameExpr):
+            continue
+        name = target.name
+        if name not in _CONSTRUCTION_SELECTOR_NAMES:
+            continue
+        construction_info = _typeinfo_from_symbol_node(
+            getattr(statement.rvalue, "node", None)
+        )
+        if construction_info is None:
+            continue
+        if not _looks_like_category_constructor(construction_info.fullname):
+            continue
+        method_type = CallableType(
+            [],
+            [],
+            [],
+            fill_typevars(construction_info),
+            ctx.api.named_type("builtins.function"),
+            name=name,
+        )
+        var = Var(name, method_type)
+        var.info = info
+        var._fullname = f"{info.fullname}.{name}"
+        info.names[name] = SymbolTableNode(MDEF, var, plugin_generated=True)
 
 
 def _materialize_method(

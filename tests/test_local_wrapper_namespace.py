@@ -16,6 +16,7 @@ Surfaces covered:
     cached_method decorator    — test_plugin_cached_method_decorator_correctness
     Constructors zero-arg      — test_plugin_constructors_zero_arg_correctness
     FunctorialConstruction zero-arg — test_plugin_functorial_construction_zero_arg_correctness
+    Construction selector class attribute — test_plugin_construction_selector_class_attribute_correctness
     __classcall_private__ kwargs   — test_plugin_classcall_private_kwargs_correctness
     Operator surfaces          — test_plugin_operator_surfaces_correctness
     Covariant return narrowing — test_plugin_covariant_return_narrowing_correctness
@@ -117,6 +118,11 @@ def test_plugin_constructors_zero_arg_correctness() -> None:
 def test_plugin_functorial_construction_zero_arg_correctness() -> None:
     """FunctorialConstructionCategory zero-arg call must not produce [call-arg]."""
     _assert_clean_conjunction("test_functorial_construction_zero_arg", "[call-arg]")
+
+
+def test_plugin_construction_selector_class_attribute_correctness() -> None:
+    """Construction class attributes must type as zero-arg category selectors."""
+    _assert_clean_conjunction("test_construction_selector_class_attribute", "[call-arg]")
 
 
 def test_plugin_classcall_private_kwargs_correctness() -> None:
