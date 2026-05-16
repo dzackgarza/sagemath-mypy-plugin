@@ -22,22 +22,34 @@ from mypy.nodes import (
     ARG_OPT,
     ARG_NAMED_OPT,
     AssignmentStmt,
+    Block,
     CallExpr,
     ClassDef,
     Decorator,
     IS_ABSTRACT,
+    IfStmt,
     MDEF,
     MemberExpr,
     NameExpr,
     RefExpr,
+    ReturnStmt,
     SymbolTableNode,
+    TypeAlias,
     TypeInfo,
     FuncDef,
     OverloadedFuncDef,
     Var,
 )
 from mypy.plugin import Plugin, ClassDefContext
-from mypy.types import CallableType, Instance, Overloaded, Parameters, TypeType, get_proper_type
+from mypy.types import (
+    CallableType,
+    Instance,
+    Overloaded,
+    Parameters,
+    TypeType,
+    UnboundType,
+    get_proper_type,
+)
 from mypy.typevars import fill_typevars
 
 
@@ -142,13 +154,25 @@ class SageCategoryPlugin(Plugin):
 
         projection = self._resolve_projection(ctx, fullname)
         if projection is None:
-            if ctx.api.final_iteration:
+            value_dependent_bases = _completion_self_return_base_tis(ctx, ctx.cls, info)
+            if value_dependent_bases:
+                base_tis = value_dependent_bases
+            elif (
+                _has_completion_self_return(ctx.cls, info)
+                and not ctx.api.final_iteration
+            ):
+                ctx.api.defer()
+                return
+            elif ctx.api.final_iteration:
                 _inject_postbind_helper_bases(ctx, info, fullname)
             elif module is not None and _class_is_postbind_helper(module, fullname):
                 ctx.api.defer()
-            return
+            else:
+                return
+        else:
+            value_dependent_bases = _completion_self_return_base_tis(ctx, ctx.cls, info)
 
-        if projection.unmapped_dynamic_bases and self._strict:
+        if projection is not None and projection.unmapped_dynamic_bases and self._strict:
             for base in projection.unmapped_dynamic_bases:
                 ctx.api.fail(
                     f"Sage dynamic base has no source method container: {base}",
@@ -156,7 +180,7 @@ class SageCategoryPlugin(Plugin):
                     code=SAGE_CATEGORY_BASE_UNMAPPED,
                 )
 
-        if not projection.static_bases:
+        if projection is not None and not projection.static_bases:
             enclosing_cat = _lookup_enclosing_category_typeinfo(ctx, info)
             if enclosing_cat is not None:
                 fallback_bases = _resolve_python_category_method_container_bases(
@@ -164,14 +188,20 @@ class SageCategoryPlugin(Plugin):
                 )
             else:
                 fallback_bases = ()
-            if not fallback_bases:
+            if not fallback_bases and not value_dependent_bases:
+                if (
+                    _has_completion_self_return(ctx.cls, info)
+                    and not ctx.api.final_iteration
+                ):
+                    ctx.api.defer()
+                    return
                 return
             # Override projection with Python-MRO-resolved bases.
             projection = _projection_with_static_bases(projection, fallback_bases)
 
-        base_tis: list = []
+        base_tis: list = list(value_dependent_bases)
         deferred = False
-        for base_fn in projection.static_bases:
+        for base_fn in (projection.static_bases if projection is not None else ()):
             ti = _lookup_typeinfo(ctx, base_fn)
             if ti is None:
                 if ctx.api.final_iteration:
@@ -623,6 +653,14 @@ def _walk_chain(container: Any, name_chain: str) -> Any | None:
 def _typeinfo_from_symbol_node(node: Any) -> TypeInfo | None:
     if isinstance(node, TypeInfo):
         return node
+    if isinstance(node, TypeAlias):
+        target = get_proper_type(node.target)
+        if isinstance(target, Instance):
+            return target.type
+        if isinstance(target, TypeType):
+            item = get_proper_type(target.item)
+            if isinstance(item, Instance):
+                return item.type
     if not isinstance(node, Var) or node.type is None:
         return None
     typ = get_proper_type(node.type)
@@ -853,6 +891,83 @@ def _filter_method_container_untyped_decorator_errors(errors: Any, module: Any) 
             errors.error_info_map[path] = filtered
         else:
             del errors.error_info_map[path]
+
+
+def _completion_self_return_base_tis(
+    ctx: ClassDefContext,
+    cls: ClassDef,
+    info: TypeInfo,
+) -> list[TypeInfo]:
+    if not _looks_like_method_container(info.name):
+        return []
+    base_tis: list[TypeInfo] = []
+    for statement in cls.defs.body:
+        func = statement.func if isinstance(statement, Decorator) else statement
+        if not isinstance(func, FuncDef) or func.name != "completion":
+            continue
+        if not _has_self_return(func.body):
+            continue
+        typ = get_proper_type(func.type)
+        if not isinstance(typ, CallableType):
+            continue
+        ti = _completion_return_typeinfo(ctx, info, typ)
+        if ti is None:
+            continue
+        if ti.fullname != info.fullname and _looks_like_method_container(ti.name):
+            _recover_method_helper_bindings(
+                ctx.api,
+                ctx.api.modules.get(ti.module_name),
+                ti,
+                materialize=True,
+            )
+            base_tis.append(ti)
+    return _prune_redundant_projected_bases(base_tis, [])
+
+
+def _completion_return_typeinfo(
+    ctx: ClassDefContext,
+    info: TypeInfo,
+    typ: CallableType,
+) -> TypeInfo | None:
+    ret = get_proper_type(typ.ret_type)
+    if isinstance(ret, Instance):
+        return ret.type
+    if isinstance(ret, UnboundType):
+        return (
+            _lookup_typeinfo(ctx, f"{info.module_name}.{ret.name}")
+            or _lookup_typeinfo(ctx, ret.name)
+        )
+    return None
+
+
+def _has_completion_self_return(cls: ClassDef, info: TypeInfo) -> bool:
+    if not _looks_like_method_container(info.name):
+        return False
+    for statement in cls.defs.body:
+        func = statement.func if isinstance(statement, Decorator) else statement
+        if isinstance(func, FuncDef) and func.name == "completion":
+            return _has_self_return(func.body)
+    return False
+
+
+def _has_self_return(node: Any) -> bool:
+    body = node.body if isinstance(node, Block) else getattr(node, "body", [])
+    for statement in body:
+        if isinstance(statement, ReturnStmt):
+            expr = statement.expr
+            if isinstance(expr, NameExpr) and expr.name == "self":
+                return True
+        elif isinstance(statement, IfStmt):
+            for nested in statement.body:
+                if _has_self_return(nested):
+                    return True
+            if statement.else_body is not None:
+                if _has_self_return(statement.else_body):
+                    return True
+        elif isinstance(statement, Block):
+            if _has_self_return(statement):
+                return True
+    return False
 
 
 def _method_container_decorated_method_lines(module: Any) -> tuple[int, ...]:

@@ -131,6 +131,7 @@ error output.
 | `__classcall_private__` kwargs | RED | `__classcall_private__` dispatch hook (teach) |
 | Operator `__contains__`/`__ne__` | RED | Inject dunders into TypeInfo (teach) |
 | Covariant return narrowing | RED | Declare subtype in MRO (teach) |
+| Value-dependent completion self return | GREEN | Declare self-return result container in MRO (teach) |
 | `_with_axiom` attribute | RED | Inject attribute into TypeInfo (teach) |
 | Covariant container assignment | RED | Declare method container covariance (teach) |
 | Postbind assignment (helper aliases) | SUPPRESSED | Replace with covariance teaching (see registry) |
