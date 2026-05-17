@@ -43,10 +43,12 @@ from mypy.nodes import (
 )
 from mypy.plugin import Plugin, ClassDefContext
 from mypy.types import (
+    AnyType,
     CallableType,
     Instance,
     Overloaded,
     Parameters,
+    TypeOfAny,
     TypeType,
     UnboundType,
     get_proper_type,
@@ -114,6 +116,11 @@ class SageCategoryPlugin(Plugin):
             return self._constructors_signature_hook
         if _could_be_sage_category_constructor_name(short):
             return lambda ctx: self._category_constructor_signature_hook(ctx, fullname)
+        return None
+
+    def get_type_analyze_hook(self, fullname: str) -> Callable | None:
+        if fullname.rsplit(".", 1)[-1] in _METHOD_KINDS:
+            return lambda ctx: self._method_container_alias_type_analyze_hook(ctx, fullname)
         return None
 
     def get_method_signature_hook(self, fullname: str) -> Callable | None:
@@ -403,6 +410,26 @@ class SageCategoryPlugin(Plugin):
         if not _is_mypy_sage_category_fullname(ctx.api, fullname):
             return ctx.default_signature
         return _sage_constructor_signature(ctx.default_signature, ctx.api)
+
+    def _method_container_alias_type_analyze_hook(self, ctx: Any, fullname: str) -> Any:
+        provider = _method_container_alias_provider_typeinfo(ctx.api, fullname)
+        if provider is None:
+            provider_fullname = _method_container_alias_provider_fullname(
+                ctx.api,
+                fullname,
+            )
+            if provider_fullname is None and not self._strict:
+                return ctx.api.named_type("builtins.object", [])
+            if self._strict:
+                target = provider_fullname or fullname
+                ctx.api.fail(
+                    f"Sage method-container alias has no loaded class provider: {target}",
+                    ctx.context,
+                    code=SAGE_CATEGORY_TYPEINFO_MISSING,
+                )
+                return AnyType(TypeOfAny.from_error)
+            return AnyType(TypeOfAny.special_form)
+        return _instance_for_typeinfo(provider)
 
     def _load_config(self, config_file: str | None) -> None:
         if not config_file:
@@ -909,6 +936,110 @@ def _typeinfo_from_symbol_node(node: Any) -> TypeInfo | None:
         item = get_proper_type(typ.item)
         if isinstance(item, Instance):
             return item.type
+    return None
+
+
+def _lookup_symbol_typeinfo(api: Any, fullname: str) -> TypeInfo | None:
+    symbol = api.lookup_fully_qualified(fullname)
+    return _typeinfo_from_symbol_node(symbol.node)
+
+
+def _instance_for_typeinfo(info: TypeInfo) -> Instance:
+    any_type = AnyType(TypeOfAny.special_form)
+    return Instance(info, [any_type] * len(info.defn.type_vars))
+
+
+def _method_container_alias_provider_typeinfo(
+    api: Any,
+    fullname: str,
+) -> TypeInfo | None:
+    source = _lookup_symbol_typeinfo(api, fullname)
+    if source is not None and source.fullname == fullname:
+        return source
+
+    owner_fullname, _, method_kind = fullname.rpartition(".")
+    if not owner_fullname or method_kind not in _METHOD_KINDS:
+        return source
+
+    owner = _lookup_symbol_typeinfo(api, owner_fullname)
+    if owner is None:
+        return source
+
+    provider = _assigned_method_container_typeinfo(api, owner, method_kind)
+    if provider is None:
+        return source
+
+    owner.names[method_kind] = SymbolTableNode(
+        MDEF,
+        provider,
+        plugin_generated=True,
+    )
+    return provider
+
+
+def _method_container_alias_provider_fullname(
+    api: Any,
+    fullname: str,
+) -> str | None:
+    owner_fullname, _, method_kind = fullname.rpartition(".")
+    if not owner_fullname or method_kind not in _METHOD_KINDS:
+        return None
+
+    owner = _lookup_symbol_typeinfo(api, owner_fullname)
+    if owner is None:
+        return None
+    return _assigned_method_container_fullname(owner, method_kind)
+
+
+def _assigned_method_container_typeinfo(
+    api: Any,
+    owner: TypeInfo,
+    method_kind: str,
+) -> TypeInfo | None:
+    symbol = owner.names.get(method_kind)
+    if symbol is not None:
+        provider = _typeinfo_from_symbol_node(symbol.node)
+        if provider is not None:
+            return provider
+
+    for statement in getattr(owner.defn.defs, "body", ()):
+        if not isinstance(statement, AssignmentStmt) or len(statement.lvalues) != 1:
+            continue
+        target = statement.lvalues[0]
+        if not isinstance(target, NameExpr) or target.name != method_kind:
+            continue
+        provider = _typeinfo_from_symbol_node(getattr(statement.rvalue, "node", None))
+        if provider is not None:
+            return provider
+        helper_name = _assigned_method_container_name(statement.rvalue)
+        if helper_name is None:
+            continue
+        return _lookup_symbol_typeinfo(api, f"{owner.module_name}.{helper_name}")
+    return None
+
+
+def _assigned_method_container_fullname(
+    owner: TypeInfo,
+    method_kind: str,
+) -> str | None:
+    symbol = owner.names.get(method_kind)
+    if symbol is not None:
+        provider = _typeinfo_from_symbol_node(symbol.node)
+        if provider is not None:
+            return provider.fullname
+
+    for statement in getattr(owner.defn.defs, "body", ()):
+        if not isinstance(statement, AssignmentStmt) or len(statement.lvalues) != 1:
+            continue
+        target = statement.lvalues[0]
+        if not isinstance(target, NameExpr) or target.name != method_kind:
+            continue
+        provider = _typeinfo_from_symbol_node(getattr(statement.rvalue, "node", None))
+        if provider is not None:
+            return provider.fullname
+        helper_name = _assigned_method_container_name(statement.rvalue)
+        if helper_name is not None:
+            return f"{owner.module_name}.{helper_name}"
     return None
 
 
@@ -1639,6 +1770,11 @@ def _inject_class_body_method_container_bases(
         if helper_ti is None:
             continue
         method_kind = target.name
+        owner_info.names[method_kind] = SymbolTableNode(
+            MDEF,
+            helper_ti,
+            plugin_generated=True,
+        )
         for base in getattr(owner_info, "mro", [])[1:]:
             if base.fullname == "builtins.object":
                 break

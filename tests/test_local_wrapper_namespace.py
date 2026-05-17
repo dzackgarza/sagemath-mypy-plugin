@@ -27,6 +27,8 @@ Surfaces covered:
     _with_axiom attribute      — test_plugin_with_axiom_correctness
     Method-container receiver self surfaces — test_plugin_receiver_self_surface_correctness
     Aliased receiver self surfaces — test_plugin_alias_receiver_self_surface_correctness
+    Aliased provider type aliases — test_plugin_alias_provider_type_alias_correctness
+    Cross-module aliased provider type aliases — test_plugin_cross_module_alias_provider_type_alias_correctness
     Covariant container assignment — test_plugin_covariant_assignment_correctness
 """
 from __future__ import annotations
@@ -304,6 +306,19 @@ def test_plugin_receiver_self_surface_correctness() -> None:
 def test_plugin_alias_receiver_self_surface_correctness() -> None:
     """Aliased ParentMethods providers may use receiver methods declared on their category."""
     _assert_clean_conjunction("test_alias_receiver_self_surface", "[attr-defined]")
+
+
+def test_plugin_alias_provider_type_alias_correctness() -> None:
+    """Type aliases to aliased ParentMethods providers expose provider methods."""
+    _assert_clean_conjunction("test_alias_provider_type_alias", "[attr-defined]")
+
+
+def test_plugin_cross_module_alias_provider_type_alias_correctness() -> None:
+    """Type aliases to imported aliased ParentMethods providers expose provider methods."""
+    _assert_clean_conjunction(
+        "test_cross_module_alias_provider_type_alias",
+        "[attr-defined]",
+    )
 
 
 def test_plugin_covariant_assignment_correctness() -> None:
