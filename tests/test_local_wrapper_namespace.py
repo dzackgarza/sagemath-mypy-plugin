@@ -12,6 +12,7 @@ Surfaces covered:
     MorphismMethods @override  — test_plugin_morphismmethods_override_correctness
     Helper-alias @override     — test_plugin_helper_alias_override_correctness
     Construction extra-super @override — test_plugin_construction_extra_super_correctness
+    Cross-module construction alias provider — test_plugin_cross_module_construction_alias_provider_correctness
     @final method binding      — test_plugin_final_method_binding_correctness
     @abstractmethod binding    — test_plugin_abstract_method_binding_correctness
     cached_method decorator    — test_plugin_cached_method_decorator_correctness
@@ -266,6 +267,14 @@ def test_plugin_construction_extra_super_correctness() -> None:
     _assert_override_conjunction(
         "test_construction_extra_super_category_methods",
         "test_invalid_override",
+    )
+
+
+def test_plugin_cross_module_construction_alias_provider_correctness() -> None:
+    """Construction extra-super bases may be imported ParentMethods aliases."""
+    _assert_clean_conjunction(
+        "test_cross_module_construction_alias_provider",
+        "[attr-defined]",
     )
 
 
