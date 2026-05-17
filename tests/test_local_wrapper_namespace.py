@@ -28,6 +28,9 @@ Surfaces covered:
     Method-container receiver self surfaces — test_plugin_receiver_self_surface_correctness
     Aliased receiver self surfaces — test_plugin_alias_receiver_self_surface_correctness
     Exact module import under suffix collision — test_plugin_exact_module_collision_correctness
+    Static axiom base receiver self surfaces — test_plugin_static_axiom_base_receiver_self_correctness
+    Static construction selectors avoid runtime import — test_plugin_static_construction_selector_no_runtime_import_correctness
+    Runtime construction selector import failures stay diagnostic — test_plugin_runtime_construction_selector_import_failure_correctness
     Aliased provider type aliases — test_plugin_alias_provider_type_alias_correctness
     Cross-module aliased provider type aliases — test_plugin_cross_module_alias_provider_type_alias_correctness
     Covariant container assignment — test_plugin_covariant_assignment_correctness
@@ -314,6 +317,30 @@ def test_plugin_exact_module_collision_correctness() -> None:
     _assert_override_conjunction(
         "test_exact_module_collision_override",
         "test_invalid_override",
+    )
+
+
+def test_plugin_static_axiom_base_receiver_self_correctness() -> None:
+    """Axiom metadata supplies semantic bases when runtime projection is unavailable."""
+    _assert_override_conjunction(
+        "test_static_axiom_base_receiver_self",
+        "test_invalid_override",
+    )
+
+
+def test_plugin_static_construction_selector_no_runtime_import_correctness() -> None:
+    """Construction selector classification should not execute analyzed modules."""
+    _assert_clean_conjunction(
+        "test_static_construction_selector_no_runtime_import",
+        "[call-arg]",
+    )
+
+
+def test_plugin_runtime_construction_selector_import_failure_correctness() -> None:
+    """Runtime classification failures should not become mypy internal errors."""
+    _assert_error_with_and_without_plugin(
+        "test_runtime_construction_selector_import_failure",
+        "[call-arg]",
     )
 
 

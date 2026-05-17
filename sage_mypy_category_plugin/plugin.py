@@ -37,6 +37,7 @@ from mypy.nodes import (
     SymbolTableNode,
     TypeAlias,
     TypeInfo,
+    TupleExpr,
     FuncDef,
     OverloadedFuncDef,
     Var,
@@ -171,24 +172,30 @@ class SageCategoryPlugin(Plugin):
             return
 
         projection = self._resolve_projection(ctx, fullname)
+        static_base_fns: tuple[str, ...] = ()
         if projection is None:
             value_dependent_bases = _completion_self_return_base_tis(ctx, ctx.cls, info)
-            if value_dependent_bases:
-                base_tis = value_dependent_bases
-            elif (
-                _has_completion_self_return(ctx.cls, info)
-                and not ctx.api.final_iteration
-            ):
-                ctx.api.defer()
-                return
-            elif ctx.api.final_iteration:
-                _inject_postbind_helper_bases(ctx, info, fullname)
-            elif module is not None and _class_is_postbind_helper(module, fullname):
-                ctx.api.defer()
-            else:
-                return
+            if not value_dependent_bases:
+                static_base_fns = _resolve_static_category_method_container_bases(
+                    ctx,
+                    info,
+                )
+            if not value_dependent_bases and not static_base_fns:
+                if (
+                    _has_completion_self_return(ctx.cls, info)
+                    and not ctx.api.final_iteration
+                ):
+                    ctx.api.defer()
+                    return
+                if ctx.api.final_iteration:
+                    _inject_postbind_helper_bases(ctx, info, fullname)
+                elif module is not None and _class_is_postbind_helper(module, fullname):
+                    ctx.api.defer()
+                else:
+                    return
         else:
             value_dependent_bases = _completion_self_return_base_tis(ctx, ctx.cls, info)
+            static_base_fns = projection.static_bases
 
         if projection is not None and projection.unmapped_dynamic_bases and self._strict:
             for base in projection.unmapped_dynamic_bases:
@@ -199,13 +206,7 @@ class SageCategoryPlugin(Plugin):
                 )
 
         if projection is not None and not projection.static_bases:
-            enclosing_cat = _lookup_enclosing_category_typeinfo(ctx, info)
-            if enclosing_cat is not None:
-                fallback_bases = _resolve_python_category_method_container_bases(
-                    ctx, enclosing_cat, info.name
-                )
-            else:
-                fallback_bases = ()
+            fallback_bases = _resolve_static_category_method_container_bases(ctx, info)
             if not fallback_bases and not value_dependent_bases:
                 if (
                     _has_completion_self_return(ctx.cls, info)
@@ -216,10 +217,11 @@ class SageCategoryPlugin(Plugin):
                 return
             # Override projection with Python-MRO-resolved bases.
             projection = _projection_with_static_bases(projection, fallback_bases)
+            static_base_fns = projection.static_bases
 
         base_tis: list = list(value_dependent_bases)
         deferred = False
-        for base_fn in (projection.static_bases if projection is not None else ()):
+        for base_fn in static_base_fns:
             ti = _lookup_typeinfo(ctx, base_fn)
             if ti is None:
                 if ctx.api.final_iteration:
@@ -580,6 +582,49 @@ def _resolve_python_category_method_container_bases(
     return tuple(dict.fromkeys(bases))
 
 
+def _resolve_static_category_method_container_bases(
+    ctx: ClassDefContext,
+    info: TypeInfo,
+) -> tuple[str, ...]:
+    enclosing_cat = _lookup_enclosing_category_typeinfo(ctx, info)
+    if enclosing_cat is None:
+        return ()
+    bases: list[str] = []
+    axiom_base = _axiom_base_category_typeinfo(enclosing_cat)
+    if axiom_base is not None:
+        container_fn = f"{axiom_base.fullname}.{info.name}"
+        ti = _lookup_typeinfo(ctx, container_fn)
+        if ti is not None:
+            bases.append(ti.fullname)
+    bases.extend(
+        _resolve_python_category_method_container_bases(ctx, enclosing_cat, info.name)
+    )
+    return tuple(dict.fromkeys(bases))
+
+
+def _axiom_base_category_typeinfo(info: TypeInfo) -> TypeInfo | None:
+    for statement in getattr(info.defn.defs, "body", ()):
+        if not isinstance(statement, AssignmentStmt) or len(statement.lvalues) != 1:
+            continue
+        target = statement.lvalues[0]
+        if not (
+            isinstance(target, NameExpr)
+            and target.name == "_base_category_class_and_axiom"
+        ):
+            continue
+        rvalue = statement.rvalue
+        if not isinstance(rvalue, TupleExpr) or not rvalue.items:
+            continue
+        return _typeinfo_from_expr(rvalue.items[0])
+    return None
+
+
+def _typeinfo_from_expr(expr: Any) -> TypeInfo | None:
+    if isinstance(expr, RefExpr):
+        return _typeinfo_from_symbol_node(expr.node)
+    return _typeinfo_from_symbol_node(getattr(expr, "node", None))
+
+
 def _projection_with_static_bases(projection: Any, static_bases: tuple[str, ...]) -> Any:
     """Return a shallow copy of *projection* with *static_bases* replaced."""
     from dataclasses import replace
@@ -846,7 +891,7 @@ def _materialize_construction_selector_methods(
         )
         if construction_info is None:
             continue
-        if not _is_sage_category_typeinfo(construction_info) and not (
+        if not _looks_like_sage_category_typeinfo(construction_info) and not (
             _is_runtime_sage_category_fullname(construction_info.fullname)
         ):
             continue
@@ -890,7 +935,15 @@ def _materialize_method(
 def _is_runtime_sage_category_fullname(fullname: str) -> bool:
     from sage_mypy_category_plugin.introspection import is_sage_category_fullname
 
-    return is_sage_category_fullname(fullname)
+    try:
+        return is_sage_category_fullname(fullname)
+    except Exception:
+        _LOG.debug(
+            "Runtime Sage category classification failed for %s",
+            fullname,
+            exc_info=True,
+        )
+        return False
 
 
 def _class_body_defines(cls: ClassDef, name: str) -> bool:
