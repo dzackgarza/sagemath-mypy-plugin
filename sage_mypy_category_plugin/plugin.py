@@ -625,11 +625,10 @@ def _base_alias_candidate_names(short_name: str) -> tuple[str, ...]:
 
 
 def _has_receiver_self_methods(ctx: ClassDefContext, info: TypeInfo) -> bool:
-    if info.name not in {"ParentMethods", "ElementMethods", "SubcategoryMethods"}:
+    target = _receiver_self_target(ctx, info)
+    if target is None:
         return False
-    owner = _lookup_enclosing_category_typeinfo(ctx, info)
-    if owner is None:
-        return False
+    owner = target
     for name in _RECEIVER_SELF_METHODS:
         if name not in info.names and not _class_body_defines(ctx.cls, name):
             if _receiver_method_type(ctx, owner, name) is not None:
@@ -639,11 +638,10 @@ def _has_receiver_self_methods(ctx: ClassDefContext, info: TypeInfo) -> bool:
 
 def _materialize_receiver_self_methods(ctx: ClassDefContext, info: TypeInfo) -> None:
     """Expose selected category receiver methods on method-container ``self``."""
-    if info.name not in {"ParentMethods", "ElementMethods", "SubcategoryMethods"}:
+    target = _receiver_self_target(ctx, info)
+    if target is None:
         return
-    owner = _lookup_enclosing_category_typeinfo(ctx, info)
-    if owner is None:
-        return
+    owner = target
     for name in _RECEIVER_SELF_METHODS:
         if name in info.names or _class_body_defines(ctx.cls, name):
             continue
@@ -654,6 +652,43 @@ def _materialize_receiver_self_methods(ctx: ClassDefContext, info: TypeInfo) -> 
         var.info = info
         var._fullname = f"{info.fullname}.{name}"
         info.names[name] = SymbolTableNode(MDEF, var, plugin_generated=True)
+
+
+def _receiver_self_target(
+    ctx: ClassDefContext,
+    info: TypeInfo,
+) -> TypeInfo | None:
+    if info.name in {"ParentMethods", "ElementMethods", "SubcategoryMethods"}:
+        owner = _lookup_enclosing_category_typeinfo(ctx, info)
+        if owner is not None:
+            return owner
+    return _lookup_alias_receiver_self_target(ctx, info)
+
+
+def _lookup_alias_receiver_self_target(
+    ctx: ClassDefContext,
+    info: TypeInfo,
+) -> TypeInfo | None:
+    module = ctx.api.modules.get(info.module_name)
+    if module is None:
+        return None
+    helper_name = info.name
+    module_fullname = getattr(module, "fullname", "")
+    for owner_def in _module_statements(module):
+        if not isinstance(owner_def, ClassDef):
+            continue
+        for statement in owner_def.defs.body:
+            if not isinstance(statement, AssignmentStmt) or len(statement.lvalues) != 1:
+                continue
+            target = statement.lvalues[0]
+            if not isinstance(target, NameExpr) or target.name not in _METHOD_KINDS:
+                continue
+            if _assigned_method_container_name(statement.rvalue) != helper_name:
+                continue
+            owner = _lookup_typeinfo(ctx, _fullname_for_class(module_fullname, owner_def))
+            if owner is not None:
+                return owner
+    return None
 
 
 def _receiver_method_type(

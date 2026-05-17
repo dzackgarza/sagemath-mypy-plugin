@@ -25,6 +25,7 @@ Surfaces covered:
     Value-dependent completion self return — test_plugin_value_dependent_completion_self_return_correctness
     _with_axiom attribute      — test_plugin_with_axiom_correctness
     Method-container receiver self surfaces — test_plugin_receiver_self_surface_correctness
+    Aliased receiver self surfaces — test_plugin_alias_receiver_self_surface_correctness
     Covariant container assignment — test_plugin_covariant_assignment_correctness
 """
 from __future__ import annotations
@@ -289,6 +290,11 @@ def test_plugin_receiver_self_surface_correctness() -> None:
         "test_method_container_receiver_self_surface",
         "[attr-defined]",
     )
+
+
+def test_plugin_alias_receiver_self_surface_correctness() -> None:
+    """Aliased ParentMethods providers may use receiver methods declared on their category."""
+    _assert_clean_conjunction("test_alias_receiver_self_surface", "[attr-defined]")
 
 
 def test_plugin_covariant_assignment_correctness() -> None:
