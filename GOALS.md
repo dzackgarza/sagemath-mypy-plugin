@@ -82,7 +82,7 @@ Every active suppression in the codebase must be listed here.
 
 ### `_filter_postbind_method_assign_errors`
 
-- **File**: `sage_mypy_category_plugin/plugin.py`, line 525
+- **File**: `sage_mypy_category_plugin/plugin.py`, line 895
 - **Suppresses**: `[assignment]` and "Cannot assign to a method" on postbind
   method container aliases (e.g. `Category.ParentMethods = SomeHelper`).
 - **What mypy doesn't know**: That `ParentMethods = SomeAlias` is a valid
@@ -98,7 +98,7 @@ Every active suppression in the codebase must be listed here.
 
 ### `_filter_bound_helper_non_method_errors`
 
-- **File**: `sage_mypy_category_plugin/plugin.py`, line 505
+- **File**: `sage_mypy_category_plugin/plugin.py`, line 875
 - **Suppresses**: `@final cannot be used with non-method functions` and
   `"abstractmethod" used with a non-method` on helper alias assignments.
 - **What mypy doesn't know**: That `ParentMethods.f = final_alias` is
@@ -112,6 +112,22 @@ Every active suppression in the codebase must be listed here.
 - **Migration path**: Complete `_copy_helper_flags` coverage for all decorator
   semantics so mypy doesn't fire the error in the first place. Remove the
   suppression.
+
+### `_filter_constructors_no_redef_errors`
+
+- **File**: `sage_mypy_category_plugin/plugin.py`, line 924
+- **Suppresses**: `[no-redef]` on the Sage pattern where a category defines
+  both a nested `Constructors` collector class and an instance method named
+  `Constructors`.
+- **What mypy doesn't know**: That Sage intentionally exposes both names: the
+  nested class is the collector implementation, while the method is the public
+  zero-argument category selector.
+- **Target resolution**: Model the selector method without creating a duplicate
+  static class/method binding in mypy's symbol table, or move this pattern into
+  a stub/semantic hook that avoids the `[no-redef]` diagnostic.
+- **Migration path**: Keep the suppression line-scoped to classes that define
+  both forms, and remove it once the constructor selector is represented without
+  a duplicate definition.
 
 ## Test Surface State
 
@@ -135,7 +151,7 @@ error output.
 | Covariant return narrowing | GREEN | Declare subtype in MRO (teach), including transitive semantic bases |
 | Value-dependent completion self return | GREEN | Declare self-return result container in MRO (teach) |
 | `_with_axiom` attribute | GREEN | Inject attribute into SubcategoryMethods TypeInfo (teach) |
-| Covariant container assignment | RED | Declare method container covariance (teach) |
+| Covariant container assignment | SUPPRESSED | Replace with covariance teaching (see registry) |
 | Postbind assignment (helper aliases) | SUPPRESSED | Replace with covariance teaching (see registry) |
 | Helper non-method decorator errors | SUPPRESSED | Complete `_copy_helper_flags` (see registry) |
 
