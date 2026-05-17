@@ -35,3 +35,26 @@ class _LocalBase(LocalCategoryBase):
         def undispatched(self) -> _ParameterisedCategory:
             base = _LocalBase.an_instance()
             return _ParameterisedCategory(base, dispatch=False)  # [call-arg] without plugin
+
+
+class Modules(LocalCategoryBase):
+    """Category_specs-style class name whose public classcall accepts dispatch."""
+
+    def __init__(self, base_category: _LocalBase) -> None:
+        pass
+
+    @staticmethod
+    def __classcall_private__(
+        cls: type["Modules"],
+        base_category: _LocalBase,
+        dispatch: bool = True,
+    ) -> "Modules":
+        return cls(base_category)
+
+    class ParentMethods:
+        pass
+
+
+def modules_without_dispatch() -> Modules:
+    base = _LocalBase.an_instance()
+    return Modules(base, dispatch=False)  # [call-arg] without plugin

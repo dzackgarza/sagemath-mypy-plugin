@@ -13,6 +13,7 @@ itself and the final `object` entry.
 from __future__ import annotations
 import configparser
 import csv
+import logging
 from typing import Any, Callable, Tuple
 from mypy.build import PRI_MED
 from mypy.errorcodes import ErrorCode
@@ -52,6 +53,8 @@ from mypy.types import (
 )
 from mypy.typevars import fill_typevars
 
+
+_LOG = logging.getLogger(__name__)
 
 SAGE_CATEGORY_UNRESOLVED = ErrorCode(
     "sage-category-unresolved",
@@ -109,7 +112,7 @@ class SageCategoryPlugin(Plugin):
         short = fullname.rsplit(".", 1)[-1]
         if short == "Constructors":
             return self._constructors_signature_hook
-        if short.endswith("Category"):
+        if _could_be_sage_category_constructor_name(short):
             return lambda ctx: self._category_constructor_signature_hook(ctx, fullname)
         return None
 
@@ -128,6 +131,11 @@ class SageCategoryPlugin(Plugin):
             )
             deps = module_method_container_dependencies(module_name)
         except Exception:
+            _LOG.debug(
+                "Sage category dependency discovery failed for %s",
+                module_name,
+                exc_info=True,
+            )
             return []
         return [(PRI_MED, dep, -1) for dep in deps if dep != module_name]
 
@@ -352,10 +360,20 @@ class SageCategoryPlugin(Plugin):
                 )
             return None
         except ParameterizedCategoryError as exc:
+            _LOG.debug(
+                "Sage category method-container projection is parameterized for %s",
+                fullname,
+                exc_info=True,
+            )
             if self._strict:
                 ctx.api.fail(str(exc), ctx.cls, code=SAGE_CATEGORY_PARAMETERIZED)
             return None
         except Exception as exc:
+            _LOG.debug(
+                "Sage category method-container projection failed for %s",
+                fullname,
+                exc_info=True,
+            )
             if self._strict:
                 ctx.api.fail(
                     f"Sage category method-container projection failed: {exc}",
@@ -453,6 +471,11 @@ def _is_mypy_sage_category_fullname(api: Any, fullname: str) -> bool:
         )
     except Exception:
         return False
+
+
+def _could_be_sage_category_constructor_name(short_name: str) -> bool:
+    name = short_name.lstrip("_")
+    return bool(name) and name[0].isupper()
 
 
 def _looks_like_sage_category_typeinfo(info: TypeInfo) -> bool:
