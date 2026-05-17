@@ -1,0 +1,54 @@
+"""Bundled Sage category interop stubs cover consumed category helpers."""
+from sage.categories.category import Category, CategoryWithParameters, JoinCategory
+from sage.categories.category_with_axiom import (
+    CategoryWithAxiom,
+    CategoryWithAxiom_over_base_ring,
+    CategoryWithAxiom_singleton,
+)
+from sage.categories.homsets import HomsetsCategory, HomsetsOf
+from sage.structure.category_object import CategoryObject
+from sage.structure.parent import Parent
+
+
+def category_helpers(category: Category) -> object:
+    category._with_axiom("Finite")
+    category.Constructors()
+    category.base_category()
+    return category.parent_class
+
+
+def category_object_helpers(obj: object, category: Category) -> None:
+    CategoryObject._init_category_(obj, category)
+
+
+def parent_init(parent: Parent) -> None:
+    Parent.__init__(parent, category=None)
+
+
+def category_classcall_helpers(category_type: type[Category], value: object) -> object:
+    category_type._set_classcall(value)
+    return category_type.__classcall__(category_type)
+
+
+def category_with_axiom_constructor(category: Category) -> CategoryWithAxiom:
+    return CategoryWithAxiom(category)
+
+
+def imported_category_bases(
+    parameterized: CategoryWithParameters,
+    axiom: CategoryWithAxiom,
+    axiom_over_base_ring: CategoryWithAxiom_over_base_ring,
+    axiom_singleton: CategoryWithAxiom_singleton,
+    join_category: JoinCategory,
+    homsets_category: HomsetsCategory,
+    homsets_of: HomsetsOf,
+) -> tuple[Category, ...]:
+    return (
+        parameterized,
+        axiom,
+        axiom_over_base_ring,
+        axiom_singleton,
+        join_category,
+        homsets_category,
+        homsets_of,
+    )

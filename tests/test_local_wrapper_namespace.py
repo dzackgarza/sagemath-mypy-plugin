@@ -36,6 +36,7 @@ Surfaces covered:
     Python-base construction method containers — test_plugin_python_base_construction_method_container_correctness
     Static construction selectors avoid runtime import — test_plugin_static_construction_selector_no_runtime_import_correctness
     Runtime construction selector import failures stay diagnostic — test_plugin_runtime_construction_selector_import_failure_correctness
+    Sage category interop stubs — test_sage_category_interop_stub_correctness
     Aliased provider type aliases — test_plugin_alias_provider_type_alias_correctness
     Cross-module aliased provider type aliases — test_plugin_cross_module_alias_provider_type_alias_correctness
     Covariant container assignment — test_plugin_covariant_assignment_correctness
@@ -387,6 +388,11 @@ def test_plugin_runtime_construction_selector_import_failure_correctness() -> No
         "test_runtime_construction_selector_import_failure",
         "[call-arg]",
     )
+
+
+def test_sage_category_interop_stub_correctness() -> None:
+    """Bundled Sage category stubs cover consumed category helper APIs."""
+    _assert_clean_with_and_without_plugin("test_sage_category_interop_stubs")
 
 
 def test_plugin_alias_provider_type_alias_correctness() -> None:

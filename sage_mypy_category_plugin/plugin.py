@@ -1341,6 +1341,7 @@ def _recover_method_helper_bindings(
         for _target_fullname, _target_name, helper_name, _is_postbind in bindings
     }
     _mark_bound_helpers(module, helpers)
+    _mark_bound_helper_assignments(module, bindings)
     _filter_bound_helper_non_method_errors(api.errors, module, helpers)
     _filter_postbind_method_assign_errors(api.errors, module, bindings)
 
@@ -1382,13 +1383,40 @@ def _mark_bound_helpers(module: Any, helpers: set[str]) -> None:
             _mark_helper_node(symbol.node)
 
 
+def _mark_bound_helper_assignments(
+    module: Any,
+    bindings: tuple[tuple[str, str, str, bool], ...],
+) -> None:
+    final_helpers = {
+        helper_name
+        for _target_fullname, _target_name, helper_name, _is_postbind in bindings
+        if _helper_node_is_final(_module_symbol(module, helper_name))
+    }
+    if not final_helpers:
+        return
+    for statement in _method_container_helper_assignment_statements(module):
+        helper_name = _helper_name_from_expr(statement.rvalue)
+        if helper_name in final_helpers:
+            statement.is_final_def = True
+            target = statement.lvalues[0]
+            if isinstance(target, NameExpr) and isinstance(target.node, Var):
+                target.node.is_final = False
+
+
 def _mark_helper_node(node: Any) -> None:
     if isinstance(node, Decorator):
         if _decorator_has_name(node, {"typing.final", "typing_extensions.final"}):
             node.func.is_final = True
-            node.var.is_final = True
+            node.var.is_final = False
         if _decorator_has_name(node, {"abc.abstractmethod"}):
             node.func.abstract_status = IS_ABSTRACT
+
+
+def _helper_node_is_final(symbol: SymbolTableNode | None) -> bool:
+    node = None if symbol is None else symbol.node
+    if isinstance(node, Decorator):
+        return _decorator_has_name(node, {"typing.final", "typing_extensions.final"})
+    return bool(getattr(node, "is_final", False))
 
 
 def _copy_helper_flags(source: Any, target: Any) -> None:
@@ -1651,6 +1679,32 @@ def _class_body_method_container_binding_lines(
     return tuple(lines)
 
 
+def _method_container_helper_assignment_statements(module: Any) -> tuple[AssignmentStmt, ...]:
+    statements: list[AssignmentStmt] = []
+    for class_def in _module_statements(module):
+        if not isinstance(class_def, ClassDef):
+            continue
+        if _looks_like_method_container(class_def.name):
+            _collect_helper_assignment_statements(class_def, statements)
+        for nested in class_def.defs.body:
+            if isinstance(nested, ClassDef) and nested.name in _METHOD_KINDS:
+                _collect_helper_assignment_statements(nested, statements)
+    return tuple(statements)
+
+
+def _collect_helper_assignment_statements(
+    class_def: ClassDef,
+    statements: list[AssignmentStmt],
+) -> None:
+    for statement in class_def.defs.body:
+        if not isinstance(statement, AssignmentStmt) or len(statement.lvalues) != 1:
+            continue
+        if not isinstance(statement.lvalues[0], NameExpr):
+            continue
+        if _helper_name_from_expr(statement.rvalue) is not None:
+            statements.append(statement)
+
+
 def _method_container_var(
     name: str,
     helper_node: Any,
@@ -1674,7 +1728,6 @@ def _method_container_var(
             helper_node.var.type or helper_node.func.type,
             api,
         )
-        var.is_final = helper_node.var.is_final
         var.is_property = helper_node.var.is_property
         var.is_settable_property = helper_node.var.is_settable_property
         var.is_classmethod = helper_node.var.is_classmethod
@@ -1683,8 +1736,6 @@ def _method_container_var(
         var.type = _overloaded_type_from_helper(helper_node, api)
     else:
         var.type = _normalize_synthetic_var_type(getattr(helper_node, "type", None), api)
-        if getattr(helper_node, "is_final", False):
-            var.is_final = True
     return var
 
 
