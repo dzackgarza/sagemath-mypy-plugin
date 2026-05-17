@@ -145,7 +145,7 @@ error output.
 | `Constructors()` zero-arg | GREEN | Hook resolves instance method vs class and filters only the matching no-redef collision |
 | `FunctorialConstructionCategory()` zero-arg | GREEN | Sage-like category constructor signatures accept classcall-supplied category arguments |
 | Construction selector class attribute | GREEN | Materialize category construction class attributes as zero-arg selector methods (teach) |
-| Construction extra-super method containers | GREEN | Sage-native projection: parameterized construction categories instantiate through their owner category, then `super_categories()`/`parent_class.__bases__` contributes base-category `ParentMethods`/`ElementMethods` |
+| Construction extra-super method containers | GREEN | Sage-native projection: parameterized construction categories instantiate through their owner category, then `super_categories()`/`parent_class.__bases__` contributes base-category `ParentMethods`/`ElementMethods`; narrow Sage interop stubs cover Python-base construction methods such as `CartesianProductsCategory.ParentMethods.__init_extra__` |
 | `__classcall_private__` kwargs | GREEN | Sage-like category constructor signatures surface classcall-only `dispatch` keyword, including local category classes not named `*Category` |
 | Operator `__contains__`/`__ne__` | GREEN | Inject dunders into TypeInfo (teach) |
 | Covariant return narrowing | GREEN | Declare subtype in MRO (teach), including transitive semantic bases |
