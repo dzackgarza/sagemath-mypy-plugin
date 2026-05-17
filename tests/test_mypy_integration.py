@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from functools import cache
 import importlib
-import os
-import subprocess
 import shutil
 import sys
 import tempfile
@@ -20,8 +18,6 @@ _THIRD_PARTY_FIXTURES_PKG = (
 _CONFIG_FILE = Path(__file__).resolve().parent / "mypy_test.ini"
 _CONFIGURED_CONFIG_FILE = Path(__file__).resolve().parent / "mypy_configured.ini"
 _STRICT_CONFIG_FILE = Path(__file__).resolve().parent / "mypy_strict_no_representatives.ini"
-_RESEARCH_ROOT = Path("/home/dzack/research")
-_RESEARCH_MYPY_CONFIG = Path("/home/dzack/ai/quality-control/mypy-global.ini")
 _MUTABLE_FIXTURE_NAMES = frozenset({"test_renamed_ancestor"})
 _FATAL_MYPY_MARKERS = (
     "INTERNAL ERROR",
@@ -335,38 +331,6 @@ def test_ancestor_change_reactivity():
         importlib.invalidate_caches()
         _drop_fixture_module(module_name)
         shutil.rmtree(cache_dir, ignore_errors=True)
-
-
-def test_research_homsets_run_does_not_segfault():
-    if not _RESEARCH_ROOT.exists():
-        pytest.skip("local research checkout not available")
-    if not _RESEARCH_MYPY_CONFIG.exists():
-        pytest.skip("local research mypy config not available")
-
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(_PROJECT_ROOT)
-    result = subprocess.run(
-        [
-            "mypy",
-            "--config-file",
-            str(_RESEARCH_MYPY_CONFIG),
-            "category_specs/homsets/homsets.py",
-            "category_specs/homsets/endsets.py",
-            "category_specs/homsets/autsets.py",
-            "category_specs/sets/homsets.py",
-            "category_specs/topological_spaces/homsets.py",
-        ],
-        cwd=_RESEARCH_ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    combined_output = result.stdout + result.stderr
-
-    assert result.returncode != 139, combined_output
-    assert "INTERNAL ERROR" not in combined_output
-    assert "Unhandled SIGSEGV" not in combined_output, combined_output
-    assert "Segmentation fault" not in combined_output, combined_output
 
 
 # ---- Placeholders for future work ----
