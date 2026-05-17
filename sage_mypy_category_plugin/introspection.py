@@ -575,34 +575,46 @@ def resolve_method_container_aliases(source_fullname: str) -> tuple[str, ...]:
 
 
 def _canonical_import_module(module_name: str) -> types.ModuleType:
-    """Import the shortest importable suffix of *module_name*.
+    """Import *module_name*, falling back to importable suffixes if needed.
 
     Mypy can analyze the same file under a package-prefixed fullname such as
-    ``tests.fixtures.sage.categories...`` while the runtime-importable module is
-    the canonical suffix ``sage.categories...``. Choosing the shortest
-    importable suffix keeps representative lookup and source-container mapping
-    stable without reintroducing namespace allowlists.
+    ``tests.fixtures.sage.categories...`` while the runtime-importable module
+    is a suffix such as ``sage.categories...``. Prefer the exact module first:
+    third-party namespaces can have importable top-level suffix collisions, and
+    choosing a shorter suffix after exact resolution silently points projection
+    at the wrong module.
     """
+    exact_path = _find_module_path(module_name)
+    try:
+        return _import_module_candidate(module_name)
+    except Exception as exc:
+        if exact_path is not None:
+            raise
+        last_error: Exception | None = exc
+
     parts = module_name.split(".")
-    best_module: types.ModuleType | None = None
-    last_error: Exception | None = None
-    for start in range(len(parts)):
+    for start in range(1, len(parts)):
         candidate = ".".join(parts[start:])
         try:
-            best_module = importlib.import_module(candidate)
+            return _import_module_candidate(candidate)
         except Exception as exc:
             last_error = exc
-            try:
-                best_module = _load_module_from_source_tree(candidate)
-            except Exception as fallback_exc:
-                last_error = fallback_exc
-
-    if best_module is not None:
-        return best_module
 
     if last_error is not None:
         raise last_error
     raise ModuleNotFoundError(module_name)
+
+
+def _import_module_candidate(module_name: str) -> types.ModuleType:
+    try:
+        return importlib.import_module(module_name)
+    except Exception as import_exc:
+        _LOG.debug("Runtime import failed for %s", module_name, exc_info=True)
+        try:
+            return _load_module_from_source_tree(module_name)
+        except Exception as source_exc:
+            _LOG.debug("Source-tree import failed for %s", module_name, exc_info=True)
+            raise source_exc from import_exc
 
 
 def _split_module_and_class_path(fullname: str) -> tuple[str | None, tuple[str, ...]]:

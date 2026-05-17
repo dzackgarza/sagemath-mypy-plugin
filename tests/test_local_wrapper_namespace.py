@@ -27,6 +27,7 @@ Surfaces covered:
     _with_axiom attribute      — test_plugin_with_axiom_correctness
     Method-container receiver self surfaces — test_plugin_receiver_self_surface_correctness
     Aliased receiver self surfaces — test_plugin_alias_receiver_self_surface_correctness
+    Exact module import under suffix collision — test_plugin_exact_module_collision_correctness
     Aliased provider type aliases — test_plugin_alias_provider_type_alias_correctness
     Cross-module aliased provider type aliases — test_plugin_cross_module_alias_provider_type_alias_correctness
     Covariant container assignment — test_plugin_covariant_assignment_correctness
@@ -306,6 +307,14 @@ def test_plugin_receiver_self_surface_correctness() -> None:
 def test_plugin_alias_receiver_self_surface_correctness() -> None:
     """Aliased ParentMethods providers may use receiver methods declared on their category."""
     _assert_clean_conjunction("test_alias_receiver_self_surface", "[attr-defined]")
+
+
+def test_plugin_exact_module_collision_correctness() -> None:
+    """Exact local-wrapper modules must win over importable shorter suffixes."""
+    _assert_override_conjunction(
+        "test_exact_module_collision_override",
+        "test_invalid_override",
+    )
 
 
 def test_plugin_alias_provider_type_alias_correctness() -> None:
