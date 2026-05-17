@@ -175,6 +175,14 @@ def test_plugin_classcall_private_kwargs_correctness() -> None:
     _assert_clean_conjunction("test_classcall_private_kwargs", "[call-arg]")
 
 
+def test_plugin_does_not_rewrite_non_sage_category_constructors() -> None:
+    """Ordinary *Category classes remain subject to normal constructor checking."""
+    _assert_error_with_and_without_plugin(
+        "test_non_sage_category_constructor",
+        "[call-arg]",
+    )
+
+
 def test_plugin_operator_surfaces_correctness() -> None:
     """SubcategoryMethods.__contains__ and ElementMethods.__ne__ must not fire [operator]."""
     _assert_clean_conjunction("test_morphism_methods_callable", "[operator]")

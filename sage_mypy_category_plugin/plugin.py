@@ -107,13 +107,15 @@ class SageCategoryPlugin(Plugin):
 
     def get_function_signature_hook(self, fullname: str) -> Callable | None:
         short = fullname.rsplit(".", 1)[-1]
-        if short == "Constructors" or short.endswith("Category"):
-            return self._category_constructor_signature_hook
+        if short == "Constructors":
+            return self._constructors_signature_hook
+        if short.endswith("Category"):
+            return lambda ctx: self._category_constructor_signature_hook(ctx, fullname)
         return None
 
     def get_method_signature_hook(self, fullname: str) -> Callable | None:
         if fullname.rsplit(".", 1)[-1] == "Constructors":
-            return self._category_constructor_signature_hook
+            return self._constructors_signature_hook
         return None
 
     def get_additional_deps(self, file: Any) -> list[Tuple[int, str, int]]:
@@ -369,10 +371,15 @@ class SageCategoryPlugin(Plugin):
             _filter_postbind_method_assign_errors(ctx.api.errors, module, bindings)
         return ctx.default_return_type
 
-    def _category_constructor_signature_hook(self, ctx: Any) -> Any:
+    def _constructors_signature_hook(self, ctx: Any) -> Any:
         module = getattr(ctx.api, "tree", None)
         if module is not None:
             _filter_constructors_no_redef_errors(ctx.api.errors, module)
+        return _sage_constructor_signature(ctx.default_signature, ctx.api)
+
+    def _category_constructor_signature_hook(self, ctx: Any, fullname: str) -> Any:
+        if not _is_mypy_sage_category_fullname(ctx.api, fullname):
+            return ctx.default_signature
         return _sage_constructor_signature(ctx.default_signature, ctx.api)
 
     def _load_config(self, config_file: str | None) -> None:
@@ -421,6 +428,41 @@ def _has_explicit_non_object_base(info: TypeInfo) -> bool:
     return any(base.type.fullname != "builtins.object" for base in info.bases)
 
 
+def _is_mypy_sage_category_fullname(api: Any, fullname: str) -> bool:
+    parts = fullname.split(".")
+    for index in range(len(parts) - 1, 0, -1):
+        module_name = ".".join(parts[:index])
+        relative_name = ".".join(parts[index:])
+        for module_key, module in getattr(api, "modules", {}).items():
+            if not (
+                module_key.endswith(module_name)
+                or module_name.endswith(module_key)
+            ):
+                continue
+            node = _walk_chain(module, relative_name)
+            info = _typeinfo_from_symbol_node(node)
+            if info is not None:
+                return _looks_like_sage_category_typeinfo(info)
+    try:
+        from sage_mypy_category_plugin.introspection import is_sage_category_fullname
+
+        parts = fullname.split(".")
+        return any(
+            is_sage_category_fullname(".".join(parts[index:]))
+            for index in range(len(parts))
+        )
+    except Exception:
+        return False
+
+
+def _looks_like_sage_category_typeinfo(info: TypeInfo) -> bool:
+    if _is_sage_category_typeinfo(info):
+        return True
+    if any(name in info.names for name in _METHOD_KINDS):
+        return True
+    return "super_categories" in info.names
+
+
 def _sage_constructor_signature(signature: CallableType, api: Any) -> CallableType:
     arg_types = list(signature.arg_types)
     arg_kinds = list(signature.arg_kinds)
@@ -445,6 +487,7 @@ def _sage_constructor_signature(signature: CallableType, api: Any) -> CallableTy
         arg_kinds=arg_kinds,
         arg_names=arg_names,
     )
+
 
 def _parse_args(value: str) -> list[str]:
     if not value.strip():

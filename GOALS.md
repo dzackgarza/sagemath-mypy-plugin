@@ -126,11 +126,11 @@ error output.
 | `SubcategoryMethods @override` | GREEN | MRO injection (teach), covered by local-wrapper conjunction test |
 | `MorphismMethods @override` | GREEN | MRO injection (teach), covered by local-wrapper conjunction test |
 | `@cached_method` decorator typing | GREEN | Bundled `sage.misc.cachefunc.cached_method` stub preserves the decorated callable type; plugin does not suppress arbitrary untyped decorators |
-| `Constructors()` zero-arg | RED | Hook to resolve instance method vs class (teach) |
-| `FunctorialConstructionCategory()` zero-arg | RED | `__classcall_private__` dispatch hook (teach) |
+| `Constructors()` zero-arg | GREEN | Hook resolves instance method vs class and filters only the matching no-redef collision |
+| `FunctorialConstructionCategory()` zero-arg | GREEN | Sage-like category constructor signatures accept classcall-supplied category arguments |
 | Construction selector class attribute | GREEN | Materialize category construction class attributes as zero-arg selector methods (teach) |
 | Construction extra-super method containers | GREEN | Sage-native projection: parameterized construction categories instantiate through their owner category, then `super_categories()`/`parent_class.__bases__` contributes base-category `ParentMethods`/`ElementMethods` |
-| `__classcall_private__` kwargs | RED | `__classcall_private__` dispatch hook (teach) |
+| `__classcall_private__` kwargs | GREEN | Sage-like category constructor signatures surface classcall-only `dispatch` keyword |
 | Operator `__contains__`/`__ne__` | GREEN | Inject dunders into TypeInfo (teach) |
 | Covariant return narrowing | GREEN | Declare subtype in MRO (teach), including transitive semantic bases |
 | Value-dependent completion self return | GREEN | Declare self-return result container in MRO (teach) |
