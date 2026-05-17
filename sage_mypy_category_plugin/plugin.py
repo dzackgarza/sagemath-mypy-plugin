@@ -162,12 +162,19 @@ class SageCategoryPlugin(Plugin):
         fullname = info.fullname
         module = ctx.api.modules.get(info.module_name)
         _recover_method_helper_bindings(ctx.api, module, info, materialize=False)
+        if (
+            _alias_method_container_owner_is_pending(ctx, info)
+            and not ctx.api.final_iteration
+        ):
+            ctx.api.defer()
+            return
         if _has_receiver_self_methods(ctx, info) and not ctx.api.final_iteration:
             ctx.api.defer()
             return
         _materialize_receiver_self_methods(ctx, info)
         _materialize_subcategory_helpers(ctx, info)
         _materialize_operator_helpers(ctx, info)
+        runtime_base_ti = _receiver_runtime_base_typeinfo(ctx, info)
         if _has_explicit_non_object_base(info):
             return
 
@@ -180,7 +187,11 @@ class SageCategoryPlugin(Plugin):
                     ctx,
                     info,
                 )
-            if not value_dependent_bases and not static_base_fns:
+            if (
+                not value_dependent_bases
+                and not static_base_fns
+                and runtime_base_ti is None
+            ):
                 if (
                     _has_completion_self_return(ctx.cls, info)
                     and not ctx.api.final_iteration
@@ -207,7 +218,11 @@ class SageCategoryPlugin(Plugin):
 
         if projection is not None and not projection.static_bases:
             fallback_bases = _resolve_static_category_method_container_bases(ctx, info)
-            if not fallback_bases and not value_dependent_bases:
+            if (
+                not fallback_bases
+                and not value_dependent_bases
+                and runtime_base_ti is None
+            ):
                 if (
                     _has_completion_self_return(ctx.cls, info)
                     and not ctx.api.final_iteration
@@ -247,6 +262,9 @@ class SageCategoryPlugin(Plugin):
                 deferred = True
             base_tis.append(ti)
 
+        if runtime_base_ti is not None:
+            base_tis.append(runtime_base_ti)
+
         if deferred:
             ctx.api.defer()
             return
@@ -276,6 +294,14 @@ class SageCategoryPlugin(Plugin):
         base_tis = _prune_redundant_projected_bases(base_tis, retained_bases)
         existing_bases = {base.type.fullname for base in retained_bases}
         for ti in base_tis:
+            if any(ti in getattr(base.type, "mro", [])[1:] for base in retained_bases):
+                continue
+            retained_bases = [
+                base
+                for base in retained_bases
+                if base.type not in getattr(ti, "mro", [])[1:]
+            ]
+            existing_bases = {base.type.fullname for base in retained_bases}
             if ti.fullname in existing_bases:
                 continue
             retained_bases.append(fill_typevars(ti))
@@ -462,6 +488,11 @@ _RECEIVER_SELF_METHODS = frozenset({
     "category",
 })
 
+_RECEIVER_RUNTIME_BASE_FULLNAMES = {
+    "ParentMethods": "sage.structure.category_object.CategoryObject",
+    "SubcategoryMethods": "sage.categories.category.Category",
+}
+
 _SAGE_CATEGORY_BASE_FULLNAMES = frozenset({
     "sage.categories.category.Category",
     "sage.categories.category_singleton.Category_singleton",
@@ -483,6 +514,68 @@ def _looks_like_method_container(fullname: str) -> bool:
 
 def _has_explicit_non_object_base(info: TypeInfo) -> bool:
     return any(base.type.fullname != "builtins.object" for base in info.bases)
+
+
+def _receiver_runtime_base_typeinfo(
+    ctx: ClassDefContext,
+    info: TypeInfo,
+) -> TypeInfo | None:
+    kind = _method_container_kind_for_typeinfo(ctx, info)
+    if kind is None:
+        return None
+    fullname = _RECEIVER_RUNTIME_BASE_FULLNAMES.get(kind)
+    if fullname is None:
+        return None
+    return _lookup_typeinfo(ctx, fullname)
+
+
+def _method_container_kind_for_typeinfo(
+    ctx: ClassDefContext,
+    info: TypeInfo,
+) -> str | None:
+    if info.name in _METHOD_KINDS:
+        return info.name
+    module = ctx.api.modules.get(info.module_name)
+    if module is None:
+        return None
+    for owner_def in _module_statements(module):
+        if not isinstance(owner_def, ClassDef):
+            continue
+        for statement in owner_def.defs.body:
+            if not isinstance(statement, AssignmentStmt) or len(statement.lvalues) != 1:
+                continue
+            target = statement.lvalues[0]
+            if not isinstance(target, NameExpr) or target.name not in _METHOD_KINDS:
+                continue
+            if _assigned_method_container_name(statement.rvalue) == info.name:
+                return target.name
+    return None
+
+
+def _alias_method_container_owner_is_pending(
+    ctx: ClassDefContext,
+    info: TypeInfo,
+) -> bool:
+    if info.name in _METHOD_KINDS:
+        return False
+    module = ctx.api.modules.get(info.module_name)
+    if module is None:
+        return False
+    module_fullname = getattr(module, "fullname", "")
+    for owner_def in _module_statements(module):
+        if not isinstance(owner_def, ClassDef):
+            continue
+        for statement in owner_def.defs.body:
+            if not isinstance(statement, AssignmentStmt) or len(statement.lvalues) != 1:
+                continue
+            target = statement.lvalues[0]
+            if not isinstance(target, NameExpr) or target.name not in _METHOD_KINDS:
+                continue
+            if _assigned_method_container_name(statement.rvalue) != info.name:
+                continue
+            owner = _lookup_typeinfo(ctx, _fullname_for_class(module_fullname, owner_def))
+            return owner is None
+    return False
 
 
 def _is_mypy_sage_category_fullname(api: Any, fullname: str) -> bool:
@@ -1922,6 +2015,11 @@ def _append_typeinfo_base(info: TypeInfo, base_ti: TypeInfo) -> None:
         return
     retained_bases = [
         base for base in info.bases if base.type.fullname != "builtins.object"
+    ]
+    retained_bases = [
+        base
+        for base in retained_bases
+        if base.type not in getattr(base_ti, "mro", [])[1:]
     ]
     retained_bases.append(fill_typevars(base_ti))
     info.bases = retained_bases
