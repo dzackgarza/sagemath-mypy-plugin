@@ -27,6 +27,7 @@ Surfaces covered:
     _with_axiom attribute      — test_plugin_with_axiom_correctness
     Method-container receiver self surfaces — test_plugin_receiver_self_surface_correctness
     Method-container receiver runtime bases — test_plugin_receiver_runtime_base_correctness
+    SubcategoryMethods base_category receiver — test_plugin_subcategory_base_category_receiver_correctness
     Aliased receiver self surfaces — test_plugin_alias_receiver_self_surface_correctness
     Exact module import under suffix collision — test_plugin_exact_module_collision_correctness
     Static axiom base receiver self surfaces — test_plugin_static_axiom_base_receiver_self_correctness
@@ -315,6 +316,14 @@ def test_plugin_receiver_runtime_base_correctness() -> None:
     _assert_clean_conjunction(
         "test_method_container_receiver_runtime_bases",
         "[arg-type]",
+    )
+
+
+def test_plugin_subcategory_base_category_receiver_correctness() -> None:
+    """SubcategoryMethods self exposes Sage's base_category receiver method."""
+    _assert_clean_conjunction(
+        "test_subcategory_base_category_receiver_self",
+        "[attr-defined]",
     )
 
 

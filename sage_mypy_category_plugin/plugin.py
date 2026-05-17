@@ -846,7 +846,7 @@ def _has_receiver_self_methods(ctx: ClassDefContext, info: TypeInfo) -> bool:
         return False
     for name in _RECEIVER_SELF_METHODS:
         if name not in info.names and not _class_body_defines(ctx.cls, name):
-            if _receiver_self_method_type(ctx, target, name) is not None:
+            if _receiver_self_method_type(ctx, info, target, name) is not None:
                 return True
     return False
 
@@ -859,7 +859,7 @@ def _materialize_receiver_self_methods(ctx: ClassDefContext, info: TypeInfo) -> 
     for name in _RECEIVER_SELF_METHODS:
         if name in info.names or _class_body_defines(ctx.cls, name):
             continue
-        method_type = _receiver_self_method_type(ctx, target, name)
+        method_type = _receiver_self_method_type(ctx, info, target, name)
         if method_type is None:
             continue
         var = Var(name, method_type)
@@ -881,9 +881,22 @@ def _receiver_self_target(
 
 def _receiver_self_method_type(
     ctx: ClassDefContext,
+    info: TypeInfo,
     target: TypeInfo,
     name: str,
 ) -> CallableType | None:
+    if (
+        name == "base_category"
+        and _method_container_kind_for_typeinfo(ctx, info) == "SubcategoryMethods"
+    ):
+        return CallableType(
+            [],
+            [],
+            [],
+            fill_typevars(target),
+            ctx.api.named_type("builtins.function"),
+            name=name,
+        )
     for candidate in _receiver_self_typeinfo_candidates(target):
         method_type = _receiver_method_type(ctx, candidate, name)
         if method_type is not None:
