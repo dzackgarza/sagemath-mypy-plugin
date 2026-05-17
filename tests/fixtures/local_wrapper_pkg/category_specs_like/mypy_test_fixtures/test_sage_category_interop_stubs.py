@@ -5,6 +5,7 @@ from sage.categories.category_with_axiom import (
     CategoryWithAxiom_over_base_ring,
     CategoryWithAxiom_singleton,
 )
+from sage.categories.cartesian_product import CartesianProductsCategory
 from sage.categories.homsets import HomsetsCategory, HomsetsOf
 from sage.structure.category_object import CategoryObject
 from sage.structure.parent import Parent
@@ -32,6 +33,10 @@ def category_classcall_helpers(category_type: type[Category], value: object) -> 
 
 def category_with_axiom_constructor(category: Category) -> CategoryWithAxiom:
     return CategoryWithAxiom(category)
+
+
+def cartesian_product_category(category: Category) -> Category:
+    return CartesianProductsCategory.category_of(category)
 
 
 def imported_category_bases(
