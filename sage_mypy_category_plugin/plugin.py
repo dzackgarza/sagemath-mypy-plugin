@@ -154,6 +154,10 @@ class SageCategoryPlugin(Plugin):
         fullname = info.fullname
         module = ctx.api.modules.get(info.module_name)
         _recover_method_helper_bindings(ctx.api, module, info, materialize=False)
+        if _has_receiver_self_methods(ctx, info) and not ctx.api.final_iteration:
+            ctx.api.defer()
+            return
+        _materialize_receiver_self_methods(ctx, info)
         _materialize_subcategory_helpers(ctx, info)
         _materialize_operator_helpers(ctx, info)
         if _has_explicit_non_object_base(info):
@@ -423,6 +427,12 @@ _METHOD_KINDS = frozenset({
     "ParentMethods", "ElementMethods", "MorphismMethods", "SubcategoryMethods",
 })
 
+_RECEIVER_SELF_METHODS = frozenset({
+    "base_category",
+    "base_ring",
+    "category",
+})
+
 _SAGE_CATEGORY_BASE_FULLNAMES = frozenset({
     "sage.categories.category.Category",
     "sage.categories.category_singleton.Category_singleton",
@@ -612,6 +622,103 @@ def _base_alias_candidate_names(short_name: str) -> tuple[str, ...]:
     if all_replaced != short_name:
         candidates.append(all_replaced)
     return tuple(dict.fromkeys(candidates))
+
+
+def _has_receiver_self_methods(ctx: ClassDefContext, info: TypeInfo) -> bool:
+    if info.name not in {"ParentMethods", "ElementMethods", "SubcategoryMethods"}:
+        return False
+    owner = _lookup_enclosing_category_typeinfo(ctx, info)
+    if owner is None:
+        return False
+    for name in _RECEIVER_SELF_METHODS:
+        if name not in info.names and not _class_body_defines(ctx.cls, name):
+            if _receiver_method_type(ctx, owner, name) is not None:
+                return True
+    return False
+
+
+def _materialize_receiver_self_methods(ctx: ClassDefContext, info: TypeInfo) -> None:
+    """Expose selected category receiver methods on method-container ``self``."""
+    if info.name not in {"ParentMethods", "ElementMethods", "SubcategoryMethods"}:
+        return
+    owner = _lookup_enclosing_category_typeinfo(ctx, info)
+    if owner is None:
+        return
+    for name in _RECEIVER_SELF_METHODS:
+        if name in info.names or _class_body_defines(ctx.cls, name):
+            continue
+        method_type = _receiver_method_type(ctx, owner, name)
+        if method_type is None:
+            continue
+        var = Var(name, method_type)
+        var.info = info
+        var._fullname = f"{info.fullname}.{name}"
+        info.names[name] = SymbolTableNode(MDEF, var, plugin_generated=True)
+
+
+def _receiver_method_type(
+    ctx: ClassDefContext,
+    owner: TypeInfo,
+    name: str,
+) -> CallableType | None:
+    for base in getattr(owner, "mro", []):
+        symbol = base.names.get(name)
+        if symbol is None:
+            continue
+        typ = _callable_type_from_method_symbol(ctx, owner, symbol.node)
+        if typ is not None:
+            return typ.copy_modified(name=name)
+    return None
+
+
+def _callable_type_from_method_symbol(
+    ctx: ClassDefContext,
+    owner: TypeInfo,
+    node: Any,
+) -> CallableType | None:
+    if isinstance(node, Decorator):
+        typ = node.func.type or node.var.type
+    else:
+        typ = getattr(node, "type", None)
+    typ = get_proper_type(typ)
+    if not isinstance(typ, CallableType):
+        return None
+    typ = _strip_receiver_arg(owner, typ)
+    typ = _resolve_receiver_return_type(ctx, owner, typ)
+    return typ.copy_modified(fallback=ctx.api.named_type("builtins.function"))
+
+
+def _resolve_receiver_return_type(
+    ctx: ClassDefContext,
+    owner: TypeInfo,
+    typ: CallableType,
+) -> CallableType:
+    ret = get_proper_type(typ.ret_type)
+    if not isinstance(ret, UnboundType):
+        return typ
+    assert owner.module_name
+    fullname = ret.name if "." in ret.name else f"{owner.module_name}.{ret.name}"
+    ti = _lookup_typeinfo(ctx, fullname)
+    if ti is None:
+        return typ
+    return typ.copy_modified(ret_type=fill_typevars(ti))
+
+
+def _strip_receiver_arg(owner: TypeInfo, typ: CallableType) -> CallableType:
+    if not typ.arg_types:
+        return typ
+    first_name = typ.arg_names[0]
+    first_type = get_proper_type(typ.arg_types[0])
+    if first_name in {"self", "cls"} or (
+        isinstance(first_type, Instance)
+        and owner in getattr(first_type.type, "mro", [])
+    ):
+        return typ.copy_modified(
+            arg_types=typ.arg_types[1:],
+            arg_kinds=typ.arg_kinds[1:],
+            arg_names=typ.arg_names[1:],
+        )
+    return typ
 
 
 def _materialize_subcategory_helpers(ctx: ClassDefContext, info: TypeInfo) -> None:

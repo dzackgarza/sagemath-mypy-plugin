@@ -82,7 +82,7 @@ Every active suppression in the codebase must be listed here.
 
 ### `_filter_postbind_method_assign_errors`
 
-- **File**: `sage_mypy_category_plugin/plugin.py`, line 918
+- **File**: `sage_mypy_category_plugin/plugin.py`, line 1025
 - **Suppresses**: `[assignment]` and "Cannot assign to a method" on postbind
   method container aliases (e.g. `Category.ParentMethods = SomeHelper`).
 - **What mypy doesn't know**: That `ParentMethods = SomeAlias` is a valid
@@ -98,7 +98,7 @@ Every active suppression in the codebase must be listed here.
 
 ### `_filter_bound_helper_non_method_errors`
 
-- **File**: `sage_mypy_category_plugin/plugin.py`, line 898
+- **File**: `sage_mypy_category_plugin/plugin.py`, line 1005
 - **Suppresses**: `@final cannot be used with non-method functions` and
   `"abstractmethod" used with a non-method` on helper alias assignments.
 - **What mypy doesn't know**: That `ParentMethods.f = final_alias` is
@@ -115,7 +115,7 @@ Every active suppression in the codebase must be listed here.
 
 ### `_filter_constructors_no_redef_errors`
 
-- **File**: `sage_mypy_category_plugin/plugin.py`, line 947
+- **File**: `sage_mypy_category_plugin/plugin.py`, line 1054
 - **Suppresses**: `[no-redef]` on the Sage pattern where a category defines
   both a nested `Constructors` collector class and an instance method named
   `Constructors`.
@@ -151,7 +151,7 @@ error output.
 | Covariant return narrowing | GREEN | Declare subtype in MRO (teach), including transitive semantic bases |
 | Value-dependent completion self return | GREEN | Declare self-return result container in MRO (teach) |
 | `_with_axiom` attribute | GREEN | Inject attribute into SubcategoryMethods TypeInfo (teach) |
-| Method-container receiver self surfaces | RED | Teach mypy that `self` inside `ParentMethods`, `ElementMethods`, and `SubcategoryMethods` is the runtime parent/element/category receiver, not only the nested provider class. Live `category_specs` proof still reports missing receiver attributes such as `base_ring`, `category`, `submodule`, and `tensor`. |
+| Method-container receiver self surfaces | RED | Teach mypy that `self` inside `ParentMethods`, `ElementMethods`, and `SubcategoryMethods` is the runtime parent/element/category receiver, not only the nested provider class. A direct owner-method slice now handles explicitly declared receiver methods such as `base_ring` and `category`; live `category_specs` proof still reports inherited/runtime receiver attributes such as `submodule`, `zero`, `tensor`, and inherited `base_ring`. |
 | Covariant container assignment | SUPPRESSED | Replace with covariance teaching (see registry) |
 | Postbind assignment (helper aliases) | SUPPRESSED | Replace with covariance teaching (see registry) |
 | Helper non-method decorator errors | SUPPRESSED | Complete `_copy_helper_flags` (see registry) |
