@@ -590,12 +590,10 @@ def _resolve_static_category_method_container_bases(
     if enclosing_cat is None:
         return ()
     bases: list[str] = []
-    axiom_base = _axiom_base_category_typeinfo(enclosing_cat)
-    if axiom_base is not None:
-        container_fn = f"{axiom_base.fullname}.{info.name}"
-        ti = _lookup_typeinfo(ctx, container_fn)
-        if ti is not None:
-            bases.append(ti.fullname)
+    for axiom_base in _receiver_self_typeinfo_candidates(enclosing_cat)[1:]:
+        provider = _method_container_provider_typeinfo(ctx, axiom_base, info.name)
+        if provider is not None:
+            bases.append(provider.fullname)
     bases.extend(
         _resolve_static_construction_owner_method_container_bases(
             ctx,
@@ -753,10 +751,9 @@ def _has_receiver_self_methods(ctx: ClassDefContext, info: TypeInfo) -> bool:
     target = _receiver_self_target(ctx, info)
     if target is None:
         return False
-    owner = target
     for name in _RECEIVER_SELF_METHODS:
         if name not in info.names and not _class_body_defines(ctx.cls, name):
-            if _receiver_method_type(ctx, owner, name) is not None:
+            if _receiver_self_method_type(ctx, target, name) is not None:
                 return True
     return False
 
@@ -766,11 +763,10 @@ def _materialize_receiver_self_methods(ctx: ClassDefContext, info: TypeInfo) -> 
     target = _receiver_self_target(ctx, info)
     if target is None:
         return
-    owner = target
     for name in _RECEIVER_SELF_METHODS:
         if name in info.names or _class_body_defines(ctx.cls, name):
             continue
-        method_type = _receiver_method_type(ctx, owner, name)
+        method_type = _receiver_self_method_type(ctx, target, name)
         if method_type is None:
             continue
         var = Var(name, method_type)
@@ -788,6 +784,34 @@ def _receiver_self_target(
         if owner is not None:
             return owner
     return _lookup_alias_receiver_self_target(ctx, info)
+
+
+def _receiver_self_method_type(
+    ctx: ClassDefContext,
+    target: TypeInfo,
+    name: str,
+) -> CallableType | None:
+    for candidate in _receiver_self_typeinfo_candidates(target):
+        method_type = _receiver_method_type(ctx, candidate, name)
+        if method_type is not None:
+            return method_type
+    return None
+
+
+def _receiver_self_typeinfo_candidates(target: TypeInfo) -> tuple[TypeInfo, ...]:
+    candidates: list[TypeInfo] = []
+    seen: set[str] = set()
+    stack = [target]
+    while stack:
+        candidate = stack.pop()
+        if candidate.fullname in seen:
+            continue
+        seen.add(candidate.fullname)
+        candidates.append(candidate)
+        axiom_base = _axiom_base_category_typeinfo(candidate)
+        if axiom_base is not None:
+            stack.append(axiom_base)
+    return tuple(candidates)
 
 
 def _lookup_alias_receiver_self_target(

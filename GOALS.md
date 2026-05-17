@@ -151,7 +151,7 @@ error output.
 | Covariant return narrowing | GREEN | Declare subtype in MRO (teach), including transitive semantic bases |
 | Value-dependent completion self return | GREEN | Declare self-return result container in MRO (teach) |
 | `_with_axiom` attribute | GREEN | Inject attribute into SubcategoryMethods TypeInfo (teach) |
-| Method-container receiver self surfaces | RED | Teach mypy that `self` inside `ParentMethods`, `ElementMethods`, and `SubcategoryMethods` is the runtime parent/element/category receiver, not only the nested provider class. Direct nested containers and same-module alias providers now handle explicitly declared receiver methods such as `base_ring` and `category`; live `category_specs` proof still reports inherited/runtime receiver attributes such as `submodule`, `zero`, `tensor`, and inherited `base_ring`. |
+| Method-container receiver self surfaces | RED | Teach mypy that `self` inside `ParentMethods`, `ElementMethods`, and `SubcategoryMethods` is the runtime parent/element/category receiver, not only the nested provider class. Direct nested containers, same-module alias providers, and static axiom-base chains now handle explicitly declared receiver methods such as `base_ring` and `category`; live `category_specs` proof still reports inherited/runtime receiver attributes such as `submodule`, `zero`, and `tensor`, plus receiver-return type mismatches at category-constructor call sites. |
 | Covariant container assignment | SUPPRESSED | Replace with covariance teaching (see registry) |
 | Postbind assignment (helper aliases) | SUPPRESSED | Replace with covariance teaching (see registry) |
 | Helper non-method decorator errors | SUPPRESSED | Complete `_copy_helper_flags` (see registry) |

@@ -29,6 +29,7 @@ Surfaces covered:
     Aliased receiver self surfaces — test_plugin_alias_receiver_self_surface_correctness
     Exact module import under suffix collision — test_plugin_exact_module_collision_correctness
     Static axiom base receiver self surfaces — test_plugin_static_axiom_base_receiver_self_correctness
+    Static axiom SubcategoryMethods receiver self surfaces — test_plugin_static_axiom_subcategory_receiver_self_correctness
     Static construction extra-super receiver self surfaces — test_plugin_static_construction_extra_super_receiver_self_correctness
     Static construction selectors avoid runtime import — test_plugin_static_construction_selector_no_runtime_import_correctness
     Runtime construction selector import failures stay diagnostic — test_plugin_runtime_construction_selector_import_failure_correctness
@@ -326,6 +327,14 @@ def test_plugin_static_axiom_base_receiver_self_correctness() -> None:
     _assert_override_conjunction(
         "test_static_axiom_base_receiver_self",
         "test_invalid_override",
+    )
+
+
+def test_plugin_static_axiom_subcategory_receiver_self_correctness() -> None:
+    """SubcategoryMethods receiver methods may come from an axiom base category."""
+    _assert_clean_conjunction(
+        "test_static_axiom_subcategory_receiver_self",
+        "[attr-defined]",
     )
 
 
