@@ -11,6 +11,7 @@ Surfaces covered:
     SubcategoryMethods @override  — test_plugin_subcategorymethods_override_correctness
     MorphismMethods @override  — test_plugin_morphismmethods_override_correctness
     Helper-alias @override     — test_plugin_helper_alias_override_correctness
+    Construction extra-super @override — test_plugin_construction_extra_super_correctness
     @final method binding      — test_plugin_final_method_binding_correctness
     @abstractmethod binding    — test_plugin_abstract_method_binding_correctness
     cached_method decorator    — test_plugin_cached_method_decorator_correctness
@@ -173,6 +174,14 @@ def test_plugin_morphismmethods_override_correctness() -> None:
 def test_plugin_helper_alias_override_correctness() -> None:
     """Helper-alias @override: ParentMethods assigned to helper class; @override resolves through alias."""
     _assert_override_conjunction("test_helper_alias_override", "test_helper_alias_invalid_override")
+
+
+def test_plugin_construction_extra_super_correctness() -> None:
+    """Construction extra-super method containers resolve through Sage's runtime hierarchy."""
+    _assert_override_conjunction(
+        "test_construction_extra_super_category_methods",
+        "test_invalid_override",
+    )
 
 
 def test_plugin_final_method_binding_correctness() -> None:

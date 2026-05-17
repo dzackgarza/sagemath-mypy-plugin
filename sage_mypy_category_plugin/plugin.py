@@ -91,9 +91,9 @@ class SageCategoryPlugin(Plugin):
         return None
 
     def get_base_class_hook(self, fullname: str) -> Callable | None:
-        if _looks_like_category_constructor(fullname):
-            return self._category_base_hook
-        return None
+        # Fire broadly; the hook body validates Sage category assignments and
+        # method-container bindings without namespace-string filters.
+        return self._category_base_hook
 
     def get_function_hook(self, fullname: str) -> Callable | None:
         if fullname in {
@@ -108,7 +108,8 @@ class SageCategoryPlugin(Plugin):
         return None
 
     def get_function_signature_hook(self, fullname: str) -> Callable | None:
-        if _looks_like_category_constructor(fullname):
+        short = fullname.rsplit(".", 1)[-1]
+        if short == "Constructors" or short.endswith("Category"):
             return self._category_constructor_signature_hook
         return None
 
@@ -153,25 +154,12 @@ class SageCategoryPlugin(Plugin):
             return
 
         projection = self._resolve_projection(ctx, fullname)
-        construction_bases = _construction_owner_method_container_bases(ctx, info)
         if projection is None:
             value_dependent_bases = _completion_self_return_base_tis(ctx, ctx.cls, info)
-            if construction_bases:
-                pass
-            elif value_dependent_bases:
+            if value_dependent_bases:
                 base_tis = value_dependent_bases
             elif (
                 _has_completion_self_return(ctx.cls, info)
-                and not ctx.api.final_iteration
-            ):
-                ctx.api.defer()
-                return
-            elif (
-                _method_container_enclosing_class_defines(
-                    ctx,
-                    info,
-                    "extra_super_categories",
-                )
                 and not ctx.api.final_iteration
             ):
                 ctx.api.defer()
@@ -214,11 +202,7 @@ class SageCategoryPlugin(Plugin):
 
         base_tis: list = list(value_dependent_bases)
         deferred = False
-        static_base_fns = (
-            tuple(construction_bases)
-            + (projection.static_bases if projection is not None else ())
-        )
-        for base_fn in static_base_fns:
+        for base_fn in (projection.static_bases if projection is not None else ()):
             ti = _lookup_typeinfo(ctx, base_fn)
             if ti is None:
                 if ctx.api.final_iteration:
@@ -343,11 +327,12 @@ class SageCategoryPlugin(Plugin):
         return False
 
     def _category_base_hook(self, ctx: ClassDefContext) -> None:
-        module = ctx.api.modules.get(ctx.cls.info.module_name)
+        info = ctx.cls.info
+        module = ctx.api.modules.get(info.module_name)
         if module is None:
             return
-        _materialize_construction_selector_methods(ctx, ctx.cls.info)
-        _inject_class_body_method_container_bases(ctx, ctx.cls.info, module)
+        _materialize_construction_selector_methods(ctx, info)
+        _inject_class_body_method_container_bases(ctx, info, module)
 
     def _resolve_projection(self, ctx: ClassDefContext, fullname: str) -> Any | None:
         try:
@@ -421,29 +406,25 @@ class SageCategoryPlugin(Plugin):
 _METHOD_KINDS = frozenset({
     "ParentMethods", "ElementMethods", "MorphismMethods", "SubcategoryMethods",
 })
-_CONSTRUCTION_SELECTOR_NAMES = frozenset({
-    "Subobjects",
-    "Quotients",
-    "Subquotients",
-    "ObjectsOver",
-    "ObjectsUnder",
-    "CartesianProducts",
-    "HomCategory",
-    "EndCategory",
-    "AutCategory",
+
+_SAGE_CATEGORY_BASE_FULLNAMES = frozenset({
+    "sage.categories.category.Category",
+    "sage.categories.category_singleton.Category_singleton",
+    "sage.categories.category_with_axiom.CategoryWithAxiom",
 })
+
+
+def _is_sage_category_typeinfo(info: TypeInfo) -> bool:
+    """Return True iff *info* is a Sage Category subclass."""
+    return any(
+        ti.fullname in _SAGE_CATEGORY_BASE_FULLNAMES
+        for ti in getattr(info, "mro", [])
+    )
+
 
 def _looks_like_method_container(fullname: str) -> bool:
     return fullname.rsplit(".", 1)[-1].endswith("Methods")
 
-def _looks_like_category_constructor(fullname: str) -> bool:
-    short_name = fullname.rsplit(".", 1)[-1]
-    return (
-        short_name == "Constructors"
-        or short_name.endswith("Category")
-        or "category_specs" in fullname
-        or fullname.startswith("sage.categories.")
-    )
 
 def _has_explicit_non_object_base(info: TypeInfo) -> bool:
     return any(base.type.fullname != "builtins.object" for base in info.bases)
@@ -474,19 +455,6 @@ def _sage_constructor_signature(signature: CallableType, api: Any) -> CallableTy
         arg_names=arg_names,
     )
 
-def _resolve_direct_bases(fullname: str) -> list[str] | None:
-    idx = fullname.find("sage.categories.")
-    if idx > 0:
-        fullname = fullname[idx:]
-    try:
-        from sage_mypy_category_plugin.introspection import (
-            method_container_direct_bases,
-        )
-        return method_container_direct_bases(fullname)
-    except Exception:
-        return None
-
-
 def _parse_args(value: str) -> list[str]:
     if not value.strip():
         return []
@@ -516,74 +484,6 @@ def _resolve_python_category_method_container_bases(
         if ti is not None:
             bases.append(ti.fullname)
     return tuple(dict.fromkeys(bases))
-
-
-def _construction_owner_method_container_bases(
-    ctx: ClassDefContext,
-    info: TypeInfo,
-) -> tuple[str, ...]:
-    if info.name not in _METHOD_KINDS:
-        return ()
-    enclosing = _lookup_enclosing_category_typeinfo(ctx, info)
-    if enclosing is None:
-        return ()
-    bases: list[str] = []
-    for module in getattr(ctx.api, "modules", {}).values():
-        module_defs = getattr(module, "defs", None)
-        if module_defs is None:
-            continue
-        module_body = module_defs.body if hasattr(module_defs, "body") else module_defs
-        for statement in module_body:
-            if not isinstance(statement, ClassDef):
-                continue
-            if not _class_assigns_construction_category(statement, enclosing):
-                continue
-            owner_fullname = statement.fullname or ".".join(
-                part
-                for part in (getattr(module, "fullname", ""), statement.name)
-                if part
-            )
-            ti = _class_method_container_typeinfo(statement, info.name)
-            if ti is None:
-                container_fn = f"{owner_fullname}.{info.name}"
-                ti = _lookup_typeinfo(ctx, container_fn)
-            if ti is not None:
-                bases.append(ti.fullname)
-    return tuple(dict.fromkeys(bases))
-
-
-def _method_container_enclosing_class_defines(
-    ctx: ClassDefContext,
-    info: TypeInfo,
-    name: str,
-) -> bool:
-    enclosing = _lookup_enclosing_category_typeinfo(ctx, info)
-    return enclosing is not None and _class_body_defines(enclosing.defn, name)
-
-
-def _class_assigns_construction_category(
-    owner: ClassDef,
-    construction: TypeInfo,
-) -> bool:
-    for statement in owner.defs.body:
-        if not isinstance(statement, AssignmentStmt) or len(statement.lvalues) != 1:
-            continue
-        target = statement.lvalues[0]
-        if not isinstance(target, NameExpr):
-            continue
-        if target.name not in _CONSTRUCTION_SELECTOR_NAMES:
-            continue
-        assigned = _typeinfo_from_symbol_node(getattr(statement.rvalue, "node", None))
-        if assigned is construction:
-            return True
-    return False
-
-
-def _class_method_container_typeinfo(owner: ClassDef, kind: str) -> TypeInfo | None:
-    symbol = owner.info.names.get(kind)
-    if symbol is None:
-        return None
-    return _typeinfo_from_symbol_node(symbol.node)
 
 
 def _projection_with_static_bases(projection: Any, static_bases: tuple[str, ...]) -> Any:
@@ -707,6 +607,7 @@ def _materialize_construction_selector_methods(
     ctx: ClassDefContext,
     info: TypeInfo,
 ) -> None:
+    """Materialize Sage category class attributes as zero-arg selector methods."""
     for statement in ctx.cls.defs.body:
         if not isinstance(statement, AssignmentStmt) or len(statement.lvalues) != 1:
             continue
@@ -714,14 +615,14 @@ def _materialize_construction_selector_methods(
         if not isinstance(target, NameExpr):
             continue
         name = target.name
-        if name not in _CONSTRUCTION_SELECTOR_NAMES:
-            continue
         construction_info = _typeinfo_from_symbol_node(
             getattr(statement.rvalue, "node", None)
         )
         if construction_info is None:
             continue
-        if not _looks_like_category_constructor(construction_info.fullname):
+        if not _is_sage_category_typeinfo(construction_info) and not (
+            _is_runtime_sage_category_fullname(construction_info.fullname)
+        ):
             continue
         method_type = CallableType(
             [],
@@ -758,6 +659,12 @@ def _materialize_method(
     var.info = info
     var._fullname = f"{info.fullname}.{name}"
     info.names[name] = SymbolTableNode(MDEF, var, plugin_generated=True)
+
+
+def _is_runtime_sage_category_fullname(fullname: str) -> bool:
+    from sage_mypy_category_plugin.introspection import is_sage_category_fullname
+
+    return is_sage_category_fullname(fullname)
 
 
 def _class_body_defines(cls: ClassDef, name: str) -> bool:

@@ -20,6 +20,9 @@ class _CartesianProducts(LocalCategoryBase):
     def extra_super_categories(self) -> list["_Modules"]:
         return [self.base_category()]
 
+    def super_categories(self):  # type: ignore[override]
+        return self.extra_super_categories()
+
     class ParentMethods:
         @override
         def __init_extra__(self) -> None:

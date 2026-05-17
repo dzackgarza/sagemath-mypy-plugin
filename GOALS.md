@@ -129,7 +129,7 @@ error output.
 | `Constructors()` zero-arg | RED | Hook to resolve instance method vs class (teach) |
 | `FunctorialConstructionCategory()` zero-arg | RED | `__classcall_private__` dispatch hook (teach) |
 | Construction selector class attribute | GREEN | Materialize category construction class attributes as zero-arg selector methods (teach) |
-| Construction extra-super method containers | RED | Teach construction categories that `extra_super_categories() == [base_category()]` contributes base-category `ParentMethods`/`ElementMethods`; failing fixture: `tests/fixtures/local_wrapper_pkg/category_specs_like/mypy_test_fixtures/test_construction_extra_super_category_methods.py` |
+| Construction extra-super method containers | GREEN | Sage-native projection: parameterized construction categories instantiate through their owner category, then `super_categories()`/`parent_class.__bases__` contributes base-category `ParentMethods`/`ElementMethods` |
 | `__classcall_private__` kwargs | RED | `__classcall_private__` dispatch hook (teach) |
 | Operator `__contains__`/`__ne__` | RED | Inject dunders into TypeInfo (teach) |
 | Covariant return narrowing | RED | Declare subtype in MRO (teach) |

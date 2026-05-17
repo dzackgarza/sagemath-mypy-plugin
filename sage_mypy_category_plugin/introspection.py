@@ -188,9 +188,61 @@ def is_sage_method_container(fullname: str) -> bool:
     return parse_method_container_fullname(fullname) is not None
 
 
+def is_sage_category_fullname(fullname: str) -> bool:
+    """Return True iff *fullname* resolves to a runtime Sage Category class."""
+    module_name, class_path = _split_module_and_class_path(fullname)
+    if module_name is None or not class_path:
+        return False
+    try:
+        module = _canonical_import_module(module_name)
+        obj: Any = module
+        for name in class_path:
+            obj = getattr(obj, name)
+    except (AttributeError, ImportError, TypeError, ValueError):
+        return False
+
+    _ensure_sage_initialized()
+    from sage.categories.category import Category
+
+    return isinstance(obj, type) and issubclass(obj, Category)
+
+
 # ---------------------------------------------------------------------------
 # Category instantiation
 # ---------------------------------------------------------------------------
+
+
+def _find_category_owner(
+    module: types.ModuleType,
+    top_cls: type,
+) -> tuple[type, str] | None:
+    """Find a Category class in *module* that directly owns *top_cls*.
+
+    Parameterized construction categories such as ``_CartesianProducts`` need
+    their owner category as a constructor argument.  This lookup is
+    namespace-agnostic: it checks class attribute values by identity, not names.
+    """
+    _ensure_sage_initialized()
+    from sage.categories.category import Category
+
+    for name in dir(module):
+        obj = getattr(module, name, None)
+        if obj is None:
+            continue
+        if not (isinstance(obj, type) and issubclass(obj, Category)):
+            continue
+        if obj is top_cls:
+            continue
+        for attr_name, attr_val in vars(obj).items():
+            if attr_val is top_cls:
+                return obj, attr_name
+    return None
+
+
+def _instantiate_category_class(cls: type) -> Any:
+    if hasattr(cls, "an_instance"):
+        return cls.an_instance()
+    return cls()
 
 
 def instantiate_category_from_source_path(
@@ -200,14 +252,17 @@ def instantiate_category_from_source_path(
 ) -> Any:
     """Instantiate a Sage category from a source-module and category path.
 
-    Uses ``.an_instance()`` as the preferred instantiation mechanism, falling
-    back to direct construction only when ``.an_instance()`` is unavailable.
+    When a construction category is a direct class attribute of an owner
+    category, instantiates it through Sage's normal construction protocol.
+    Otherwise uses ``.an_instance()`` as the preferred instantiation mechanism.
 
     - Flat: ``category_path = ("Rings",)`` → ``module.Rings.an_instance()``
     - Nested: ``("Objects", "Homsets")`` →
       ``module.Objects.an_instance().Homsets()``
     - Axiom: ``("Monoids", "Finite")`` →
       ``module.Monoids.an_instance().Finite()``
+    - Construction: ``("_CartesianProducts",)`` →
+      ``_CartesianProducts(owner.an_instance())``
 
     Args:
         module: The Python module containing the top-level category class.
@@ -219,8 +274,8 @@ def instantiate_category_from_source_path(
 
     Raises:
         AttributeError: If an attribute in the path is missing.
-        TypeError: If the category cannot be instantiated (e.g. unresolved
-            parameterized category without a default).
+        TypeError: If the category cannot be instantiated without configured
+            representative arguments.
         ImportError: If Sage cannot be imported.
     """
     if not category_path:
@@ -233,10 +288,14 @@ def instantiate_category_from_source_path(
 
     if representative_args and top_fullname in representative_args:
         cat = top_cls(*representative_args[top_fullname])
-    elif hasattr(top_cls, "an_instance"):
-        cat = top_cls.an_instance()
     else:
-        cat = top_cls()
+        owner = _find_category_owner(module, top_cls)
+        if owner is not None:
+            owner_cls, _attr_name = owner
+            owner_instance = _instantiate_category_class(owner_cls)
+            cat = top_cls(owner_instance)
+        else:
+            cat = _instantiate_category_class(top_cls)
 
     # Walk remaining path elements as method calls on the instance.
     for name in category_path[1:]:
@@ -371,6 +430,8 @@ def _project_method_container_alias(
             parsed.category_path,
             representative_args,
         )
+    except ParameterizedCategoryError:
+        raise
     except TypeError as exc:
         raise ParameterizedCategoryError(
             f"could not instantiate {parsed.module_name}.{'.'.join(parsed.category_path)}"
