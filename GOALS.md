@@ -123,18 +123,18 @@ error output.
 |---|---|---|
 | `ParentMethods @override` | GREEN | MRO injection (teach) |
 | `ElementMethods @override` | GREEN | MRO injection (teach) |
-| `SubcategoryMethods @override` | not yet tested | MRO injection (teach) |
-| `MorphismMethods @override` | not yet tested | MRO injection (teach) |
+| `SubcategoryMethods @override` | GREEN | MRO injection (teach), covered by local-wrapper conjunction test |
+| `MorphismMethods @override` | GREEN | MRO injection (teach), covered by local-wrapper conjunction test |
 | `@cached_method` decorator typing | GREEN | Bundled `sage.misc.cachefunc.cached_method` stub preserves the decorated callable type; plugin does not suppress arbitrary untyped decorators |
 | `Constructors()` zero-arg | RED | Hook to resolve instance method vs class (teach) |
 | `FunctorialConstructionCategory()` zero-arg | RED | `__classcall_private__` dispatch hook (teach) |
 | Construction selector class attribute | GREEN | Materialize category construction class attributes as zero-arg selector methods (teach) |
 | Construction extra-super method containers | GREEN | Sage-native projection: parameterized construction categories instantiate through their owner category, then `super_categories()`/`parent_class.__bases__` contributes base-category `ParentMethods`/`ElementMethods` |
 | `__classcall_private__` kwargs | RED | `__classcall_private__` dispatch hook (teach) |
-| Operator `__contains__`/`__ne__` | RED | Inject dunders into TypeInfo (teach) |
-| Covariant return narrowing | RED | Declare subtype in MRO (teach) |
+| Operator `__contains__`/`__ne__` | GREEN | Inject dunders into TypeInfo (teach) |
+| Covariant return narrowing | GREEN | Declare subtype in MRO (teach), including transitive semantic bases |
 | Value-dependent completion self return | GREEN | Declare self-return result container in MRO (teach) |
-| `_with_axiom` attribute | RED | Inject attribute into TypeInfo (teach) |
+| `_with_axiom` attribute | GREEN | Inject attribute into SubcategoryMethods TypeInfo (teach) |
 | Covariant container assignment | RED | Declare method container covariance (teach) |
 | Postbind assignment (helper aliases) | SUPPRESSED | Replace with covariance teaching (see registry) |
 | Helper non-method decorator errors | SUPPRESSED | Complete `_copy_helper_flags` (see registry) |
