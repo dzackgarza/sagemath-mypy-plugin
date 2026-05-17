@@ -112,6 +112,8 @@ class SageCategoryPlugin(Plugin):
         return None
 
     def get_function_signature_hook(self, fullname: str) -> Callable | None:
+        if fullname == "sage.structure.parent.Parent.Hom":
+            return self._parent_hom_signature_hook
         short = fullname.rsplit(".", 1)[-1]
         if short == "Constructors":
             return self._constructors_signature_hook
@@ -125,6 +127,8 @@ class SageCategoryPlugin(Plugin):
         return None
 
     def get_method_signature_hook(self, fullname: str) -> Callable | None:
+        if fullname == "sage.structure.parent.Parent.Hom":
+            return self._parent_hom_signature_hook
         if fullname.rsplit(".", 1)[-1] == "Constructors":
             return self._constructors_signature_hook
         return None
@@ -439,6 +443,9 @@ class SageCategoryPlugin(Plugin):
             return ctx.default_signature
         return _sage_constructor_signature(ctx.default_signature, ctx.api)
 
+    def _parent_hom_signature_hook(self, ctx: Any) -> Any:
+        return _parent_hom_signature(ctx.default_signature)
+
     def _method_container_alias_type_analyze_hook(self, ctx: Any, fullname: str) -> Any:
         provider = _method_container_alias_provider_typeinfo(ctx.api, fullname)
         if provider is None:
@@ -633,6 +640,31 @@ def _sage_constructor_signature(signature: CallableType, api: Any) -> CallableTy
         arg_types.append(api.named_type("builtins.bool"))
         arg_kinds.append(ARG_NAMED_OPT)
         arg_names.append("dispatch")
+        changed = True
+
+    if not changed:
+        return signature
+    return signature.copy_modified(
+        arg_types=arg_types,
+        arg_kinds=arg_kinds,
+        arg_names=arg_names,
+    )
+
+
+def _parent_hom_signature(signature: CallableType) -> CallableType:
+    any_type = AnyType(TypeOfAny.special_form)
+    arg_types = list(signature.arg_types)
+    arg_kinds = list(signature.arg_kinds)
+    arg_names = list(signature.arg_names)
+    changed = False
+
+    if len(arg_types) >= 2:
+        arg_types[1] = any_type
+        changed = True
+    if "category" not in arg_names:
+        arg_types.append(any_type)
+        arg_kinds.append(ARG_NAMED_OPT)
+        arg_names.append("category")
         changed = True
 
     if not changed:

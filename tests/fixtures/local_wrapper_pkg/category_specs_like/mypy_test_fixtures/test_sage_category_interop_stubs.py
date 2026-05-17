@@ -1,4 +1,6 @@
 """Bundled Sage category interop stubs cover consumed category helpers."""
+from typing import final
+
 from sage.categories.category import Category, CategoryWithParameters, JoinCategory
 from sage.categories.category_with_axiom import (
     CategoryWithAxiom,
@@ -40,6 +42,7 @@ def cartesian_product_category(category: Category) -> Category:
 
 
 class ParentHomMixin:
+    @final
     def Hom(self, codomain: Category) -> object:
         return Parent.Hom(self, codomain)
 
