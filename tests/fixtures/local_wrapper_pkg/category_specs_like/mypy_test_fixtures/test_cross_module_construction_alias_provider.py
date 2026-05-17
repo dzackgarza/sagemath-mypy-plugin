@@ -12,10 +12,6 @@ class _Quotients(LocalCategoryBase):
     def __init__(self, category: _Modules) -> None:
         self._category = category
 
-    @classmethod
-    def an_instance(cls) -> "_Quotients":
-        return cls(_Modules.an_instance())
-
     def base_category(self) -> _Modules:
         return self._category
 

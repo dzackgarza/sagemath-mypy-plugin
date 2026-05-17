@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import logging
 import re
 import sys
 import types
@@ -24,6 +25,7 @@ from contextlib import contextmanager
 from functools import lru_cache
 from typing import Any
 
+_LOG = logging.getLogger(__name__)
 _SAGE_INITIALIZED = False
 
 
@@ -225,18 +227,61 @@ def _find_category_owner(
     _ensure_sage_initialized()
     from sage.categories.category import Category
 
-    for name in dir(module):
-        obj = getattr(module, name, None)
-        if obj is None:
-            continue
-        if not (isinstance(obj, type) and issubclass(obj, Category)):
-            continue
-        if obj is top_cls:
-            continue
-        for attr_name, attr_val in vars(obj).items():
-            if attr_val is top_cls:
+    for owner_module in _category_owner_search_modules(module):
+        for obj in vars(owner_module).values():
+            if not (isinstance(obj, type) and issubclass(obj, Category)):
+                continue
+            if obj is top_cls:
+                continue
+            attr_name = _owned_category_attribute_name(obj, top_cls)
+            if attr_name is not None:
                 return obj, attr_name
     return None
+
+
+def _category_owner_search_modules(module: types.ModuleType) -> tuple[types.ModuleType, ...]:
+    modules: list[types.ModuleType] = [module]
+    seen = {module.__name__}
+    parts = module.__name__.split(".")
+    for size in range(len(parts) - 1, 1, -1):
+        prefix = ".".join(parts[:size])
+        if prefix in seen:
+            continue
+        try:
+            candidate = _load_module_from_source_tree(prefix)
+        except Exception:
+            _LOG.debug(
+                "Sage category owner module discovery failed for %s",
+                prefix,
+                exc_info=True,
+            )
+            continue
+        if candidate.__name__ in seen:
+            continue
+        seen.add(candidate.__name__)
+        modules.append(candidate)
+    return tuple(modules)
+
+
+def _owned_category_attribute_name(owner_cls: type, top_cls: type) -> str | None:
+    for attr_name, attr_val in vars(owner_cls).items():
+        if attr_val is top_cls:
+            return attr_name
+        if _lazy_import_target(attr_val) is top_cls:
+            return attr_name
+    return None
+
+
+def _lazy_import_target(value: Any) -> type | None:
+    get_object = getattr(value, "_get_object", None)
+    if not callable(get_object):
+        return None
+    try:
+        target = get_object()
+    except Exception:
+        _LOG.debug("Sage lazy construction owner lookup failed", exc_info=True)
+        return None
+    return target if isinstance(target, type) else None
 
 
 def _instantiate_category_class(cls: type) -> Any:
