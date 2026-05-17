@@ -597,9 +597,62 @@ def _resolve_static_category_method_container_bases(
         if ti is not None:
             bases.append(ti.fullname)
     bases.extend(
+        _resolve_static_construction_owner_method_container_bases(
+            ctx,
+            enclosing_cat,
+            info.name,
+        )
+    )
+    bases.extend(
         _resolve_python_category_method_container_bases(ctx, enclosing_cat, info.name)
     )
     return tuple(dict.fromkeys(bases))
+
+
+def _resolve_static_construction_owner_method_container_bases(
+    ctx: ClassDefContext,
+    construction_cat: TypeInfo,
+    method_kind: str,
+) -> tuple[str, ...]:
+    bases: list[str] = []
+    for module in ctx.api.modules.values():
+        names = getattr(module, "names", None)
+        if names is None:
+            continue
+        for symbol in names.values():
+            owner = _typeinfo_from_symbol_node(symbol.node)
+            if owner is None or owner.fullname == construction_cat.fullname:
+                continue
+            if not _class_assigns_typeinfo(owner, construction_cat):
+                continue
+            provider = _method_container_provider_typeinfo(ctx, owner, method_kind)
+            if provider is not None:
+                bases.append(provider.fullname)
+    return tuple(dict.fromkeys(bases))
+
+
+def _class_assigns_typeinfo(owner: TypeInfo, assigned: TypeInfo) -> bool:
+    for statement in getattr(owner.defn.defs, "body", ()):
+        if not isinstance(statement, AssignmentStmt) or len(statement.lvalues) != 1:
+            continue
+        if not isinstance(statement.lvalues[0], NameExpr):
+            continue
+        if _typeinfo_from_expr(statement.rvalue) is assigned:
+            return True
+    return False
+
+
+def _method_container_provider_typeinfo(
+    ctx: ClassDefContext,
+    owner: TypeInfo,
+    method_kind: str,
+) -> TypeInfo | None:
+    symbol = owner.names.get(method_kind)
+    if symbol is not None:
+        ti = _typeinfo_from_symbol_node(symbol.node)
+        if ti is not None:
+            return ti
+    return _lookup_typeinfo(ctx, f"{owner.fullname}.{method_kind}")
 
 
 def _axiom_base_category_typeinfo(info: TypeInfo) -> TypeInfo | None:
