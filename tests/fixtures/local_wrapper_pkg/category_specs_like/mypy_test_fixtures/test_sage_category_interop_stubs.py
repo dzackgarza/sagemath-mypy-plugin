@@ -22,8 +22,8 @@ def category_object_helpers(obj: object, category: Category) -> None:
     CategoryObject._init_category_(obj, category)
 
 
-def parent_init(parent: Parent) -> None:
-    Parent.__init__(parent, category=None)
+def parent_init(obj: object) -> None:
+    Parent.__init__(obj, category=None)
 
 
 def category_classcall_helpers(category_type: type[Category], value: object) -> object:
