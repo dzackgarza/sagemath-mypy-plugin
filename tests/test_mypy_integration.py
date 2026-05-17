@@ -1,5 +1,7 @@
 """Mypy integration tests for the Sage category override plugin."""
 from __future__ import annotations
+
+from functools import cache
 import importlib
 import os
 import subprocess
@@ -20,10 +22,85 @@ _CONFIGURED_CONFIG_FILE = Path(__file__).resolve().parent / "mypy_configured.ini
 _STRICT_CONFIG_FILE = Path(__file__).resolve().parent / "mypy_strict_no_representatives.ini"
 _RESEARCH_ROOT = Path("/home/dzack/research")
 _RESEARCH_MYPY_CONFIG = Path("/home/dzack/ai/quality-control/mypy-global.ini")
+_MUTABLE_FIXTURE_NAMES = frozenset({"test_renamed_ancestor"})
+_FATAL_MYPY_MARKERS = (
+    "INTERNAL ERROR",
+    "Traceback",
+    "Segmentation fault",
+    "Unhandled SIGSEGV",
+)
 
 
 def _drop_fixture_module(module_name: str) -> None:
     sys.modules.pop(module_name, None)
+
+
+def _import_fixture(module_prefix: str, fixture_name: str) -> None:
+    _drop_fixture_module(f"{module_prefix}.{fixture_name}")
+    try:
+        importlib.import_module(f"{module_prefix}.{fixture_name}")
+    except Exception:
+        pass
+
+
+def _fixture_paths(fixture_dir: Path) -> tuple[Path, ...]:
+    return tuple(
+        path for path in sorted(fixture_dir.glob("test_*.py"))
+        if path.stem not in _MUTABLE_FIXTURE_NAMES
+    )
+
+
+def _diagnostics_for_path(stdout: str, path: Path) -> str:
+    rel_path = path.relative_to(_PROJECT_ROOT)
+    prefixes = (f"{path}:", f"{rel_path}:")
+    lines = [line for line in stdout.splitlines() if line.startswith(prefixes)]
+    return "\n".join(lines)
+
+
+def _assert_mypy_completed(stdout: str, code: int) -> None:
+    if any(marker in stdout for marker in _FATAL_MYPY_MARKERS):
+        raise AssertionError(stdout)
+    if code not in (0, 1):
+        raise AssertionError(stdout)
+
+
+def _run_single_fixture(
+    fixture_dir: Path,
+    module_prefix: str,
+    fixture_name: str,
+    config_file: Path,
+) -> tuple[int, str]:
+    from mypy import api
+
+    path = fixture_dir / f"{fixture_name}.py"
+    _import_fixture(module_prefix, fixture_name)
+    stdout, _stderr, code = api.run([
+        "--config-file", str(config_file),
+        "--no-incremental",
+        str(path),
+    ])
+    _assert_mypy_completed(stdout, code)
+    return code, stdout
+
+
+@cache
+def _run_fixture_set(
+    fixture_dir: Path,
+    module_prefix: str,
+    config_file: Path,
+) -> str:
+    from mypy import api
+
+    paths = _fixture_paths(fixture_dir)
+    for path in paths:
+        _import_fixture(module_prefix, path.stem)
+    stdout, _stderr, code = api.run([
+        "--config-file", str(config_file),
+        "--no-incremental",
+        *(str(path) for path in paths),
+    ])
+    _assert_mypy_completed(stdout, code)
+    return stdout
 
 
 def _run_fixture(
@@ -32,20 +109,19 @@ def _run_fixture(
     fixture_name: str,
     config_file: Path = _CONFIG_FILE,
 ) -> tuple[int, str]:
-    from mypy import api
-    path = str(fixture_dir / f"{fixture_name}.py")
-    mod_name = f"{module_prefix}.{fixture_name}"
-    _drop_fixture_module(mod_name)
-    try:
-        importlib.import_module(mod_name)
-    except Exception:
-        pass
-    stdout, _stderr, code = api.run([
-        "--config-file", str(config_file),
-        "--no-incremental",
+    if fixture_name in _MUTABLE_FIXTURE_NAMES:
+        return _run_single_fixture(
+            fixture_dir,
+            module_prefix,
+            fixture_name,
+            config_file,
+        )
+    path = fixture_dir / f"{fixture_name}.py"
+    diagnostics = _diagnostics_for_path(
+        _run_fixture_set(fixture_dir, module_prefix, config_file),
         path,
-    ])
-    return code, stdout
+    )
+    return (1 if diagnostics else 0), diagnostics
 
 
 def _run(

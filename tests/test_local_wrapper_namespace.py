@@ -28,34 +28,65 @@ Surfaces covered:
 """
 from __future__ import annotations
 
+from functools import cache
 import sys
 from pathlib import Path
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 _LOCAL_WRAPPER_FIXTURES = (
     _FIXTURES_DIR / "local_wrapper_pkg" / "category_specs_like" / "mypy_test_fixtures"
 )
 _CONFIG_WITH_PLUGIN = Path(__file__).resolve().parent / "mypy_test.ini"
 _CONFIG_WITHOUT_PLUGIN = Path(__file__).resolve().parent / "mypy_no_plugin.ini"
+_FIXTURE_FILES = tuple(sorted(_LOCAL_WRAPPER_FIXTURES.glob("test_*.py")))
+_FIXTURE_BY_NAME = {path.stem: path for path in _FIXTURE_FILES}
+_FATAL_MYPY_MARKERS = (
+    "INTERNAL ERROR",
+    "Traceback",
+    "Segmentation fault",
+    "Unhandled SIGSEGV",
+)
 
 
-def _run(fixture_name: str, config: Path) -> tuple[int, str]:
+@cache
+def _run_local_wrapper_fixture_set(config: Path) -> str:
     import importlib
     from mypy import api
 
-    mod_name = f"local_wrapper_pkg.category_specs_like.mypy_test_fixtures.{fixture_name}"
-    sys.modules.pop(mod_name, None)
-    try:
-        importlib.import_module(mod_name)
-    except Exception:
-        pass
-    path = str(_LOCAL_WRAPPER_FIXTURES / f"{fixture_name}.py")
+    for path in _FIXTURE_FILES:
+        mod_name = f"local_wrapper_pkg.category_specs_like.mypy_test_fixtures.{path.stem}"
+        sys.modules.pop(mod_name, None)
+        try:
+            importlib.import_module(mod_name)
+        except Exception:
+            pass
     stdout, _stderr, code = api.run([
         "--config-file", str(config),
         "--no-incremental",
-        path,
+        *(str(path) for path in _FIXTURE_FILES),
     ])
-    return code, stdout
+    if any(marker in stdout for marker in _FATAL_MYPY_MARKERS):
+        raise AssertionError(stdout)
+    if code not in (0, 1):
+        raise AssertionError(stdout)
+    return stdout
+
+
+def _diagnostics_for_fixture(stdout: str, path: Path) -> str:
+    rel_path = path.relative_to(_PROJECT_ROOT)
+    prefixes = (f"{path}:", f"{rel_path}:")
+    lines = [line for line in stdout.splitlines() if line.startswith(prefixes)]
+    return "\n".join(lines)
+
+
+def _run(fixture_name: str, config: Path) -> tuple[int, str]:
+    path = _FIXTURE_BY_NAME[fixture_name]
+    diagnostics = _diagnostics_for_fixture(
+        _run_local_wrapper_fixture_set(config),
+        path,
+    )
+    return (1 if diagnostics else 0), diagnostics
 
 
 def _assert_override_conjunction(valid_fixture: str, invalid_fixture: str) -> None:
