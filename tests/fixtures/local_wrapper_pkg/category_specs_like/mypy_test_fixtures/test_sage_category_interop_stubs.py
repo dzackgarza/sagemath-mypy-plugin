@@ -1,5 +1,5 @@
 """Bundled Sage category interop stubs cover consumed category helpers."""
-from typing import final
+from typing import final, override
 
 from sage.categories.category import Category, CategoryWithParameters, JoinCategory
 from sage.categories.category_with_axiom import (
@@ -18,6 +18,10 @@ def category_helpers(category: Category) -> object:
     category.Constructors()
     category.base_category()
     return category.parent_class
+
+
+def category_base_category(category: Category) -> Category:
+    return category.base_category()
 
 
 def category_object_helpers(obj: object, category: Category) -> None:
@@ -48,6 +52,20 @@ class ParentHomMixin:
 
 
 class ParentHomObject(ParentHomMixin, Parent): ...
+
+
+class CategoryWithAxiomOverrides(CategoryWithAxiom):
+    @override
+    def ambient_category(self) -> Category:
+        return self.base_category()
+
+    @override
+    def defining_predicates(self) -> tuple[str, ...]:
+        return ("is_example",)
+
+    @override
+    def defining_predicate(self, candidate: object) -> bool:
+        return bool(candidate)
 
 
 def imported_category_bases(
