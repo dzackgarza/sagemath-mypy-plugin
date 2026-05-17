@@ -1,7 +1,9 @@
-"""Sage @cached_method must preserve the decorated function's type."""
-from sage.misc.cachefunc import cached_method
-
+"""Arbitrary untyped method-container decorators must remain mypy errors."""
 from local_wrapper_pkg.category_specs_like.base_types import LocalCategoryBase
+
+
+def untyped_decorator(f):
+    return f
 
 
 class _LocalBase(LocalCategoryBase):
@@ -13,14 +15,6 @@ class _LocalBase(LocalCategoryBase):
         return cls()
 
     class SubcategoryMethods:
-        @cached_method
+        @untyped_decorator
         def finite(self) -> "_LocalBase":
             return _LocalBase.an_instance()
-
-        @cached_method
-        def countable(self) -> "_LocalBase":
-            return _LocalBase.an_instance()
-
-
-def build_finite() -> _LocalBase:
-    return _LocalBase.SubcategoryMethods().finite()

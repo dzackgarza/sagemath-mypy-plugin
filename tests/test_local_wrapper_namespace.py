@@ -106,9 +106,53 @@ def _assert_clean_conjunction(fixture: str, error_code: str) -> None:
     assert not errors, "\n\n".join(errors)
 
 
+def _assert_clean_with_and_without_plugin(fixture: str) -> None:
+    """Assert that a fixture is clean independent of plugin activation."""
+    plugin_code,   plugin_out   = _run(fixture, _CONFIG_WITH_PLUGIN)
+    noplugin_code, noplugin_out = _run(fixture, _CONFIG_WITHOUT_PLUGIN)
+
+    errors = []
+
+    if plugin_code != 0:
+        errors.append(f"plugin=on : expected exit 0\n{plugin_out}")
+
+    if noplugin_code != 0:
+        errors.append(f"plugin=off: expected exit 0\n{noplugin_out}")
+
+    assert not errors, "\n\n".join(errors)
+
+
+def _assert_error_with_and_without_plugin(fixture: str, error_code: str) -> None:
+    """Assert that the plugin does not hide a non-Sage-owned mypy error."""
+    plugin_code,   plugin_out   = _run(fixture, _CONFIG_WITH_PLUGIN)
+    noplugin_code, noplugin_out = _run(fixture, _CONFIG_WITHOUT_PLUGIN)
+
+    errors = []
+
+    if plugin_code == 0:
+        errors.append("plugin=on : expected nonzero exit, got 0")
+    elif error_code not in plugin_out:
+        errors.append(f"plugin=on : expected '{error_code}'\n{plugin_out}")
+
+    if noplugin_code == 0:
+        errors.append("plugin=off: expected nonzero exit, got 0")
+    elif error_code not in noplugin_out:
+        errors.append(f"plugin=off: expected '{error_code}'\n{noplugin_out}")
+
+    assert not errors, "\n\n".join(errors)
+
+
 def test_plugin_cached_method_decorator_correctness() -> None:
-    """@cached_method must not make decorated functions untyped ([untyped-decorator])."""
-    _assert_clean_conjunction("test_cached_method_decorator", "[untyped-decorator]")
+    """@cached_method stays typed through the bundled Sage stub."""
+    _assert_clean_with_and_without_plugin("test_cached_method_decorator")
+
+
+def test_plugin_does_not_suppress_untyped_method_container_decorators() -> None:
+    """An arbitrary untyped decorator is not a Sage category plugin surface."""
+    _assert_error_with_and_without_plugin(
+        "test_untyped_method_container_decorator",
+        "[untyped-decorator]",
+    )
 
 
 def test_plugin_constructors_zero_arg_correctness() -> None:

@@ -103,8 +103,6 @@ class SageCategoryPlugin(Plugin):
             "typing_extensions.override",
         }:
             return self._decorator_typecheck_hook
-        if fullname.rsplit(".", 1)[-1].endswith("cached_method"):
-            return self._cached_method_typecheck_hook
         return None
 
     def get_function_signature_hook(self, fullname: str) -> Callable | None:
@@ -146,8 +144,6 @@ class SageCategoryPlugin(Plugin):
         fullname = info.fullname
         module = ctx.api.modules.get(info.module_name)
         _recover_method_helper_bindings(ctx.api, module, info, materialize=False)
-        if module is not None:
-            _filter_method_container_untyped_decorator_errors(ctx.api.errors, module)
         _materialize_subcategory_helpers(ctx, info)
         _materialize_operator_helpers(ctx, info)
         if _has_explicit_non_object_base(info):
@@ -371,11 +367,6 @@ class SageCategoryPlugin(Plugin):
         if module is not None:
             bindings = _method_container_symbol_bindings(module)
             _filter_postbind_method_assign_errors(ctx.api.errors, module, bindings)
-        return ctx.default_return_type
-
-    def _cached_method_typecheck_hook(self, ctx: Any) -> Any:
-        module = getattr(ctx.api, "tree", None)
-        _filter_method_container_untyped_decorator_errors(ctx.api.errors, module)
         return ctx.default_return_type
 
     def _category_constructor_signature_hook(self, ctx: Any) -> Any:
@@ -908,29 +899,6 @@ def _filter_constructors_no_redef_errors(errors: Any, module: Any) -> None:
             del errors.error_info_map[path]
 
 
-def _filter_method_container_untyped_decorator_errors(errors: Any, module: Any) -> None:
-    if module is None:
-        return
-    lines = set(_method_container_decorated_method_lines(module))
-    if not lines:
-        return
-    for path, items in list(getattr(errors, "error_info_map", {}).items()):
-        filtered = [
-            error
-            for error in items
-            if not (
-                getattr(error, "line", None) in lines
-                and str(getattr(error, "message", "")).startswith(
-                    "Untyped decorator makes function"
-                )
-            )
-        ]
-        if filtered:
-            errors.error_info_map[path] = filtered
-        else:
-            del errors.error_info_map[path]
-
-
 def _completion_self_return_base_tis(
     ctx: ClassDefContext,
     cls: ClassDef,
@@ -1006,20 +974,6 @@ def _has_self_return(node: Any) -> bool:
             if _has_self_return(statement):
                 return True
     return False
-
-
-def _method_container_decorated_method_lines(module: Any) -> tuple[int, ...]:
-    lines: list[int] = []
-    for class_def in _module_statements(module):
-        if not isinstance(class_def, ClassDef):
-            continue
-        for nested in class_def.defs.body:
-            if not isinstance(nested, ClassDef) or nested.name not in _METHOD_KINDS:
-                continue
-            for statement in nested.defs.body:
-                if isinstance(statement, Decorator):
-                    lines.append(statement.line)
-    return tuple(lines)
 
 
 def _constructors_method_lines(module: Any) -> tuple[int, ...]:

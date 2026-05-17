@@ -125,7 +125,7 @@ error output.
 | `ElementMethods @override` | GREEN | MRO injection (teach) |
 | `SubcategoryMethods @override` | not yet tested | MRO injection (teach) |
 | `MorphismMethods @override` | not yet tested | MRO injection (teach) |
-| `@cached_method` decorator typing | RED | Stub for `cached_method` (teach — preserve return type) |
+| `@cached_method` decorator typing | GREEN | Bundled `sage.misc.cachefunc.cached_method` stub preserves the decorated callable type; plugin does not suppress arbitrary untyped decorators |
 | `Constructors()` zero-arg | RED | Hook to resolve instance method vs class (teach) |
 | `FunctorialConstructionCategory()` zero-arg | RED | `__classcall_private__` dispatch hook (teach) |
 | Construction selector class attribute | GREEN | Materialize category construction class attributes as zero-arg selector methods (teach) |
