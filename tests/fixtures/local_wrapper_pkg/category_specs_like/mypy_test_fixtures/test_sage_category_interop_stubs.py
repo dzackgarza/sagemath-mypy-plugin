@@ -39,6 +39,14 @@ def cartesian_product_category(category: Category) -> Category:
     return CartesianProductsCategory.category_of(category)
 
 
+class ParentHomMixin:
+    def Hom(self, codomain: Category) -> object:
+        return Parent.Hom(self, codomain)
+
+
+class ParentHomObject(ParentHomMixin, Parent): ...
+
+
 def imported_category_bases(
     parameterized: CategoryWithParameters,
     axiom: CategoryWithAxiom,
