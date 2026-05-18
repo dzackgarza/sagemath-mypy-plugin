@@ -4,7 +4,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from importlib import import_module
 from typing import Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StrictStr
 
 import sage.all  # type: ignore[import-untyped] # noqa: F401
 
@@ -23,15 +23,15 @@ class SageCategoryFactory(Protocol):
 
 
 class ProviderProjection(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
-    provider: str
+    provider: StrictStr
     role: ProviderRole
-    runtime_class: str
-    runtime_bases: tuple[str, ...]
-    runtime_mro: tuple[str, ...]
-    provider_bases: tuple[str, ...]
-    provider_mro: tuple[str, ...]
+    runtime_class: StrictStr
+    runtime_bases: tuple[StrictStr, ...]
+    runtime_mro: tuple[StrictStr, ...]
+    provider_bases: tuple[StrictStr, ...]
+    provider_mro: tuple[StrictStr, ...]
 
 
 class RoleProjection(BaseModel):
