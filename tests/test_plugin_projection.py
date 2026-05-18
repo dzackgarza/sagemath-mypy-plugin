@@ -106,6 +106,7 @@ DIAMOND_SOURCE_MODULE = SourceModuleRecord(
     path="tests/fixtures/invariant_core/diamond_runtime.py",
     sha256="9f1f7a4a0d0b6dfd7f9d2d2c1d3b5e6a"
     "8b1c0f7a6d5e4c3b2a19080706050403",
+    mtime_ns=FIXTURE_PATH.stat().st_mtime_ns,
 )
 
 
@@ -1059,6 +1060,7 @@ def _write_projected_provider_stubs(
             module=module_name,
             path=str(stub_root.joinpath(*module_name.split(".")).with_suffix(".pyi")),
             sha256="0" * 64,
+            mtime_ns=0,
         )
         for module_name in _projected_provider_module_names(projections)
     )

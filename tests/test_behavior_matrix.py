@@ -351,11 +351,14 @@ def _write_nested_provider_sources(
             )
         )
         path.write_text(source + "\n")
+        source_bytes = path.read_bytes()
+        source_stat = path.stat()
         source_modules.append(
             SourceModuleRecord(
                 module=module_name,
                 path=str(path),
-                sha256=sha256((source + "\n").encode()).hexdigest(),
+                sha256=sha256(source_bytes).hexdigest(),
+                mtime_ns=source_stat.st_mtime_ns,
             )
         )
     return tuple(source_modules)

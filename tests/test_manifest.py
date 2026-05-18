@@ -141,6 +141,7 @@ def _manifest_payload() -> dict[str, Any]:
                 path="tests/fixtures/invariant_core/diamond_runtime.py",
                 sha256="9f1f7a4a0d0b6dfd7f9d2d2c1d3b5e6a"
                 "8b1c0f7a6d5e4c3b2a19080706050403",
+                mtime_ns=1_789_000_000_000_000_000,
             ),
         ),
         concrete_parents=(
@@ -202,6 +203,7 @@ def test_manifest_round_trips_projection_records(tmp_path: Path) -> None:
             path="tests/fixtures/invariant_core/diamond_runtime.py",
             sha256="9f1f7a4a0d0b6dfd7f9d2d2c1d3b5e6a"
             "8b1c0f7a6d5e4c3b2a19080706050403",
+            mtime_ns=1_789_000_000_000_000_000,
         )
     }
     assert loaded.concrete_parent_by_class == {
@@ -290,6 +292,16 @@ def test_manifest_rejects_malformed_source_module_hash() -> None:
     assert "sha256" in str(raised.value)
 
 
+def test_manifest_rejects_negative_source_module_mtime() -> None:
+    payload = _manifest_payload()
+    payload["source_modules"][0]["mtime_ns"] = -1
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    assert "mtime_ns" in str(raised.value)
+
+
 def test_manifest_rejects_invalid_sage_git_revision() -> None:
     payload = _manifest_payload()
     payload["sage_git_revision"] = "not-a-revision"
@@ -363,6 +375,15 @@ def test_manifest_source_module_digest_tracks_source_hash_changes() -> None:
         "0f1f7a4a0d0b6dfd7f9d2d2c1d3b5e6a"
         "8b1c0f7a6d5e4c3b2a19080706050403"
     )
+    mutated_manifest = ProjectionManifest.model_validate(mutated_payload)
+
+    assert base_manifest.source_module_digest != mutated_manifest.source_module_digest
+
+
+def test_manifest_source_module_digest_tracks_source_mtime_changes() -> None:
+    base_manifest = ProjectionManifest.model_validate(_manifest_payload())
+    mutated_payload = base_manifest.model_dump(mode="json")
+    mutated_payload["source_modules"][0]["mtime_ns"] += 1
     mutated_manifest = ProjectionManifest.model_validate(mutated_payload)
 
     assert base_manifest.source_module_digest != mutated_manifest.source_module_digest

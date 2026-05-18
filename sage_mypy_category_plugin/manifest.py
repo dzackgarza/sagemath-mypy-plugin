@@ -9,7 +9,7 @@ from typing import Literal, Self
 
 from mypy.version import __version__ as MYPY_VERSION
 from packaging.version import Version
-from pydantic import BaseModel, ConfigDict, StrictStr, model_validator
+from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr, model_validator
 
 from sage_mypy_category_plugin.projection import (
     ConcreteParentRecord,
@@ -27,14 +27,17 @@ class SourceModuleRecord(BaseModel):
     module: StrictStr
     path: StrictStr
     sha256: StrictStr
+    mtime_ns: StrictInt
 
     @model_validator(mode="after")
-    def _validate_sha256(self) -> Self:
+    def _validate_source_metadata(self) -> Self:
         if SHA256_HEX_PATTERN.fullmatch(self.sha256) is None:
             raise ValueError(
                 "sha256 must be 64 lowercase hex characters: "
                 f"{self.sha256!r}"
             )
+        if self.mtime_ns < 0:
+            raise ValueError(f"mtime_ns must be nonnegative: {self.mtime_ns!r}")
         return self
 
 
@@ -158,7 +161,7 @@ class ProjectionManifest(BaseModel):
     @property
     def source_module_digest(self) -> str:
         source_modules = tuple(
-            (record.module, record.path, record.sha256)
+            (record.module, record.path, record.sha256, record.mtime_ns)
             for record in sorted(
                 self.source_modules,
                 key=lambda record: record.module,

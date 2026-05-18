@@ -252,11 +252,13 @@ def _source_module_record_or_none(module_name: str) -> SourceModuleRecord | None
     if module_file is None:
         return None
     path = Path(module_file)
+    source_stat = path.stat()
     source_bytes = path.read_bytes()
     return SourceModuleRecord(
         module=module_name,
         path=str(_relative_to_cwd(path)),
         sha256=sha256(source_bytes).hexdigest(),
+        mtime_ns=source_stat.st_mtime_ns,
     )
 
 

@@ -37,11 +37,14 @@ def write_generated_stub_tree(
         path.parent.mkdir(parents=True, exist_ok=True)
         _write_package_markers(output_root, path.parent)
         path.write_text(source)
+        source_bytes = path.read_bytes()
+        source_stat = path.stat()
         source_modules.append(
             SourceModuleRecord(
                 module=".".join(relative_path.with_suffix("").parts),
                 path=str(path),
-                sha256=sha256(source.encode()).hexdigest(),
+                sha256=sha256(source_bytes).hexdigest(),
+                mtime_ns=source_stat.st_mtime_ns,
             )
         )
     return tuple(source_modules)

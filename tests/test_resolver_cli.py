@@ -139,6 +139,28 @@ def test_resolver_records_projection_dependency_source_modules(tmp_path: Path) -
     assert "sage.categories.magmas.Magmas" not in manifest.source_module_by_module
 
 
+def test_resolver_records_source_module_mtime_ns(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "sage-category-axiom-projections.json"
+
+    resolver.main(
+        [
+            "--output",
+            str(manifest_path),
+            "--role",
+            "parent",
+            *FIXTURE_CATEGORIES,
+        ]
+    )
+
+    manifest = load_manifest(manifest_path)
+    fixture_record = manifest.source_module_by_module[FIXTURE_MODULE]
+
+    assert fixture_record.path == (
+        "tests/fixtures/invariant_core/diamond_runtime.py"
+    )
+    assert fixture_record.mtime_ns == Path(fixture_record.path).stat().st_mtime_ns
+
+
 def test_resolver_records_concrete_parent_initialization(tmp_path: Path) -> None:
     manifest_path = tmp_path / "sage-category-concrete-parent-projections.json"
 

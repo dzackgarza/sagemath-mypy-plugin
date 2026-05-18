@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from hashlib import sha256
 from pathlib import Path
 
 from mypy.build import BuildResult, build
@@ -94,6 +95,21 @@ def test_generated_stubs_reproduce_provider_tree_from_manifest() -> None:
     }
 
 
+def test_generated_stub_tree_records_written_source_metadata(tmp_path: Path) -> None:
+    stub_root = tmp_path / "generated-stubs"
+
+    source_modules = write_generated_stub_tree(
+        stub_root,
+        _sets_cartesian_products_manifest(),
+    )
+    source_module_by_module = {record.module: record for record in source_modules}
+    sets_record = source_module_by_module["sage.categories.sets_cat"]
+    sets_path = Path(sets_record.path)
+
+    assert sets_record.sha256 == sha256(sets_path.read_bytes()).hexdigest()
+    assert sets_record.mtime_ns == sets_path.stat().st_mtime_ns
+
+
 def _sets_cartesian_products_manifest() -> ProjectionManifest:
     return ProjectionManifest(
         schema_version=1,
@@ -181,11 +197,13 @@ def _sets_cartesian_products_manifest() -> ProjectionManifest:
                 module="sage.categories.objects",
                 path="sage/categories/objects.py",
                 sha256="0" * 64,
+                mtime_ns=1_789_000_000_000_000_000,
             ),
             SourceModuleRecord(
                 module="sage.categories.sets_cat",
                 path="sage/categories/sets_cat.py",
                 sha256="1" * 64,
+                mtime_ns=1_789_000_000_000_000_001,
             ),
         ),
     )
