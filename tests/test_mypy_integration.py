@@ -31,14 +31,6 @@ def _drop_fixture_module(module_name: str) -> None:
     sys.modules.pop(module_name, None)
 
 
-def _import_fixture(module_prefix: str, fixture_name: str) -> None:
-    _drop_fixture_module(f"{module_prefix}.{fixture_name}")
-    try:
-        importlib.import_module(f"{module_prefix}.{fixture_name}")
-    except Exception:
-        pass
-
-
 def _fixture_paths(fixture_dir: Path) -> tuple[Path, ...]:
     return tuple(
         path for path in sorted(fixture_dir.glob("test_*.py"))
@@ -69,7 +61,7 @@ def _run_single_fixture(
     from mypy import api
 
     path = fixture_dir / f"{fixture_name}.py"
-    _import_fixture(module_prefix, fixture_name)
+    _drop_fixture_module(f"{module_prefix}.{fixture_name}")
     stdout, _stderr, code = api.run([
         "--config-file", str(config_file),
         "--no-incremental",
@@ -89,7 +81,7 @@ def _run_fixture_set(
 
     paths = _fixture_paths(fixture_dir)
     for path in paths:
-        _import_fixture(module_prefix, path.stem)
+        _drop_fixture_module(f"{module_prefix}.{path.stem}")
     stdout, _stderr, code = api.run([
         "--config-file", str(config_file),
         "--no-incremental",

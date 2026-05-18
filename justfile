@@ -8,37 +8,65 @@ set quiet := true
     #!/usr/bin/env bash
     set -euo pipefail
     read -r -a python_runner <<< "${TEST_PYTHON:-python}"
-    if [ -n "{{ args }}" ]; then
-      "${python_runner[@]}" -m pytest --ignore=tests/fixtures {{ args }}
-      exit 0
-    fi
-
-    pids=()
 
     run_group() {
-      "${python_runner[@]}" -m pytest -q --ignore=tests/fixtures "$@" &
+      "${python_runner[@]}" -m pytest -q --ignore=tests/fixtures "${pytest_args[@]}" "$@" &
       pids+=("$!")
     }
 
-    run_group tests/test_debug_oracle.py
-    run_group tests/test_local_wrapper_namespace.py
-    run_group tests/test_mypy_integration.py -k 'not incremental_determinism and not ancestor_change_reactivity and not parameterized_configured and not strict and not unresolved and not base_unmapped and not typeinfo_missing'
-    run_group tests/test_mypy_integration.py::test_incremental_determinism
-    run_group tests/test_mypy_integration.py::test_ancestor_change_reactivity
-    run_group \
-      tests/test_mypy_integration.py::test_parameterized_configured \
-      tests/test_mypy_integration.py::test_parameterized_strict_without_config_reports_diagnostic \
-      tests/test_mypy_integration.py::test_unresolved_strict_reports_diagnostic \
-      tests/test_mypy_integration.py::test_base_unmapped_strict_reports_diagnostic \
-      tests/test_mypy_integration.py::test_typeinfo_missing_strict_reports_diagnostic
+    run_mypy_integration_groups() {
+      run_group tests/test_mypy_integration.py -k 'not incremental_determinism and not ancestor_change_reactivity and not parameterized_configured and not strict and not unresolved and not base_unmapped and not typeinfo_missing'
+      run_group tests/test_mypy_integration.py::test_incremental_determinism
+      run_group tests/test_mypy_integration.py::test_ancestor_change_reactivity
+      run_group \
+        tests/test_mypy_integration.py::test_parameterized_configured \
+        tests/test_mypy_integration.py::test_parameterized_strict_without_config_reports_diagnostic \
+        tests/test_mypy_integration.py::test_unresolved_strict_reports_diagnostic \
+        tests/test_mypy_integration.py::test_base_unmapped_strict_reports_diagnostic \
+        tests/test_mypy_integration.py::test_typeinfo_missing_strict_reports_diagnostic
+    }
 
-    status=0
-    for pid in "${pids[@]}"; do
-      if ! wait "$pid"; then
-        status=1
+    wait_for_groups() {
+      local status=0
+      for pid in "${pids[@]}"; do
+        if ! wait "$pid"; then
+          status=1
+        fi
+      done
+      return "$status"
+    }
+
+    run_mypy_integration_suite() {
+      local pytest_args=("$@")
+      local pids=()
+      run_mypy_integration_groups
+      wait_for_groups
+    }
+
+    run_default_suite() {
+      local pytest_args=("$@")
+      local pids=()
+      run_group tests/test_debug_oracle.py
+      run_group tests/test_local_wrapper_namespace.py
+      run_mypy_integration_groups
+      wait_for_groups
+    }
+
+    if [ -n "{{ args }}" ]; then
+      read -r -a pytest_args <<< "{{ args }}"
+      if [ "${pytest_args[0]}" = "tests" ] || [ "${pytest_args[0]}" = "tests/" ]; then
+        run_default_suite "${pytest_args[@]:1}"
+        exit "$?"
       fi
-    done
-    exit "$status"
+      if [ "${pytest_args[0]}" = "tests/test_mypy_integration.py" ]; then
+        run_mypy_integration_suite "${pytest_args[@]:1}"
+        exit "$?"
+      fi
+      "${python_runner[@]}" -m pytest --ignore=tests/fixtures "${pytest_args[@]}"
+      exit 0
+    fi
+
+    run_default_suite
 
 @mypy-fixture fixture config="tests/mypy_test.ini":
     #!/usr/bin/env bash

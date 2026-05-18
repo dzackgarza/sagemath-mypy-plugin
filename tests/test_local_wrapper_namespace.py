@@ -53,7 +53,6 @@ Surfaces covered:
 from __future__ import annotations
 
 from functools import cache
-import sys
 from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -75,16 +74,8 @@ _FATAL_MYPY_MARKERS = (
 
 @cache
 def _run_local_wrapper_fixture_set(config: Path) -> str:
-    import importlib
     from mypy import api
 
-    for path in _FIXTURE_FILES:
-        mod_name = f"local_wrapper_pkg.category_specs_like.mypy_test_fixtures.{path.stem}"
-        sys.modules.pop(mod_name, None)
-        try:
-            importlib.import_module(mod_name)
-        except Exception:
-            pass
     stdout, _stderr, code = api.run([
         "--config-file", str(config),
         "--no-incremental",
