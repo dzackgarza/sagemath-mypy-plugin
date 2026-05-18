@@ -14,6 +14,7 @@ from pydantic_core import PydanticCustomError
 
 from sage_mypy_category_plugin.projection import (
     ConcreteParentRecord,
+    ProviderMethodRecord,
     ProviderProjection,
     ProviderRole,
 )
@@ -71,6 +72,7 @@ class ProjectionManifest(BaseModel):
     python_version: StrictStr
     named_classes: tuple[NamedClassRecord, ...] = ()
     projections: tuple[ProviderProjection, ...]
+    provider_methods: tuple[ProviderMethodRecord, ...] = ()
     source_modules: tuple[SourceModuleRecord, ...] = ()
     concrete_parents: tuple[ConcreteParentRecord, ...] = ()
 
@@ -123,6 +125,23 @@ class ProjectionManifest(BaseModel):
             )
             raise ValueError(
                 "duplicate named class records: "
+                + ", ".join(duplicate_descriptions)
+            )
+
+        provider_method_keys = tuple(
+            (record.provider, record.name) for record in self.provider_methods
+        )
+        duplicate_provider_methods = tuple(
+            key
+            for key in dict.fromkeys(provider_method_keys)
+            if provider_method_keys.count(key) > 1
+        )
+        if duplicate_provider_methods:
+            duplicate_descriptions = tuple(
+                f"{provider}:{name}" for provider, name in duplicate_provider_methods
+            )
+            raise ValueError(
+                "duplicate provider method records: "
                 + ", ".join(duplicate_descriptions)
             )
 
@@ -244,8 +263,14 @@ class ProjectionManifest(BaseModel):
                 *concrete_parent.element_provider_mro,
             )
         )
+        referenced_method_providers = frozenset(
+            record.provider for record in self.provider_methods
+        )
         unresolved_references = tuple(
-            sorted(referenced_providers - declared_providers)
+            sorted(
+                (referenced_providers | referenced_method_providers)
+                - declared_providers
+            )
         )
         if unresolved_references:
             raise ValueError(
@@ -379,6 +404,17 @@ class ProjectionManifest(BaseModel):
                         key=lambda record: record.concrete_class,
                     )
                 ),
+                "provider_methods": tuple(
+                    (
+                        record.provider,
+                        record.name,
+                        record.return_type,
+                    )
+                    for record in sorted(
+                        self.provider_methods,
+                        key=lambda record: (record.provider, record.name),
+                    )
+                ),
                 "named_classes": tuple(
                     (
                         record.category,
@@ -428,6 +464,8 @@ def _semantic_fullnames(manifest: ProjectionManifest) -> tuple[str, ...]:
                 *named_class.runtime_mro,
             )
         )
+    for provider_method in manifest.provider_methods:
+        fullnames.append(provider_method.provider)
     for concrete_parent in manifest.concrete_parents:
         fullnames.extend(
             (
@@ -471,6 +509,7 @@ def write_manifest(path: Path, manifest: ProjectionManifest) -> None:
 __all__ = [
     "ConcreteParentRecord",
     "NamedClassRecord",
+    "ProviderMethodRecord",
     "SourceModuleRecord",
     "ProjectionManifest",
     "load_manifest",

@@ -172,6 +172,76 @@ def test_generated_stubs_include_concrete_parent_runtime_aliases() -> None:
     )
 
 
+def test_generated_stubs_bind_inherited_provider_self_return(
+    tmp_path: Path,
+) -> None:
+    manifest = _self_return_provider_manifest()
+    stub_root = tmp_path / "generated-stubs"
+    source_modules = write_generated_stub_tree(stub_root, manifest)
+    plugin_manifest = manifest.model_copy(update={"source_modules": source_modules})
+    manifest_path = tmp_path / "manifest.json"
+    config_path = tmp_path / "mypy.ini"
+    consumer_path = tmp_path / "consumer.py"
+    manifest_path.write_text(plugin_manifest.model_dump_json())
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+    consumer_path.write_text(
+        "\n".join(
+            (
+                "from fixtures.self_type import BaseCategory, ChildCategory",
+                "",
+                "def child_self(",
+                "    provider: ChildCategory.ParentMethods,",
+                ") -> ChildCategory.ParentMethods:",
+                "    normalized = provider.normalized()",
+                "    reveal_type(normalized)",
+                "    return normalized",
+                "",
+                "def invalid_base_to_child(",
+                "    provider: BaseCategory.ParentMethods,",
+                ") -> ChildCategory.ParentMethods:",
+                "    return provider.normalized()",
+                "",
+            )
+        )
+    )
+
+    with_plugin = _run_mypy(
+        consumer_path,
+        mypy_path_entries=(stub_root,),
+        config_path=config_path,
+    )
+    without_plugin = _run_mypy(
+        consumer_path,
+        mypy_path_entries=(stub_root,),
+        config_path=None,
+    )
+
+    assert with_plugin.errors == [
+        (
+            f'{consumer_path}:7: note: Revealed type is '
+            '"fixtures.self_type.ChildCategory.ParentMethods"'
+        ),
+        (
+            f'{consumer_path}:13: error: Incompatible return value type '
+            '(got "fixtures.self_type.BaseCategory.ParentMethods", '
+            'expected "fixtures.self_type.ChildCategory.ParentMethods")  '
+            "[return-value]"
+        ),
+    ]
+    assert any("[attr-defined]" in error for error in without_plugin.errors)
+
+
 def _sets_cartesian_products_manifest() -> ProjectionManifest:
     return ProjectionManifest(
         schema_version=1,
@@ -268,6 +338,68 @@ def _sets_cartesian_products_manifest() -> ProjectionManifest:
                 mtime_ns=1_789_000_000_000_000_001,
             ),
         ),
+    )
+
+
+def _self_return_provider_manifest() -> ProjectionManifest:
+    return ProjectionManifest.model_validate(
+        {
+            "schema_version": 1,
+            "generated_by": "tests",
+            "sage_version": "10.7",
+            "python_version": "3.12.13",
+            "projections": (
+                ProviderProjection(
+                    provider="fixtures.self_type.BaseCategory.ParentMethods",
+                    role="parent",
+                    runtime_class="fixtures.self_type.BaseCategory.parent_class",
+                    runtime_bases=("builtins.object",),
+                    runtime_mro=(
+                        "fixtures.self_type.BaseCategory.parent_class",
+                        "builtins.object",
+                    ),
+                    provider_bases=(),
+                    provider_mro=(
+                        "fixtures.self_type.BaseCategory.ParentMethods",
+                    ),
+                ).model_dump(mode="json"),
+                ProviderProjection(
+                    provider="fixtures.self_type.ChildCategory.ParentMethods",
+                    role="parent",
+                    runtime_class="fixtures.self_type.ChildCategory.parent_class",
+                    runtime_bases=(
+                        "fixtures.self_type.BaseCategory.parent_class",
+                    ),
+                    runtime_mro=(
+                        "fixtures.self_type.ChildCategory.parent_class",
+                        "fixtures.self_type.BaseCategory.parent_class",
+                        "builtins.object",
+                    ),
+                    provider_bases=(
+                        "fixtures.self_type.BaseCategory.ParentMethods",
+                    ),
+                    provider_mro=(
+                        "fixtures.self_type.ChildCategory.ParentMethods",
+                        "fixtures.self_type.BaseCategory.ParentMethods",
+                    ),
+                ).model_dump(mode="json"),
+            ),
+            "source_modules": (
+                SourceModuleRecord(
+                    module="fixtures.self_type",
+                    path="fixtures/self_type.py",
+                    sha256="0" * 64,
+                    mtime_ns=1_789_000_000_000_000_000,
+                ).model_dump(mode="json"),
+            ),
+            "provider_methods": (
+                {
+                    "provider": "fixtures.self_type.BaseCategory.ParentMethods",
+                    "name": "normalized",
+                    "return_type": "Self",
+                },
+            ),
+        }
     )
 
 

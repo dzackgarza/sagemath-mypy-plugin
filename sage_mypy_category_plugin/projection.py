@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, ConfigDict, StrictStr
+from pydantic import BaseModel, ConfigDict, StrictStr, model_validator
 
 ProviderRole = Literal[
     "parent",
@@ -39,8 +39,23 @@ class ConcreteParentRecord(BaseModel):
     element_provider_mro: tuple[StrictStr, ...] = ()
 
 
+class ProviderMethodRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    provider: StrictStr
+    name: StrictStr
+    return_type: Literal["Self"]
+
+    @model_validator(mode="after")
+    def _validate_method_signature(self) -> Self:
+        if not self.name.isidentifier():
+            raise ValueError(f"method name must be a Python identifier: {self.name!r}")
+        return self
+
+
 __all__ = [
     "ConcreteParentRecord",
+    "ProviderMethodRecord",
     "ProviderProjection",
     "ProviderRole",
 ]

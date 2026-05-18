@@ -4,8 +4,13 @@ from hashlib import sha256
 from pathlib import Path
 
 from sage_mypy_category_plugin.manifest import ProjectionManifest, SourceModuleRecord
+from sage_mypy_category_plugin.projection import ProviderMethodRecord
 
 type StubTree = dict[str, "StubTree"]
+type ProviderMethodMap = dict[
+    tuple[str, tuple[str, ...]],
+    tuple[ProviderMethodRecord, ...],
+]
 
 
 def generated_stub_sources(manifest: ProjectionManifest) -> dict[Path, str]:
@@ -20,9 +25,20 @@ def generated_stub_sources(manifest: ProjectionManifest) -> dict[Path, str]:
         )
         module_tree = module_trees.setdefault(module_name, {})
         _add_qualname(module_tree, qualname)
+    provider_methods = _provider_methods_by_owner(
+        manifest.provider_methods,
+        source_modules=source_modules,
+    )
+    for module_name, qualname in provider_methods:
+        module_tree = module_trees.setdefault(module_name, {})
+        _add_qualname(module_tree, qualname)
 
     stub_sources = {
-        Path(*module_name.split(".")).with_suffix(".pyi"): _stub_source(tree)
+        Path(*module_name.split(".")).with_suffix(".pyi"): _stub_source(
+            tree,
+            module_name=module_name,
+            provider_methods=provider_methods,
+        )
         for module_name, tree in sorted(module_trees.items())
     }
     stub_sources[Path("_sage_category_types.pyi")] = _runtime_alias_stub_source(
@@ -63,6 +79,24 @@ def _manifest_provider_fullnames(manifest: ProjectionManifest) -> tuple[str, ...
             for provider in projection.provider_mro
         )
     )
+
+
+def _provider_methods_by_owner(
+    provider_methods: tuple[ProviderMethodRecord, ...],
+    *,
+    source_modules: tuple[str, ...],
+) -> ProviderMethodMap:
+    methods_by_owner: dict[tuple[str, tuple[str, ...]], list[ProviderMethodRecord]] = {}
+    for provider_method in provider_methods:
+        owner = _source_module_and_qualname(
+            provider_method.provider,
+            source_modules=source_modules,
+        )
+        methods_by_owner.setdefault(owner, []).append(provider_method)
+    return {
+        owner: tuple(sorted(methods, key=lambda method: method.name))
+        for owner, methods in methods_by_owner.items()
+    }
 
 
 def _runtime_alias_stub_source(
@@ -180,20 +214,66 @@ def _add_qualname(tree: StubTree, qualname: tuple[str, ...]) -> None:
         current = current.setdefault(name, {})
 
 
-def _stub_source(tree: StubTree) -> str:
-    return "\n".join(_stub_lines(tree)) + "\n"
+def _stub_source(
+    tree: StubTree,
+    *,
+    module_name: str,
+    provider_methods: ProviderMethodMap,
+) -> str:
+    body_lines = _stub_lines(
+        tree,
+        module_name=module_name,
+        provider_methods=provider_methods,
+    )
+    if _module_uses_self_return(module_name, provider_methods):
+        return "\n".join(("from typing import Self", "", *body_lines)) + "\n"
+    return "\n".join(body_lines) + "\n"
 
 
-def _stub_lines(tree: StubTree, indent: int = 0) -> tuple[str, ...]:
+def _module_uses_self_return(
+    module_name: str,
+    provider_methods: ProviderMethodMap,
+) -> bool:
+    return any(
+        method.return_type == "Self"
+        for (method_module, _), methods in provider_methods.items()
+        if method_module == module_name
+        for method in methods
+    )
+
+
+def _stub_lines(
+    tree: StubTree,
+    *,
+    module_name: str,
+    provider_methods: ProviderMethodMap,
+    qualname: tuple[str, ...] = (),
+    indent: int = 0,
+) -> tuple[str, ...]:
     lines: list[str] = []
     for name, child in sorted(
         tree.items(),
         key=lambda item: (item[0] not in {"ParentMethods", "ElementMethods"}, item[0]),
     ):
+        nested_qualname = (*qualname, name)
+        methods = provider_methods.get((module_name, nested_qualname), ())
         lines.append(f"{'    ' * indent}class {name}:")
+        method_indent = "    " * (indent + 1)
+        lines.extend(
+            f"{method_indent}def {method.name}(self) -> {method.return_type}: ..."
+            for method in methods
+        )
         if child:
-            lines.extend(_stub_lines(child, indent + 1))
-        else:
+            lines.extend(
+                _stub_lines(
+                    child,
+                    module_name=module_name,
+                    provider_methods=provider_methods,
+                    qualname=nested_qualname,
+                    indent=indent + 1,
+                )
+            )
+        elif not methods:
             lines.append(f"{'    ' * (indent + 1)}...")
     return tuple(lines)
 
