@@ -11,7 +11,11 @@ from mypy.options import Options
 from mypy.plugin import ClassDefContext, Plugin, ReportConfigContext
 from mypy.types import Instance
 
-from sage_mypy_category_plugin.manifest import ProjectionManifest, load_manifest
+from sage_mypy_category_plugin.manifest import (
+    ProjectionManifest,
+    SourceModuleRecord,
+    load_manifest,
+)
 from sage_mypy_category_plugin.projection import ProviderProjection
 
 CONFIG_SECTION = "sage-mypy-category-plugin"
@@ -24,6 +28,7 @@ class SageCategoryProjectionPlugin(Plugin):
         super().__init__(options)
         self._manifest_path = _manifest_path_from_config(options)
         self._manifest = load_manifest(self._manifest_path)
+        _validate_source_module_metadata(self._manifest.source_modules)
         self._manifest_digest = sha256(self._manifest_path.read_bytes()).hexdigest()
         self._projection_by_provider = self._manifest.projection_by_provider
         self._source_modules = tuple(
@@ -196,6 +201,34 @@ def _manifest_path_from_config(options: Options) -> Path:
     if not manifest_path.is_absolute():
         manifest_path = config_path.parent / manifest_path
     return manifest_path
+
+
+def _validate_source_module_metadata(
+    source_modules: tuple[SourceModuleRecord, ...],
+) -> None:
+    for record in source_modules:
+        path = Path(record.path)
+        if not path.is_file():
+            raise CompileError(
+                [
+                    "Stale Sage category source module metadata for "
+                    f"{record.module}: file is missing"
+                ]
+            )
+        if sha256(path.read_bytes()).hexdigest() != record.sha256:
+            raise CompileError(
+                [
+                    "Stale Sage category source module metadata for "
+                    f"{record.module}: sha256 mismatch"
+                ]
+            )
+        if path.stat().st_mtime_ns != record.mtime_ns:
+            raise CompileError(
+                [
+                    "Stale Sage category source module metadata for "
+                    f"{record.module}: mtime_ns mismatch"
+                ]
+            )
 
 
 def _provider_module(

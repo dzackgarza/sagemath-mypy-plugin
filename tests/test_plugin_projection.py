@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from functools import cache
+from hashlib import sha256
 from importlib import import_module
 from pathlib import Path
 
@@ -104,8 +105,7 @@ PARAMETERIZED_VECTOR_SPACES_PROVIDER = (
 DIAMOND_SOURCE_MODULE = SourceModuleRecord(
     module=FIXTURE_MODULE,
     path="tests/fixtures/invariant_core/diamond_runtime.py",
-    sha256="9f1f7a4a0d0b6dfd7f9d2d2c1d3b5e6a"
-    "8b1c0f7a6d5e4c3b2a19080706050403",
+    sha256=sha256(FIXTURE_PATH.read_bytes()).hexdigest(),
     mtime_ns=FIXTURE_PATH.stat().st_mtime_ns,
 )
 
@@ -814,6 +814,51 @@ def test_plugin_reports_semantic_manifest_config_data(tmp_path: Path) -> None:
         manifest.source_module_digest
     )
     assert manifest.source_module_by_module == {FIXTURE_MODULE: DIAMOND_SOURCE_MODULE}
+
+
+def test_plugin_fails_clearly_for_stale_source_module_metadata(
+    tmp_path: Path,
+) -> None:
+    projections = _provider_projections(
+        CATEGORY_FULLNAMES,
+        roles=("parent",),
+    )
+    stale_source_module = DIAMOND_SOURCE_MODULE.model_copy(
+        update={"sha256": "0" * 64}
+    )
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=tuple(projections.values()),
+        source_modules=(stale_source_module,),
+    )
+    manifest_path = tmp_path / "stale-source-module.json"
+    config_path = tmp_path / "mypy.ini"
+    write_manifest(manifest_path, manifest)
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+    options = Options()
+    options.config_file = str(config_path)
+
+    with pytest.raises(CompileError) as raised:
+        SageCategoryProjectionPlugin(options)
+
+    assert raised.value.messages == [
+        "Stale Sage category source module metadata for "
+        f"{FIXTURE_MODULE}: sha256 mismatch"
+    ]
 
 
 def test_plugin_fails_clearly_when_manifest_option_is_missing(tmp_path: Path) -> None:
