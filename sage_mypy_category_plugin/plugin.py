@@ -25,6 +25,7 @@ from mypy.nodes import (
     AssignmentStmt,
     Block,
     CallExpr,
+    CastExpr,
     ClassDef,
     Decorator,
     Expression,
@@ -224,6 +225,13 @@ class SageCategoryPlugin(Plugin):
                 ctx,
                 info,
                 projection.static_bases,
+            )
+            static_supplement_fns = _resolve_static_category_method_container_bases(
+                ctx,
+                info,
+            )
+            static_base_fns = tuple(
+                dict.fromkeys((*static_base_fns, *static_supplement_fns))
             )
 
         if projection is not None and projection.unmapped_dynamic_bases and self._strict:
@@ -458,6 +466,7 @@ class SageCategoryPlugin(Plugin):
         _materialize_subcategory_selector_methods(ctx, info)
         _materialize_construction_selector_methods(ctx, info)
         _inject_class_body_method_container_bases(ctx, info, module)
+        _inject_selector_owned_construction_method_container_bases(ctx, info, module)
         if _inject_assigned_construction_method_container_bases(ctx, info):
             ctx.api.defer()
 
@@ -580,7 +589,7 @@ _METHOD_KINDS = frozenset({
 })
 
 _RECEIVER_RUNTIME_BASE_FULLNAMES = {
-    "ParentMethods": "sage.structure.category_object.CategoryObject",
+    "ParentMethods": "sage.structure.parent.Parent",
     "SubcategoryMethods": "sage.categories.category.Category",
 }
 
@@ -1061,6 +1070,10 @@ def _resolve_static_category_method_container_bases(
         provider = _method_container_provider_typeinfo(ctx, extra_super, info.name)
         if provider is not None:
             bases.append(provider.fullname)
+    for super_category in _static_super_category_typeinfos(ctx, enclosing_cat):
+        provider = _method_container_provider_typeinfo(ctx, super_category, info.name)
+        if provider is not None:
+            bases.append(provider.fullname)
     bases.extend(
         _resolve_static_construction_owner_method_container_bases(
             ctx,
@@ -1078,8 +1091,23 @@ def _static_extra_super_category_typeinfos(
     ctx: ClassDefContext,
     category: TypeInfo,
 ) -> tuple[TypeInfo, ...]:
+    return _static_category_return_typeinfos(ctx, category, "extra_super_categories")
+
+
+def _static_super_category_typeinfos(
+    ctx: ClassDefContext,
+    category: TypeInfo,
+) -> tuple[TypeInfo, ...]:
+    return _static_category_return_typeinfos(ctx, category, "super_categories")
+
+
+def _static_category_return_typeinfos(
+    ctx: ClassDefContext,
+    category: TypeInfo,
+    method_name: str,
+) -> tuple[TypeInfo, ...]:
     extras: list[TypeInfo] = []
-    for method in _class_methods_named(category, "extra_super_categories"):
+    for method in _class_methods_named(category, method_name):
         for expr in _return_expressions(method.body):
             for item in _category_items_from_return_expr(expr):
                 ti = _typeinfo_from_static_category_expr(ctx, category, item)
@@ -1160,7 +1188,10 @@ def _typeinfo_from_static_category_call(
             return _typeinfo_for_axiom_selector(ctx, receiver, callee.name)
         return None
     if isinstance(callee, RefExpr):
-        return _typeinfo_from_symbol_node(callee.node)
+        return _typeinfo_from_symbol_node(callee.node) or _local_typeinfo_named(
+            ctx,
+            callee.name,
+        )
     return None
 
 
@@ -1173,6 +1204,9 @@ def _typeinfo_for_axiom_selector(
     receiver: TypeInfo,
     axiom_name: str,
 ) -> TypeInfo | None:
+    assigned = _typeinfo_from_class_assignment(ctx, receiver, axiom_name)
+    if assigned is not None:
+        return assigned
     receiver_base_names = {
         candidate.fullname
         for candidate in _receiver_self_typeinfo_candidates(ctx, receiver)
@@ -1222,11 +1256,28 @@ def _local_typeinfo_named(ctx: ClassDefContext, name: str) -> TypeInfo | None:
     return _typeinfo_from_symbol_node(symbol.node)
 
 
+def _typeinfo_from_class_assignment(
+    ctx: ClassDefContext,
+    owner: TypeInfo,
+    name: str,
+) -> TypeInfo | None:
+    for statement in getattr(owner.defn.defs, "body", ()):
+        if not isinstance(statement, AssignmentStmt) or len(statement.lvalues) != 1:
+            continue
+        target = statement.lvalues[0]
+        if not isinstance(target, NameExpr) or target.name != name:
+            continue
+        return _assigned_category_typeinfo(ctx, owner.module_name, statement.rvalue)
+    return None
+
+
 def _resolve_static_construction_owner_method_container_bases(
     ctx: ClassDefContext,
     construction_cat: TypeInfo,
     method_kind: str,
 ) -> tuple[str, ...]:
+    if not _construction_inherits_owner_method_containers(construction_cat):
+        return ()
     bases: list[str] = []
     for module in ctx.api.modules.values():
         names = getattr(module, "names", None)
@@ -2841,27 +2892,133 @@ def _inject_assigned_construction_method_container_bases(
         )
         if construction_info is None:
             continue
-        if not _has_base_category_extra_super_category(construction_info):
+        if not _construction_inherits_owner_method_containers(construction_info):
             if not ctx.api.final_iteration:
                 return True
             continue
-        for method_kind in _METHOD_KINDS:
-            construction_provider = _method_container_provider_typeinfo(
-                ctx,
-                construction_info,
-                method_kind,
-            )
-            owner_provider = _method_container_provider_typeinfo(
-                ctx,
-                owner_info,
-                method_kind,
-            )
-            if construction_provider is None or owner_provider is None:
-                continue
-            if construction_provider.fullname == owner_provider.fullname:
-                continue
-            _append_typeinfo_base(construction_provider, owner_provider)
+        _inject_construction_method_container_bases(ctx, owner_info, construction_info)
     return False
+
+
+def _inject_selector_owned_construction_method_container_bases(
+    ctx: ClassDefContext,
+    owner_info: TypeInfo,
+    module: Any,
+) -> None:
+    selected_bases = _selector_returned_construction_bases(ctx, owner_info)
+    if not selected_bases:
+        return
+    for construction_info in _module_construction_typeinfos(module, selected_bases):
+        if not _construction_inherits_owner_method_containers(construction_info):
+            continue
+        _inject_construction_method_container_bases(ctx, owner_info, construction_info)
+
+
+def _selector_returned_construction_bases(
+    ctx: ClassDefContext,
+    owner_info: TypeInfo,
+) -> tuple[TypeInfo, ...]:
+    provider = _method_container_provider_typeinfo(ctx, owner_info, "SubcategoryMethods")
+    if provider is None:
+        return ()
+    bases: list[TypeInfo] = []
+    for method in _class_body_methods(provider):
+        for expr in _return_expressions(method.body):
+            selected = _construction_base_from_selector_return(
+                ctx,
+                owner_info.module_name,
+                expr,
+            )
+            if selected is not None:
+                bases.append(selected)
+    return tuple(dict.fromkeys(bases))
+
+
+def _class_body_methods(info: TypeInfo) -> tuple[FuncDef, ...]:
+    methods: list[FuncDef] = []
+    for statement in getattr(info.defn.defs, "body", ()):
+        func = statement.func if isinstance(statement, Decorator) else statement
+        if isinstance(func, FuncDef):
+            methods.append(func)
+    return tuple(methods)
+
+
+def _construction_base_from_selector_return(
+    ctx: ClassDefContext,
+    module_name: str,
+    expr: Expression,
+) -> TypeInfo | None:
+    expr = _unwrap_cast_expr(expr)
+    if not isinstance(expr, CallExpr):
+        return None
+    callee = expr.callee
+    if not isinstance(callee, MemberExpr) or callee.name != "category_of":
+        return None
+    return _assigned_category_typeinfo(ctx, module_name, callee.expr)
+
+
+def _unwrap_cast_expr(expr: Expression) -> Expression:
+    if isinstance(expr, CastExpr):
+        return _unwrap_cast_expr(expr.expr)
+    if isinstance(expr, CallExpr) and _is_typing_cast_call(expr) and len(expr.args) >= 2:
+        return _unwrap_cast_expr(expr.args[1])
+    return expr
+
+
+def _is_typing_cast_call(expr: CallExpr) -> bool:
+    callee = expr.callee
+    return (
+        isinstance(callee, RefExpr)
+        and (
+            callee.fullname in {"typing.cast", "typing_extensions.cast"}
+            or callee.name == "cast"
+        )
+    )
+
+
+def _module_construction_typeinfos(
+    module: Any,
+    selected_bases: tuple[TypeInfo, ...],
+) -> tuple[TypeInfo, ...]:
+    selected_base_names = {base.fullname for base in selected_bases}
+    constructions: list[TypeInfo] = []
+    seen: set[str] = set()
+    for symbol in getattr(module, "names", {}).values():
+        candidate = _typeinfo_from_symbol_node(symbol.node)
+        if candidate is None or candidate.fullname in seen:
+            continue
+        seen.add(candidate.fullname)
+        if candidate.fullname in selected_base_names:
+            continue
+        if not selected_base_names & {
+            base.fullname for base in getattr(candidate, "mro", ())
+        }:
+            continue
+        constructions.append(candidate)
+    return tuple(constructions)
+
+
+def _inject_construction_method_container_bases(
+    ctx: ClassDefContext,
+    owner_info: TypeInfo,
+    construction_info: TypeInfo,
+) -> None:
+    for method_kind in _METHOD_KINDS:
+        construction_provider = _method_container_provider_typeinfo(
+            ctx,
+            construction_info,
+            method_kind,
+        )
+        owner_provider = _method_container_provider_typeinfo(
+            ctx,
+            owner_info,
+            method_kind,
+        )
+        if construction_provider is None or owner_provider is None:
+            continue
+        if construction_provider.fullname == owner_provider.fullname:
+            continue
+        _append_typeinfo_base(construction_provider, owner_provider)
 
 
 def _assigned_category_typeinfo(
@@ -2872,6 +3029,9 @@ def _assigned_category_typeinfo(
     direct = _typeinfo_from_expr(expr)
     if direct is not None:
         return direct
+    lazy_imported = _typeinfo_from_lazy_import_call(ctx, expr)
+    if lazy_imported is not None:
+        return lazy_imported
     if isinstance(expr, NameExpr):
         return (
             _typeinfo_from_imported_name(ctx, module_name, expr.name)
@@ -2881,8 +3041,73 @@ def _assigned_category_typeinfo(
     return None
 
 
+def _typeinfo_from_lazy_import_call(
+    ctx: ClassDefContext,
+    expr: Expression,
+) -> TypeInfo | None:
+    if not isinstance(expr, CallExpr) or len(expr.args) < 2:
+        return None
+    callee = expr.callee
+    if not (
+        isinstance(callee, RefExpr)
+        and (callee.fullname == "sage.misc.lazy_import.LazyImport" or callee.name == "LazyImport")
+    ):
+        return None
+    module_arg, name_arg = expr.args[:2]
+    if not isinstance(module_arg, StrExpr) or not isinstance(name_arg, StrExpr):
+        return None
+    target = _lookup_typeinfo(ctx, f"{module_arg.value}.{name_arg.value}")
+    if target is not None:
+        return target
+    if not ctx.api.final_iteration:
+        ctx.api.add_plugin_dependency(module_arg.value)
+        ctx.api.defer()
+    return None
+
+
 def _has_base_category_extra_super_category(info: TypeInfo) -> bool:
+    if _extra_super_categories_use_base_category(info):
+        return True
     return "base_category" in info.names and "extra_super_categories" in info.names
+
+
+def _construction_inherits_owner_method_containers(info: TypeInfo) -> bool:
+    return _has_base_category_extra_super_category(info) or _is_regressive_construction(
+        info
+    )
+
+
+def _is_regressive_construction(info: TypeInfo) -> bool:
+    return _typeinfo_defines_name(info, "as_subobject_of_self")
+
+
+def _extra_super_categories_use_base_category(info: TypeInfo) -> bool:
+    return any(
+        _expression_uses_self_base_category(expr)
+        for method in _class_methods_named(info, "extra_super_categories")
+        for expr in _return_expressions(method.body)
+    )
+
+
+def _expression_uses_self_base_category(expr: Expression) -> bool:
+    expr = _unwrap_cast_expr(expr)
+    if isinstance(expr, CallExpr):
+        callee = expr.callee
+        if (
+            isinstance(callee, MemberExpr)
+            and callee.name == "base_category"
+            and _is_self_expr(callee.expr)
+        ):
+            return True
+        return _expression_uses_self_base_category(callee) or any(
+            _expression_uses_self_base_category(arg)
+            for arg in expr.args
+        )
+    if isinstance(expr, MemberExpr):
+        return _expression_uses_self_base_category(expr.expr)
+    if isinstance(expr, ListExpr | TupleExpr):
+        return any(_expression_uses_self_base_category(item) for item in expr.items)
+    return False
 
 
 def _append_typeinfo_base(info: TypeInfo, base_ti: TypeInfo) -> None:

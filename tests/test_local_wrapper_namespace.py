@@ -29,13 +29,16 @@ Surfaces covered:
     Method-container receiver body members — test_plugin_receiver_body_member_correctness
     Runtime receiver inherited methods — test_plugin_runtime_receiver_inherited_method_chain_correctness
     Method-container receiver runtime bases — test_plugin_receiver_runtime_base_correctness
+    ParentMethods runtime parent methods — test_plugin_parent_runtime_change_ring_correctness
     SubcategoryMethods base_category receiver — test_plugin_subcategory_base_category_receiver_correctness
     Aliased receiver self surfaces — test_plugin_alias_receiver_self_surface_correctness
     Exact module import under suffix collision — test_plugin_exact_module_collision_correctness
     Static axiom base receiver self surfaces — test_plugin_static_axiom_base_receiver_self_correctness
+    Static super-category peer receiver self surfaces — test_plugin_static_super_category_peer_receiver_self_correctness
     Static axiom SubcategoryMethods receiver self surfaces — test_plugin_static_axiom_subcategory_receiver_self_correctness
     Static construction extra-super receiver self surfaces — test_plugin_static_construction_extra_super_receiver_self_correctness
     Construction return aliases inherit base methods — test_plugin_construction_return_type_alias_base_methods_correctness
+    Selector-owned construction return aliases inherit base methods — test_plugin_construction_selector_return_type_alias_base_methods_correctness
     Python-base construction method containers — test_plugin_python_base_construction_method_container_correctness
     Static construction selectors avoid runtime import — test_plugin_static_construction_selector_no_runtime_import_correctness
     Runtime construction selector import failures stay diagnostic — test_plugin_runtime_construction_selector_import_failure_correctness
@@ -345,6 +348,14 @@ def test_plugin_receiver_runtime_base_correctness() -> None:
     )
 
 
+def test_plugin_parent_runtime_change_ring_correctness() -> None:
+    """ParentMethods receiver self exposes Sage runtime parent methods."""
+    _assert_clean_conjunction(
+        "test_parent_runtime_change_ring",
+        "[attr-defined]",
+    )
+
+
 def test_plugin_subcategory_base_category_receiver_correctness() -> None:
     """SubcategoryMethods self exposes Sage's base_category receiver method."""
     _assert_clean_conjunction(
@@ -414,6 +425,14 @@ def test_plugin_static_extra_super_base_category_selector_correctness() -> None:
     )
 
 
+def test_plugin_static_super_category_peer_receiver_self_correctness() -> None:
+    """Static fallback reads ordinary super_categories() peer containers."""
+    _assert_clean_conjunction(
+        "test_static_super_category_peer_receiver_self",
+        "[attr-defined]",
+    )
+
+
 def test_plugin_static_axiom_subcategory_receiver_self_correctness() -> None:
     """SubcategoryMethods receiver methods may come from an axiom base category."""
     _assert_clean_conjunction(
@@ -434,6 +453,14 @@ def test_plugin_construction_return_type_alias_base_methods_correctness() -> Non
     """Construction return aliases inherit base category methods."""
     _assert_clean_conjunction(
         "test_construction_return_type_alias_base_methods",
+        "[attr-defined]",
+    )
+
+
+def test_plugin_construction_selector_return_type_alias_base_methods_correctness() -> None:
+    """Selector-owned construction return aliases inherit base category methods."""
+    _assert_clean_conjunction(
+        "test_construction_selector_return_type_alias_base_methods",
         "[attr-defined]",
     )
 
