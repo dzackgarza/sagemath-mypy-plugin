@@ -1,0 +1,88 @@
+from __future__ import annotations
+
+from sage_mypy_category_plugin.oracle import provider_projections_for_categories
+from tests.fixtures.invariant_core.diamond_runtime import (
+    BottomCategory,
+    LeftCategory,
+    RightCategory,
+    TopCategory,
+)
+from tests.fixtures.invariant_core.local_wrapper import LocalCategoryBase
+
+
+def _class_fullname(cls: type[object]) -> str:
+    return f"{cls.__module__}.{cls.__qualname__}"
+
+
+def test_diamond_parent_projection_matches_sage_runtime_mro() -> None:
+    assert BottomCategory.__bases__ == (LocalCategoryBase,)
+
+    projections = provider_projections_for_categories(
+        ("tests.fixtures.invariant_core.diamond_runtime.BottomCategory",),
+        roles=("parent",),
+    )
+
+    provider = "tests.fixtures.invariant_core.diamond_runtime.BottomCategory.ParentMethods"
+    projection = projections[provider]
+    category = BottomCategory.an_instance()
+    runtime_to_provider = {
+        category.parent_class: BottomCategory.ParentMethods,
+        RightCategory.an_instance().parent_class: RightCategory.ParentMethods,
+        LeftCategory.an_instance().parent_class: LeftCategory.ParentMethods,
+        TopCategory.an_instance().parent_class: TopCategory.ParentMethods,
+    }
+    projected_runtime_bases = tuple(
+        _class_fullname(runtime_to_provider[runtime_class])
+        for runtime_class in category.parent_class.__bases__
+    )
+    projected_runtime_mro = tuple(
+        _class_fullname(runtime_to_provider[runtime_class])
+        for runtime_class in category.parent_class.__mro__
+        if runtime_class in runtime_to_provider
+    )
+    unprojected_mro = tuple(
+        runtime_class
+        for runtime_class in category.parent_class.__mro__
+        if runtime_class not in runtime_to_provider
+    )
+
+    assert projection.provider == provider
+    assert projection.role == "parent"
+    assert projection.runtime_bases == tuple(
+        _class_fullname(runtime_class) for runtime_class in category.parent_class.__bases__
+    )
+    assert projection.runtime_mro == tuple(
+        _class_fullname(runtime_class) for runtime_class in category.parent_class.__mro__
+    )
+    assert unprojected_mro == (object,)
+    assert projection.provider_bases == projected_runtime_bases
+    assert projection.provider_mro == projected_runtime_mro
+    assert projection.provider_bases == (
+        "tests.fixtures.invariant_core.diamond_runtime.RightCategory.ParentMethods",
+        "tests.fixtures.invariant_core.diamond_runtime.LeftCategory.ParentMethods",
+    )
+    assert projection.provider_mro == (
+        "tests.fixtures.invariant_core.diamond_runtime.BottomCategory.ParentMethods",
+        "tests.fixtures.invariant_core.diamond_runtime.RightCategory.ParentMethods",
+        "tests.fixtures.invariant_core.diamond_runtime.LeftCategory.ParentMethods",
+        "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ParentMethods",
+    )
+
+
+def test_root_parent_projection_keeps_only_provider_classes() -> None:
+    projections = provider_projections_for_categories(
+        ("tests.fixtures.invariant_core.diamond_runtime.TopCategory",),
+        roles=("parent",),
+    )
+
+    provider = "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ParentMethods"
+    projection = projections[provider]
+    category = TopCategory.an_instance()
+
+    assert category.parent_class.__bases__ == (object,)
+    assert projection.provider == provider
+    assert projection.runtime_bases == ("builtins.object",)
+    assert projection.provider_bases == ()
+    assert projection.provider_mro == (
+        "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ParentMethods",
+    )
