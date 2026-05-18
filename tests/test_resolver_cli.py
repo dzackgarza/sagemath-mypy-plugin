@@ -24,6 +24,9 @@ BOTTOM_HOMSET_PARENT_PROVIDER = (
 COMMUTATIVE_RINGS_CATEGORY = "sage.categories.commutative_rings.CommutativeRings"
 SEMIGROUPS_CATEGORY = "sage.categories.semigroups.Semigroups"
 LEFT_ZERO_SEMIGROUP = "sage.categories.examples.semigroups.LeftZeroSemigroup"
+SELF_RETURN_MODULE = "tests.fixtures.invariant_core.provider_methods"
+SELF_RETURN_CATEGORY = f"{SELF_RETURN_MODULE}.SelfReturnCategory"
+SELF_RETURN_PROVIDER = f"{SELF_RETURN_CATEGORY}.ParentMethods"
 
 
 def test_resolver_writes_parent_projection_manifest_for_diamond_fixture(
@@ -226,3 +229,24 @@ def test_resolver_records_concrete_parent_initialization(tmp_path: Path) -> None
     assert record.parent_provider_mro[0] in manifest.projection_by_provider
     assert record.element_provider_mro[0] in manifest.projection_by_provider
     assert "sage.categories.examples.semigroups" in manifest.source_module_by_module
+
+
+def test_resolver_records_self_return_provider_methods(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "sage-category-self-methods.json"
+
+    resolver.main(
+        [
+            "--output",
+            str(manifest_path),
+            "--role",
+            "parent",
+            SELF_RETURN_CATEGORY,
+        ]
+    )
+
+    manifest = load_manifest(manifest_path)
+
+    assert tuple(
+        (record.provider, record.name, record.return_type)
+        for record in manifest.provider_methods
+    ) == ((SELF_RETURN_PROVIDER, "normalized", "Self"),)

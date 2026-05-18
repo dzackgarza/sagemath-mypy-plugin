@@ -19,6 +19,7 @@ from sage_mypy_category_plugin.manifest import (
 from sage_mypy_category_plugin.oracle import (
     concrete_parent_records_for_factories,
     named_class_traces,
+    provider_method_records_for_projections,
     provider_projections_for_categories,
 )
 from sage_mypy_category_plugin.projection import (
@@ -62,6 +63,7 @@ def resolve_projection_manifest(
         mypy_max_version=mypy_max_version,
         named_classes=_named_class_records(),
         projections=tuple(projections.values()),
+        provider_methods=provider_method_records_for_projections(projections.values()),
         concrete_parents=concrete_parents,
         source_modules=_source_module_records(
             category_fullnames,

@@ -4,7 +4,9 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from importlib import import_module
-from typing import Protocol, runtime_checkable
+from inspect import signature
+from types import FunctionType
+from typing import Protocol, Self as TypingSelf, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
@@ -12,6 +14,7 @@ import sage.all  # type: ignore[import-untyped] # noqa: F401
 
 from sage_mypy_category_plugin.projection import (
     ConcreteParentRecord,
+    ProviderMethodRecord,
     ProviderProjection,
     ProviderRole,
 )
@@ -89,6 +92,7 @@ class NamedClassTrace:
 
 _NAMED_CLASS_TRACES_BY_PROVIDER: dict[tuple[ProviderRole, str], NamedClassTrace] = {}
 _RUNTIME_CLASS_BY_PROVIDER_ROLE: dict[tuple[ProviderRole, str], type[object]] = {}
+_PROVIDER_CLASS_BY_FULLNAME: dict[str, type[object]] = {}
 _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE: dict[ProviderRole, dict[type[object], str]] = {
     role: {}
     for role in ROLE_PROJECTIONS
@@ -106,6 +110,7 @@ def provider_projections_for_categories(
 ) -> dict[str, ProviderProjection]:
     _NAMED_CLASS_TRACES_BY_PROVIDER.clear()
     _RUNTIME_CLASS_BY_PROVIDER_ROLE.clear()
+    _PROVIDER_CLASS_BY_FULLNAME.clear()
     for role in roles:
         _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role].clear()
         _UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role].clear()
@@ -152,6 +157,27 @@ def concrete_parent_records_for_factories(
 
 def named_class_traces() -> tuple[NamedClassTrace, ...]:
     return tuple(_NAMED_CLASS_TRACES_BY_PROVIDER.values())
+
+
+def provider_method_records_for_projections(
+    projections: Iterable[ProviderProjection],
+) -> tuple[ProviderMethodRecord, ...]:
+    records: list[ProviderMethodRecord] = []
+    for projection in projections:
+        provider_class = _provider_class_for_projection(projection)
+        for name, member in sorted(vars(provider_class).items()):
+            function = _direct_provider_function_or_none(member)
+            if function is None:
+                continue
+            if _returns_typing_self(function):
+                records.append(
+                    ProviderMethodRecord(
+                        provider=projection.provider,
+                        name=name,
+                        return_type="Self",
+                    )
+                )
+    return tuple(records)
 
 
 def _provider_projection(category: SageCategory, role: ProviderRole) -> ProviderProjection:
@@ -401,7 +427,9 @@ def _provider_fullname_from_runtime_class_or_none(
         f"{runtime_class.__module__}.{owner_qualname}."
         f"{role_projection.provider_attr} must be a class; got {provider!r}"
     )
-    return _class_fullname(provider)
+    provider_fullname = _class_fullname(provider)
+    _PROVIDER_CLASS_BY_FULLNAME[provider_fullname] = provider
+    return provider_fullname
 
 
 def _resolve_module_qualname(module_name: str, qualname: str) -> object | None:
@@ -411,6 +439,28 @@ def _resolve_module_qualname(module_name: str, qualname: str) -> object | None:
         if current is None:
             return None
     return current
+
+
+def _provider_class_for_projection(
+    projection: ProviderProjection,
+) -> type[object]:
+    provider_class = _PROVIDER_CLASS_BY_FULLNAME.get(projection.provider)
+    assert provider_class is not None, (
+        f"Provider class {projection.provider!r} was not recorded during "
+        "Sage projection"
+    )
+    return provider_class
+
+
+def _direct_provider_function_or_none(member: object) -> FunctionType | None:
+    if isinstance(member, FunctionType):
+        return member
+    return None
+
+
+def _returns_typing_self(function: FunctionType) -> bool:
+    return_annotation = signature(function).return_annotation
+    return return_annotation == "Self" or return_annotation is TypingSelf
 
 
 def _runtime_named_class(
@@ -470,7 +520,9 @@ def _provider_fullname_or_none(
     provider_class = getattr(type(category), role_projection.provider_attr, None)
     if not isinstance(provider_class, type):
         return None
-    return _class_fullname(provider_class)
+    provider_fullname = _class_fullname(provider_class)
+    _PROVIDER_CLASS_BY_FULLNAME[provider_fullname] = provider_class
+    return provider_fullname
 
 
 def _import_category_factory(fullname: str) -> SageCategoryFactory:
@@ -573,5 +625,6 @@ __all__ = [
     "NamedClassTrace",
     "concrete_parent_records_for_factories",
     "named_class_traces",
+    "provider_method_records_for_projections",
     "provider_projections_for_categories",
 ]
