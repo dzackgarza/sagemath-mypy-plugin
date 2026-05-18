@@ -36,6 +36,7 @@ Surfaces covered:
     Python-base construction method containers — test_plugin_python_base_construction_method_container_correctness
     Static construction selectors avoid runtime import — test_plugin_static_construction_selector_no_runtime_import_correctness
     Runtime construction selector import failures stay diagnostic — test_plugin_runtime_construction_selector_import_failure_correctness
+    Runtime Sage supercategory assigned providers — test_plugin_runtime_super_category_alias_provider_correctness
     Sage category interop stubs — test_sage_category_interop_stub_correctness
     Parent.Hom category keyword — test_plugin_parent_hom_category_keyword_correctness
     Aliased provider type aliases — test_plugin_alias_provider_type_alias_correctness
@@ -388,6 +389,14 @@ def test_plugin_runtime_construction_selector_import_failure_correctness() -> No
     _assert_error_with_and_without_plugin(
         "test_runtime_construction_selector_import_failure",
         "[call-arg]",
+    )
+
+
+def test_plugin_runtime_super_category_alias_provider_correctness() -> None:
+    """Assigned ParentMethods providers inherit runtime Sage supercategory methods."""
+    _assert_override_conjunction(
+        "test_runtime_super_category_alias_provider",
+        "test_invalid_override",
     )
 
 
