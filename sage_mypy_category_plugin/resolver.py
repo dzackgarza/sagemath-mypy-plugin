@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from argparse import ArgumentParser
+from collections.abc import Iterable
 from hashlib import sha256
 from importlib import import_module
 from pathlib import Path
-from typing import Sequence, cast, get_args
 from sys import version_info
+from typing import Sequence, cast, get_args
 
 from mypy.version import __version__ as MYPY_VERSION
 
@@ -15,7 +16,7 @@ from sage_mypy_category_plugin.manifest import (
     write_manifest,
 )
 from sage_mypy_category_plugin.oracle import provider_projections_for_categories
-from sage_mypy_category_plugin.projection import ProviderRole
+from sage_mypy_category_plugin.projection import ProviderProjection, ProviderRole
 
 
 def resolve_projection_manifest(
@@ -47,7 +48,10 @@ def resolve_projection_manifest(
         mypy_min_version=mypy_min_version,
         mypy_max_version=mypy_max_version,
         projections=tuple(projections.values()),
-        source_modules=_source_module_records(category_fullnames),
+        source_modules=_source_module_records(
+            category_fullnames,
+            projections=projections.values(),
+        ),
     )
 
 
@@ -131,11 +135,57 @@ def _resolver_argument_parser() -> ArgumentParser:
 
 def _source_module_records(
     category_fullnames: Sequence[str],
+    *,
+    projections: Iterable[ProviderProjection] = (),
 ) -> tuple[SourceModuleRecord, ...]:
     module_names = tuple(
-        dict.fromkeys(_category_module_name(fullname) for fullname in category_fullnames)
+        dict.fromkeys(
+            (
+                *(
+                    _category_module_name(fullname)
+                    for fullname in category_fullnames
+                ),
+                *_projection_module_names(projections),
+            )
+        )
     )
-    return tuple(_source_module_record(module_name) for module_name in module_names)
+    return tuple(
+        record
+        for module_name in module_names
+        if (record := _source_module_record_or_none(module_name)) is not None
+    )
+
+
+def _projection_module_names(
+    projections: Iterable[ProviderProjection],
+) -> tuple[str, ...]:
+    module_names: list[str] = []
+    for projection in projections:
+        for fullname in (
+            projection.provider,
+            projection.runtime_class,
+            *projection.runtime_bases,
+            *projection.runtime_mro,
+            *projection.provider_bases,
+            *projection.provider_mro,
+            *projection.unprojected_runtime_mro,
+        ):
+            module_name = _importable_module_name_or_none(fullname)
+            if module_name is not None:
+                module_names.append(module_name)
+    return tuple(dict.fromkeys(module_names))
+
+
+def _importable_module_name_or_none(fullname: str) -> str | None:
+    parts = fullname.split(".")
+    for split_index in range(len(parts), 0, -1):
+        module_name = ".".join(parts[:split_index])
+        try:
+            import_module(module_name)
+        except ModuleNotFoundError:
+            continue
+        return module_name
+    return None
 
 
 def _category_module_name(category_fullname: str) -> str:
@@ -145,11 +195,11 @@ def _category_module_name(category_fullname: str) -> str:
     return module_name
 
 
-def _source_module_record(module_name: str) -> SourceModuleRecord:
+def _source_module_record_or_none(module_name: str) -> SourceModuleRecord | None:
     module = import_module(module_name)
     module_file = getattr(module, "__file__", None)
     if module_file is None:
-        raise ValueError(f"Module has no source file: {module_name}")
+        return None
     path = Path(module_file)
     source_bytes = path.read_bytes()
     return SourceModuleRecord(

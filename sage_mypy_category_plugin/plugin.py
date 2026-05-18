@@ -26,6 +26,9 @@ class SageCategoryProjectionPlugin(Plugin):
         self._manifest = load_manifest(self._manifest_path)
         self._manifest_digest = sha256(self._manifest_path.read_bytes()).hexdigest()
         self._projection_by_provider = self._manifest.projection_by_provider
+        self._source_modules = tuple(
+            record.module for record in self._manifest.source_modules
+        )
 
     def get_customize_class_mro_hook(
         self,
@@ -38,14 +41,25 @@ class SageCategoryProjectionPlugin(Plugin):
     def get_additional_deps(self, file: MypyFile) -> list[tuple[int, str, int]]:
         provider_module = file.fullname
         dependent_modules = {
-            _provider_module(base_fullname)
+            _provider_module(
+                base_fullname,
+                source_modules=self._source_modules,
+            )
             for projection in self._manifest.projections
-            if _provider_module(projection.provider) == provider_module
+            if _provider_module(
+                projection.provider,
+                source_modules=self._source_modules,
+            )
+            == provider_module
             for base_fullname in (
                 *projection.provider_bases,
                 *projection.provider_mro,
             )
-            if _provider_module(base_fullname) != provider_module
+            if _provider_module(
+                base_fullname,
+                source_modules=self._source_modules,
+            )
+            != provider_module
         }
         return [
             (MYPY_DEP_PRIORITY, module_name, -1)
@@ -184,7 +198,18 @@ def _manifest_path_from_config(options: Options) -> Path:
     return manifest_path
 
 
-def _provider_module(provider_fullname: str) -> str:
+def _provider_module(
+    provider_fullname: str,
+    *,
+    source_modules: tuple[str, ...] = (),
+) -> str:
+    source_module = _source_module_for_fullname(
+        provider_fullname,
+        source_modules=source_modules,
+    )
+    if source_module is not None:
+        return source_module
+
     module_name, separator, _ = provider_fullname.rpartition(".")
     if separator != ".":
         raise ValueError(f"Expected provider fullname, got {provider_fullname!r}")
@@ -192,6 +217,19 @@ def _provider_module(provider_fullname: str) -> str:
     if separator != ".":
         raise ValueError(f"Expected nested provider fullname, got {provider_fullname!r}")
     return module_name
+
+
+def _source_module_for_fullname(
+    fullname: str,
+    *,
+    source_modules: tuple[str, ...],
+) -> str | None:
+    matching_modules = tuple(
+        module for module in source_modules if fullname.startswith(f"{module}.")
+    )
+    if not matching_modules:
+        return None
+    return max(matching_modules, key=len)
 
 
 def plugin(version: str) -> type[Plugin]:

@@ -21,6 +21,7 @@ HOMSET_BOTTOM_CATEGORY = f"{HOMSET_FIXTURE_MODULE}.BottomCategory"
 BOTTOM_HOMSET_PARENT_PROVIDER = (
     f"{HOMSET_FIXTURE_MODULE}.BottomCategory.Homsets.ParentMethods"
 )
+COMMUTATIVE_RINGS_CATEGORY = "sage.categories.commutative_rings.CommutativeRings"
 
 
 def test_resolver_writes_parent_projection_manifest_for_diamond_fixture(
@@ -113,3 +114,24 @@ def test_resolver_records_sage_git_revision_override(tmp_path: Path) -> None:
     manifest = load_manifest(manifest_path)
 
     assert manifest.sage_git_revision == sage_git_revision
+
+
+def test_resolver_records_projection_dependency_source_modules(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "sage-category-axiom-projections.json"
+
+    resolver.main(
+        [
+            "--output",
+            str(manifest_path),
+            "--role",
+            "parent",
+            COMMUTATIVE_RINGS_CATEGORY,
+        ]
+    )
+
+    manifest = load_manifest(manifest_path)
+
+    assert "sage.categories.commutative_rings" in manifest.source_module_by_module
+    assert "sage.categories.rings" in manifest.source_module_by_module
+    assert "sage.categories.magmas" in manifest.source_module_by_module
+    assert "sage.categories.magmas.Magmas" not in manifest.source_module_by_module

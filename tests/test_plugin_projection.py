@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Sequence
+from hashlib import sha256
+from importlib import import_module
 from pathlib import Path
 
 import pytest
 from mypy.build import BuildResult, build
 from mypy.errors import CompileError
 from mypy.modulefinder import BuildSource
-from mypy.nodes import TypeInfo
+from mypy.nodes import MypyFile, TypeInfo
 from mypy.options import Options
 
 from sage_mypy_category_plugin.manifest import (
@@ -21,6 +24,8 @@ from sage_mypy_category_plugin.plugin import (
     SageCategoryProjectionPlugin,
 )
 from sage_mypy_category_plugin.projection import ProviderProjection
+
+type StubTree = dict[str, "StubTree"]
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_MODULE = "tests.fixtures.invariant_core.diamond_runtime"
@@ -74,6 +79,10 @@ HOMSET_ROLES_PATH = (
 )
 HOMSET_ROLES_FULLNAMES = (
     f"{HOMSET_ROLES_MODULE}.BottomCategory",
+)
+COMMUTATIVE_RINGS_CATEGORY = "sage.categories.commutative_rings.CommutativeRings"
+COMMUTATIVE_RINGS_PROVIDER = (
+    "sage.categories.commutative_rings.CommutativeRings.ParentMethods"
 )
 DIAMOND_SOURCE_MODULE = SourceModuleRecord(
     module=FIXTURE_MODULE,
@@ -405,6 +414,123 @@ def test_plugin_projects_homset_typeinfo_mro_when_external_stubs_are_visible(
         *projections[element_provider].provider_mro,
         "builtins.object",
     )
+
+
+def test_plugin_projects_nested_axiom_provider_typeinfo_mro_from_source_modules(
+    tmp_path: Path,
+) -> None:
+    projections = provider_projections_for_categories(
+        (COMMUTATIVE_RINGS_CATEGORY,),
+        roles=("parent",),
+    )
+    manifest_path = tmp_path / "sage-category-axiom-projections.json"
+    config_path = tmp_path / "mypy.ini"
+    stub_root = tmp_path / "visible-sage-stubs"
+    source_modules = _write_projected_provider_stubs(
+        stub_root,
+        projections=tuple(projections.values()),
+    )
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=tuple(projections.values()),
+        source_modules=source_modules,
+    )
+    fixture_path = tmp_path / "axiom_consumer.py"
+    fixture_path.write_text(
+        "\n".join(
+            (
+                "from sage.categories.commutative_rings import CommutativeRings",
+                "CommutativeRings.ParentMethods",
+                "",
+            )
+        )
+    )
+    write_manifest(manifest_path, manifest)
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "ignore_missing_imports = True",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+
+    result = _build_fixture(
+        config_path,
+        tmp_path,
+        fixture_path=fixture_path,
+        fixture_module="axiom_consumer",
+        mypy_path_entries=(stub_root,),
+    )
+    commutative_info = _nested_typeinfo(
+        result,
+        module="sage.categories.commutative_rings",
+        outer="CommutativeRings",
+        inner="ParentMethods",
+    )
+
+    assert result.errors == []
+    assert tuple(info.fullname for info in commutative_info.mro) == (
+        *projections[COMMUTATIVE_RINGS_PROVIDER].provider_mro,
+        "builtins.object",
+    )
+
+
+def test_plugin_dependency_modules_use_manifest_source_modules_for_nested_axioms(
+    tmp_path: Path,
+) -> None:
+    projections = provider_projections_for_categories(
+        (COMMUTATIVE_RINGS_CATEGORY,),
+        roles=("parent",),
+    )
+    stub_root = tmp_path / "visible-sage-stubs"
+    source_modules = _write_projected_provider_stubs(
+        stub_root,
+        projections=tuple(projections.values()),
+    )
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=tuple(projections.values()),
+        source_modules=source_modules,
+    )
+    manifest_path = tmp_path / "sage-category-axiom-projections.json"
+    config_path = tmp_path / "mypy.ini"
+    write_manifest(manifest_path, manifest)
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+    mypy_file = MypyFile([], [])
+    mypy_file._fullname = "sage.categories.commutative_rings"
+    options = Options()
+    options.config_file = str(config_path)
+
+    deps = SageCategoryProjectionPlugin(options).get_additional_deps(mypy_file)
+    dep_modules = {module for _, module, _ in deps}
+
+    assert "sage.categories.magmas" in dep_modules
+    assert "sage.categories.additive_magmas" in dep_modules
+    assert "sage.categories.magmas.Magmas" not in dep_modules
+    assert "sage.categories.additive_magmas.AdditiveMagmas" not in dep_modules
 
 
 @pytest.mark.parametrize("field", ("provider_bases", "provider_mro"))
@@ -951,3 +1077,69 @@ def _write_visible_sage_provider_stubs(stub_root: Path) -> None:
             )
         )
     )
+
+
+def _write_projected_provider_stubs(
+    stub_root: Path,
+    *,
+    projections: tuple[ProviderProjection, ...],
+) -> tuple[SourceModuleRecord, ...]:
+    module_trees: dict[str, StubTree] = defaultdict(dict)
+    for projection in projections:
+        for provider in projection.provider_mro:
+            module_name, qualname = _importable_module_and_qualname(provider)
+            _add_qualname(module_trees[module_name], qualname)
+
+    source_modules: list[SourceModuleRecord] = []
+    for package_dir in (
+        stub_root / "sage",
+        stub_root / "sage" / "categories",
+    ):
+        package_dir.mkdir(parents=True, exist_ok=True)
+        (package_dir / "__init__.pyi").write_text("")
+
+    for module_name, tree in sorted(module_trees.items()):
+        path = stub_root.joinpath(*module_name.split(".")).with_suffix(".pyi")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        source = "\n".join(_stub_lines(tree)) + "\n"
+        path.write_text(source)
+        source_modules.append(
+            SourceModuleRecord(
+                module=module_name,
+                path=str(path),
+                sha256=sha256(source.encode()).hexdigest(),
+            )
+        )
+    return tuple(source_modules)
+
+
+def _importable_module_and_qualname(fullname: str) -> tuple[str, tuple[str, ...]]:
+    parts = fullname.split(".")
+    for split_index in range(len(parts), 0, -1):
+        module_name = ".".join(parts[:split_index])
+        try:
+            import_module(module_name)
+        except ModuleNotFoundError:
+            continue
+        return module_name, tuple(parts[split_index:])
+    raise AssertionError(f"Could not find importable module for {fullname!r}")
+
+
+def _add_qualname(tree: StubTree, qualname: tuple[str, ...]) -> None:
+    current = tree
+    for name in qualname:
+        current = current.setdefault(name, {})
+
+
+def _stub_lines(tree: StubTree, indent: int = 0) -> tuple[str, ...]:
+    lines: list[str] = []
+    for name, child in sorted(
+        tree.items(),
+        key=lambda item: (item[0] not in {"ParentMethods", "ElementMethods"}, item[0]),
+    ):
+        lines.append(f"{'    ' * indent}class {name}:")
+        if child:
+            lines.extend(_stub_lines(child, indent + 1))
+        else:
+            lines.append(f"{'    ' * (indent + 1)}...")
+    return tuple(lines)
