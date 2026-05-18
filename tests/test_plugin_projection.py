@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from collections.abc import Sequence
 from functools import cache
 from hashlib import sha256
@@ -25,8 +24,7 @@ from sage_mypy_category_plugin.plugin import (
     SageCategoryProjectionPlugin,
 )
 from sage_mypy_category_plugin.projection import ProviderProjection
-
-type StubTree = dict[str, "StubTree"]
+from sage_mypy_category_plugin.stubs import generated_stub_sources
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_MODULE = "tests.fixtures.invariant_core.diamond_runtime"
@@ -1057,36 +1055,52 @@ def _write_projected_provider_stubs(
     *,
     projections: tuple[ProviderProjection, ...],
 ) -> tuple[SourceModuleRecord, ...]:
-    module_trees: dict[str, StubTree] = defaultdict(dict)
-    for projection in projections:
-        for provider in projection.provider_mro:
-            module_name, qualname = _importable_module_and_qualname(provider)
-            _add_qualname(module_trees[module_name], qualname)
+    source_modules = tuple(
+        SourceModuleRecord(
+            module=module_name,
+            path=str(stub_root.joinpath(*module_name.split(".")).with_suffix(".pyi")),
+            sha256="0" * 64,
+        )
+        for module_name in _projected_provider_module_names(projections)
+    )
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=projections,
+        source_modules=source_modules,
+    )
 
-    source_modules: list[SourceModuleRecord] = []
-    for package_dir in (
-        stub_root / "sage",
-        stub_root / "sage" / "categories",
-    ):
-        package_dir.mkdir(parents=True, exist_ok=True)
-        (package_dir / "__init__.pyi").write_text("")
-
-    for module_name, tree in sorted(module_trees.items()):
-        path = stub_root.joinpath(*module_name.split(".")).with_suffix(".pyi")
+    written_source_modules: list[SourceModuleRecord] = []
+    for relative_path, source in generated_stub_sources(manifest).items():
+        path = stub_root / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
-        source = "\n".join(_stub_lines(tree)) + "\n"
+        _write_package_markers(stub_root, path.parent)
         path.write_text(source)
-        source_modules.append(
+        written_source_modules.append(
             SourceModuleRecord(
-                module=module_name,
+                module=".".join(relative_path.with_suffix("").parts),
                 path=str(path),
                 sha256=sha256(source.encode()).hexdigest(),
             )
         )
-    return tuple(source_modules)
+    return tuple(written_source_modules)
 
 
-def _importable_module_and_qualname(fullname: str) -> tuple[str, tuple[str, ...]]:
+def _projected_provider_module_names(
+    projections: tuple[ProviderProjection, ...],
+) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            _importable_module_name(provider)
+            for projection in projections
+            for provider in projection.provider_mro
+        )
+    )
+
+
+def _importable_module_name(fullname: str) -> str:
     parts = fullname.split(".")
     for split_index in range(len(parts), 0, -1):
         module_name = ".".join(parts[:split_index])
@@ -1094,25 +1108,15 @@ def _importable_module_and_qualname(fullname: str) -> tuple[str, tuple[str, ...]
             import_module(module_name)
         except ModuleNotFoundError:
             continue
-        return module_name, tuple(parts[split_index:])
+        return module_name
     raise AssertionError(f"Could not find importable module for {fullname!r}")
 
 
-def _add_qualname(tree: StubTree, qualname: tuple[str, ...]) -> None:
-    current = tree
-    for name in qualname:
-        current = current.setdefault(name, {})
-
-
-def _stub_lines(tree: StubTree, indent: int = 0) -> tuple[str, ...]:
-    lines: list[str] = []
-    for name, child in sorted(
-        tree.items(),
-        key=lambda item: (item[0] not in {"ParentMethods", "ElementMethods"}, item[0]),
-    ):
-        lines.append(f"{'    ' * indent}class {name}:")
-        if child:
-            lines.extend(_stub_lines(child, indent + 1))
-        else:
-            lines.append(f"{'    ' * (indent + 1)}...")
-    return tuple(lines)
+def _write_package_markers(stub_root: Path, package_dir: Path) -> None:
+    current = package_dir
+    packages: list[Path] = []
+    while current != stub_root:
+        packages.append(current)
+        current = current.parent
+    for package in reversed(packages):
+        (package / "__init__.pyi").write_text("")

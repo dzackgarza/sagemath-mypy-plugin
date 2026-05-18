@@ -26,8 +26,12 @@ test-resolver-cli *args:
   just test tests/test_resolver_cli.py {{args}}
 
 [group('test')]
+test-stubs *args:
+  just test tests/test_stub_generation.py {{args}}
+
+[group('test')]
 test-behavior *args:
   just test tests/test_behavior_matrix.py tests/test_role_behavior_matrix.py {{args}}
 
 [group('test')]
-release-check: test-structural test-manifest test-plugin-projection test-resolver-cli test-behavior
+release-check: test-structural test-manifest test-plugin-projection test-resolver-cli test-stubs test-behavior
