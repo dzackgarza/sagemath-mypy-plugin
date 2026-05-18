@@ -74,6 +74,15 @@ class CategoryExtraSuper(Category):
         return []
 
 
+class CategorySuperChild(Category): ...
+
+
+class CategorySuperSpecific(Category):
+    @override
+    def super_categories(self) -> list[CategorySuperChild]:
+        return []
+
+
 def imported_category_bases(
     parameterized: CategoryWithParameters,
     axiom: CategoryWithAxiom,
