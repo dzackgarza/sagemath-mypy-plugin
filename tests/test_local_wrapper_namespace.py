@@ -39,6 +39,7 @@ Surfaces covered:
     Runtime construction selector import failures stay diagnostic — test_plugin_runtime_construction_selector_import_failure_correctness
     Runtime Sage cartesian-product supercategory containers — test_plugin_runtime_cartesian_product_super_category_correctness
     Runtime projection plus Python-base method containers — test_plugin_runtime_projection_with_python_base_provider_correctness
+    Recursive axiom bases under runtime projection — test_plugin_recursive_axiom_quotient_projection_correctness
     Runtime Sage enumerated supercategory containers — test_plugin_runtime_enumerated_super_category_correctness
     Runtime Sage facade supercategory containers — test_plugin_runtime_facade_super_category_correctness
     Runtime Sage supercategory assigned providers — test_plugin_runtime_super_category_alias_provider_correctness
@@ -417,6 +418,14 @@ def test_plugin_runtime_projection_with_python_base_provider_correctness() -> No
     """Projected containers must retain methods from Python category bases."""
     _assert_override_conjunction(
         "test_runtime_projection_with_python_base_provider",
+        "test_invalid_override",
+    )
+
+
+def test_plugin_recursive_axiom_quotient_projection_correctness() -> None:
+    """Projected construction bases may need static axiom bases recursively."""
+    _assert_override_conjunction(
+        "test_recursive_axiom_quotient_projection",
         "test_invalid_override",
     )
 

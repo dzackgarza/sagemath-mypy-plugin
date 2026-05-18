@@ -17,7 +17,7 @@ import logging
 from typing import Any, Callable, Tuple
 from mypy.build import PRI_MED
 from mypy.errorcodes import ErrorCode
-from mypy.mro import calculate_mro
+from mypy.mro import MroError, calculate_mro
 from mypy.nodes import (
     ARG_POS,
     ARG_OPT,
@@ -264,7 +264,12 @@ class SageCategoryPlugin(Plugin):
                 materialize=True,
             )
             if (
-                self._ensure_projected_base_mro(ctx, ti, {info.fullname})
+                self._ensure_projected_base_mro(
+                    ctx,
+                    ti,
+                    {info.fullname},
+                    _explicit_override_method_names(info),
+                )
                 and not ctx.api.final_iteration
             ):
                 deferred = True
@@ -299,6 +304,7 @@ class SageCategoryPlugin(Plugin):
         retained_bases = [
             base for base in info.bases if base.type.fullname != "builtins.object"
         ]
+        original_retained_bases = list(retained_bases)
         base_tis = _prune_redundant_projected_bases(base_tis, retained_bases)
         existing_bases = {base.type.fullname for base in retained_bases}
         for ti in base_tis:
@@ -317,13 +323,24 @@ class SageCategoryPlugin(Plugin):
 
         info.bases = retained_bases
         info.mro = []
-        calculate_mro(info)
+        try:
+            calculate_mro(info)
+        except MroError:
+            if _method_container_needs_semantic_mro(ctx.cls, info):
+                raise
+            restored_bases = list(original_retained_bases)
+            if runtime_base_ti is not None:
+                restored_bases.append(fill_typevars(runtime_base_ti))
+            info.bases = _dedupe_instances(restored_bases)
+            info.mro = []
+            calculate_mro(info)
 
     def _ensure_projected_base_mro(
         self,
         ctx: ClassDefContext,
         info: TypeInfo,
         seen: set[str],
+        required_names: frozenset[str],
     ) -> bool:
         if info.fullname in seen:
             return False
@@ -333,12 +350,19 @@ class SageCategoryPlugin(Plugin):
 
         projection = self._resolve_projection(ctx, info.fullname)
         if projection is None:
-            return False
-        static_base_fns = _projected_method_container_bases(
-            ctx,
-            info,
-            projection.static_bases,
-        )
+            if not required_names:
+                return False
+            static_base_fns = _static_bases_defining_names(
+                ctx,
+                _resolve_static_category_method_container_bases(ctx, info),
+                required_names,
+            )
+        else:
+            static_base_fns = _projected_method_container_bases(
+                ctx,
+                info,
+                projection.static_bases,
+            )
         if not static_base_fns:
             return False
 
@@ -359,7 +383,7 @@ class SageCategoryPlugin(Plugin):
                 ti,
                 materialize=True,
             )
-            if self._ensure_projected_base_mro(ctx, ti, seen):
+            if self._ensure_projected_base_mro(ctx, ti, seen, required_names):
                 deferred = True
             base_tis.append(ti)
 
@@ -746,6 +770,79 @@ def _projected_method_container_bases(
     return tuple(dict.fromkeys(bases))
 
 
+def _static_bases_defining_names(
+    ctx: ClassDefContext,
+    static_bases: tuple[str, ...],
+    required_names: frozenset[str],
+) -> tuple[str, ...]:
+    bases: list[str] = []
+    for base in static_bases:
+        ti = _lookup_typeinfo(ctx, base)
+        if ti is None:
+            continue
+        if any(_typeinfo_defines_name(ti, name) for name in required_names):
+            bases.append(base)
+    return tuple(dict.fromkeys(bases))
+
+
+def _method_container_needs_semantic_mro(cls: ClassDef, info: TypeInfo) -> bool:
+    return bool(
+        _explicit_override_method_names(info)
+        or _class_body_has_self_member_access(cls)
+    )
+
+
+def _class_body_has_self_member_access(cls: ClassDef) -> bool:
+    for statement in cls.defs.body:
+        func = statement.func if isinstance(statement, Decorator) else statement
+        if isinstance(func, FuncDef) and _block_has_self_member_access(func.body):
+            return True
+    return False
+
+
+def _block_has_self_member_access(block: Block) -> bool:
+    for statement in block.body:
+        if _statement_has_self_member_access(statement):
+            return True
+    return False
+
+
+def _statement_has_self_member_access(statement: Any) -> bool:
+    if isinstance(statement, IfStmt):
+        if _expression_has_self_member_access(statement.expr):
+            return True
+        if any(_block_has_self_member_access(block) for block in statement.body):
+            return True
+        return (
+            statement.else_body is not None
+            and _block_has_self_member_access(statement.else_body)
+        )
+    if isinstance(statement, Block):
+        return _block_has_self_member_access(statement)
+    expr = getattr(statement, "expr", None)
+    if expr is not None and _expression_has_self_member_access(expr):
+        return True
+    rvalue = getattr(statement, "rvalue", None)
+    return rvalue is not None and _expression_has_self_member_access(rvalue)
+
+
+def _expression_has_self_member_access(expr: Any) -> bool:
+    if isinstance(expr, MemberExpr):
+        return (
+            isinstance(expr.expr, NameExpr)
+            and expr.expr.name == "self"
+        ) or _expression_has_self_member_access(expr.expr)
+    if isinstance(expr, CallExpr):
+        return (
+            _expression_has_self_member_access(expr.callee)
+            or any(_expression_has_self_member_access(arg) for arg in expr.args)
+        )
+    if isinstance(expr, TupleExpr):
+        return any(_expression_has_self_member_access(item) for item in expr.items)
+    nested = getattr(expr, "expr", None)
+    return nested is not None and _expression_has_self_member_access(nested)
+
+
 def _explicit_override_method_names(info: TypeInfo) -> frozenset[str]:
     names: set[str] = set()
     for statement in getattr(info.defn.defs, "body", ()):
@@ -771,6 +868,18 @@ def _typeinfo_defines_name(info: TypeInfo, name: str) -> bool:
         name in getattr(base, "names", {})
         for base in getattr(info, "mro", [info])
     )
+
+
+def _dedupe_instances(instances: list[Instance]) -> list[Instance]:
+    seen: set[str] = set()
+    deduped: list[Instance] = []
+    for instance in instances:
+        fullname = instance.type.fullname
+        if fullname in seen:
+            continue
+        seen.add(fullname)
+        deduped.append(instance)
+    return deduped
 
 
 def _resolve_static_category_method_container_bases(
