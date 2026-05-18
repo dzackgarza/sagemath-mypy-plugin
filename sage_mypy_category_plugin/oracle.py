@@ -505,10 +505,10 @@ def _provider_fullname_from_runtime_class_or_none(
     if owner is None:
         return None
 
-    if not hasattr(owner, role_projection.provider_attr):
+    provider = vars(owner).get(role_projection.provider_attr)
+    if provider is None:
         return None
 
-    provider = getattr(owner, role_projection.provider_attr)
     assert isinstance(provider, type), (
         f"{runtime_class.__module__}.{owner_qualname}."
         f"{role_projection.provider_attr} must be a class; got {provider!r}"
@@ -595,12 +595,24 @@ def _provider_fullname_or_none(
     category: SageCategory,
     role_projection: RoleProjection,
 ) -> str | None:
-    provider_class = getattr(type(category), role_projection.provider_attr, None)
-    if not isinstance(provider_class, type):
+    provider_owner = _static_category_type(category)
+    provider_class = vars(provider_owner).get(role_projection.provider_attr)
+    if provider_class is None:
         return None
+    assert isinstance(provider_class, type), (
+        f"{_class_fullname(provider_owner)}.{role_projection.provider_attr} "
+        f"must be a class; got {provider_class!r}"
+    )
     provider_fullname = _class_fullname(provider_class)
     _PROVIDER_CLASS_BY_FULLNAME[provider_fullname] = provider_class
     return provider_fullname
+
+
+def _static_category_type(category: SageCategory) -> type[object]:
+    category_type = type(category)
+    if category_type.__name__.endswith("_with_category"):
+        return category_type.__mro__[1]
+    return category_type
 
 
 def _import_category(fullname: str) -> SageCategory:

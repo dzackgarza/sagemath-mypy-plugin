@@ -83,6 +83,18 @@ def test_runtime_provider_resolution_rejects_broken_provider_attribute() -> None
         )
 
 
+def test_projection_skips_inherited_homsets_subcategory_provider() -> None:
+    projections = provider_projections_for_categories(
+        (
+            "tests.fixtures.invariant_core.provider_roles.homsets."
+            "StandaloneHomCategory",
+        ),
+        roles=("subcategory",),
+    )
+
+    assert "sage.categories.homsets.Homsets.SubcategoryMethods" not in projections
+
+
 def test_diamond_parent_projection_matches_sage_runtime_mro() -> None:
     assert BottomCategory.__bases__ == (LocalCategoryBase,)
 
