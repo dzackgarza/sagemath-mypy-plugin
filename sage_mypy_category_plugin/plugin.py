@@ -210,7 +210,11 @@ class SageCategoryPlugin(Plugin):
                     return
         else:
             value_dependent_bases = _completion_self_return_base_tis(ctx, ctx.cls, info)
-            static_base_fns = projection.static_bases
+            static_base_fns = _projected_method_container_bases(
+                ctx,
+                info,
+                projection.static_bases,
+            )
 
         if projection is not None and projection.unmapped_dynamic_bases and self._strict:
             for base in projection.unmapped_dynamic_bases:
@@ -328,7 +332,14 @@ class SageCategoryPlugin(Plugin):
             return False
 
         projection = self._resolve_projection(ctx, info.fullname)
-        if projection is None or not projection.static_bases:
+        if projection is None:
+            return False
+        static_base_fns = _projected_method_container_bases(
+            ctx,
+            info,
+            projection.static_bases,
+        )
+        if not static_base_fns:
             return False
 
         retained_bases = [
@@ -336,7 +347,7 @@ class SageCategoryPlugin(Plugin):
         ]
         base_tis: list[TypeInfo] = []
         deferred = False
-        for base_fn in projection.static_bases:
+        for base_fn in static_base_fns:
             ti = _lookup_typeinfo(ctx, base_fn)
             if ti is None:
                 if not ctx.api.final_iteration:
@@ -705,6 +716,61 @@ def _resolve_python_category_method_container_bases(
         if ti is not None:
             bases.append(ti.fullname)
     return tuple(dict.fromkeys(bases))
+
+
+def _projected_method_container_bases(
+    ctx: ClassDefContext,
+    info: TypeInfo,
+    projected_bases: tuple[str, ...],
+) -> tuple[str, ...]:
+    bases = list(projected_bases)
+    override_names = _explicit_override_method_names(info)
+    if not override_names:
+        return tuple(dict.fromkeys(bases))
+    enclosing_cat = _lookup_enclosing_category_typeinfo(ctx, info)
+    if enclosing_cat is not None:
+        for base in _resolve_python_category_method_container_bases(
+            ctx,
+            enclosing_cat,
+            info.name,
+        ):
+            ti = _lookup_typeinfo(ctx, base)
+            if ti is None:
+                continue
+            if any(
+                _typeinfo_defines_name(ti, name)
+                and not _projected_bases_define_name(ctx, projected_bases, name)
+                for name in override_names
+            ):
+                bases.append(base)
+    return tuple(dict.fromkeys(bases))
+
+
+def _explicit_override_method_names(info: TypeInfo) -> frozenset[str]:
+    names: set[str] = set()
+    for statement in getattr(info.defn.defs, "body", ()):
+        func = statement.func if isinstance(statement, Decorator) else statement
+        if isinstance(func, FuncDef) and func.is_explicit_override:
+            names.add(func.name)
+    return frozenset(names)
+
+
+def _projected_bases_define_name(
+    ctx: ClassDefContext,
+    projected_bases: tuple[str, ...],
+    name: str,
+) -> bool:
+    return any(
+        ti is not None and _typeinfo_defines_name(ti, name)
+        for ti in (_lookup_typeinfo(ctx, base) for base in projected_bases)
+    )
+
+
+def _typeinfo_defines_name(info: TypeInfo, name: str) -> bool:
+    return any(
+        name in getattr(base, "names", {})
+        for base in getattr(info, "mro", [info])
+    )
 
 
 def _resolve_static_category_method_container_bases(
