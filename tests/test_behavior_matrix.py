@@ -39,6 +39,13 @@ SETS_PROVIDER = "sage.categories.sets_cat.Sets.ParentMethods"
 FUNCTORIAL_CARTESIAN_PARENT_PROVIDER = (
     "sage.categories.sets_cat.Sets.CartesianProducts.ParentMethods"
 )
+PARAMETERIZED_CATEGORY_FULLNAMES = (
+    "tests.fixtures.invariant_core.parameterized.ModulesOverIntegers",
+    "tests.fixtures.invariant_core.parameterized.ModulesOverRationals",
+    "tests.fixtures.invariant_core.parameterized.VectorSpacesOverRationals",
+)
+MODULES_PROVIDER = "sage.categories.modules.Modules.ParentMethods"
+VECTOR_SPACES_PROVIDER = "sage.categories.vector_spaces.VectorSpaces.ParentMethods"
 BEHAVIOR_CASES = {
     "valid": (
         "tests.fixtures.invariant_core.diamond_behavior_valid",
@@ -99,6 +106,7 @@ def test_nested_sage_provider_behavior_matrix_uses_standard_mypy_rules(
 
     assert not _contains_error(with_plugin, '"is_commutative"')
     assert not _contains_error(with_plugin, '"construction"')
+    assert not _contains_error(with_plugin, '"tensor_square"')
     assert _contains_error_fragments(
         with_plugin,
         '"not_a_sage_axiom_method"',
@@ -107,6 +115,11 @@ def test_nested_sage_provider_behavior_matrix_uses_standard_mypy_rules(
     assert _contains_error_fragments(
         with_plugin,
         '"not_a_sage_functorial_method"',
+        "no base method was found",
+    )
+    assert _contains_error_fragments(
+        with_plugin,
+        '"not_a_sage_parameterized_method"',
         "no base method was found",
     )
     assert _contains_error_fragments(
@@ -121,12 +134,22 @@ def test_nested_sage_provider_behavior_matrix_uses_standard_mypy_rules(
     )
     assert _contains_error_fragments(
         without_plugin,
+        '"tensor_square"',
+        "no base method was found",
+    )
+    assert _contains_error_fragments(
+        without_plugin,
         '"not_a_sage_axiom_method"',
         "no base method was found",
     )
     assert _contains_error_fragments(
         without_plugin,
         '"not_a_sage_functorial_method"',
+        "no base method was found",
+    )
+    assert _contains_error_fragments(
+        without_plugin,
+        '"not_a_sage_parameterized_method"',
         "no base method was found",
     )
 
@@ -179,9 +202,14 @@ def _run_nested_provider_mypy(
         (FUNCTORIAL_CARTESIAN_CATEGORY,),
         roles=("parent",),
     )
+    parameterized_projections = provider_projections_for_categories(
+        PARAMETERIZED_CATEGORY_FULLNAMES,
+        roles=("parent",),
+    )
     projections = {
         **axiom_projections,
         **functorial_projections,
+        **parameterized_projections,
     }
     provider_mro = tuple(
         dict.fromkeys(
@@ -190,6 +218,7 @@ def _run_nested_provider_mypy(
                 *functorial_projections[
                     FUNCTORIAL_CARTESIAN_PARENT_PROVIDER
                 ].provider_mro,
+                *parameterized_projections[VECTOR_SPACES_PROVIDER].provider_mro,
             )
         )
     )
@@ -242,6 +271,11 @@ def _run_nested_provider_mypy(
                 "sage.categories.sets_cat",
                 None,
             ),
+            BuildSource(
+                str(source_root / "sage" / "categories" / "vector_spaces.py"),
+                "sage.categories.vector_spaces",
+                None,
+            ),
         ],
         options=options,
     )
@@ -266,6 +300,10 @@ def _write_nested_provider_sources(
             "def construction(self) -> str:",
             '    return "sets"',
         ),
+        _importable_module_and_qualname(MODULES_PROVIDER): (
+            "def tensor_square(self) -> str:",
+            '    return "module tensor square"',
+        ),
         _importable_module_and_qualname(COMMUTATIVE_RINGS_PROVIDER): (
             "@override",
             "def is_commutative(self) -> bool:",
@@ -282,6 +320,15 @@ def _write_nested_provider_sources(
             "",
             "@override",
             "def not_a_sage_functorial_method(self) -> str:",
+            '    return "invalid"',
+        ),
+        _importable_module_and_qualname(VECTOR_SPACES_PROVIDER): (
+            "@override",
+            "def tensor_square(self) -> str:",
+            '    return "vector space tensor square"',
+            "",
+            "@override",
+            "def not_a_sage_parameterized_method(self) -> str:",
             '    return "invalid"',
         ),
     }
