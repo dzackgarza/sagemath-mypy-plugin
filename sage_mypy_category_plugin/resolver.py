@@ -4,7 +4,7 @@ from argparse import ArgumentParser
 from hashlib import sha256
 from importlib import import_module
 from pathlib import Path
-from typing import Sequence, cast
+from typing import Sequence, cast, get_args
 from sys import version_info
 
 from mypy.version import __version__ as MYPY_VERSION
@@ -88,7 +88,7 @@ def _resolver_argument_parser() -> ArgumentParser:
         "--role",
         action="append",
         default=[],
-        choices=tuple(("parent", "element", "subcategory", "morphism")),
+        choices=get_args(ProviderRole),
         help=(
             "Provider role to resolve. Pass multiple times for multiple roles. "
             "Defaults to parent."

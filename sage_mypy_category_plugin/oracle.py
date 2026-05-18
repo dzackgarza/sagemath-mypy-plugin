@@ -13,6 +13,7 @@ import sage.all  # type: ignore[import-untyped] # noqa: F401
 from sage_mypy_category_plugin.projection import ProviderProjection, ProviderRole
 
 
+@runtime_checkable
 class SageCategory(Protocol):
     def all_super_categories(self, proper: bool = False) -> Sequence[SageCategory]:
         pass
@@ -29,6 +30,7 @@ class RoleProjection(BaseModel):
 
     runtime_attr: str
     provider_attr: str
+    category_attr: str | None = None
 
 
 ROLE_PROJECTIONS: Mapping[ProviderRole, RoleProjection] = {
@@ -41,6 +43,16 @@ ROLE_PROJECTIONS: Mapping[ProviderRole, RoleProjection] = {
     "morphism": RoleProjection(
         runtime_attr="morphism_class",
         provider_attr="MorphismMethods",
+    ),
+    "homset_parent": RoleProjection(
+        runtime_attr="parent_class",
+        provider_attr="ParentMethods",
+        category_attr="Homsets",
+    ),
+    "homset_element": RoleProjection(
+        runtime_attr="element_class",
+        provider_attr="ElementMethods",
+        category_attr="Homsets",
     ),
 }
 
@@ -61,10 +73,15 @@ class NamedClassTrace:
     provider_attr: str
 
 
-_NAMED_CLASS_TRACES_BY_PROVIDER: dict[str, NamedClassTrace] = {}
+_NAMED_CLASS_TRACES_BY_PROVIDER: dict[tuple[ProviderRole, str], NamedClassTrace] = {}
+_RUNTIME_CLASS_BY_PROVIDER_ROLE: dict[tuple[ProviderRole, str], type[object]] = {}
 _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE: dict[ProviderRole, dict[type[object], str]] = {
     role: {}
-    for role in ("parent", "element", "subcategory", "morphism")
+    for role in ROLE_PROJECTIONS
+}
+_UNPROJECTED_RUNTIME_CLASSES_BY_ROLE: dict[ProviderRole, set[type[object]]] = {
+    role: set()
+    for role in ROLE_PROJECTIONS
 }
 
 
@@ -74,8 +91,10 @@ def provider_projections_for_categories(
     roles: Iterable[ProviderRole],
 ) -> dict[str, ProviderProjection]:
     _NAMED_CLASS_TRACES_BY_PROVIDER.clear()
+    _RUNTIME_CLASS_BY_PROVIDER_ROLE.clear()
     for role in roles:
         _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role].clear()
+        _UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role].clear()
 
     with _trace_make_named_class(roles=roles):
         projections: dict[str, ProviderProjection] = {}
@@ -85,6 +104,13 @@ def provider_projections_for_categories(
             for role in roles:
                 projection = _provider_projection(category, role)
                 projections[projection.provider] = projection
+        for (role, provider), runtime_class in _RUNTIME_CLASS_BY_PROVIDER_ROLE.items():
+            if provider not in projections:
+                projections[provider] = _provider_projection_from_runtime_class(
+                    role=role,
+                    provider=provider,
+                    runtime_class=runtime_class,
+                )
         return projections
 
 
@@ -94,23 +120,32 @@ def named_class_traces() -> tuple[NamedClassTrace, ...]:
 
 def _provider_projection(category: SageCategory, role: ProviderRole) -> ProviderProjection:
     role_projection = ROLE_PROJECTIONS[role]
-    _invalidate_named_class_cache(category, role_projection)
+    projected_category = _projected_category(category, role_projection)
+    _invalidate_named_class_cache(projected_category, role_projection)
     runtime_class = _runtime_named_class(
-        category,
+        projected_category,
         role_projection,
         force_recompute=True,
     )
+    _ensure_runtime_class_projection(role, role_projection, runtime_class)
+    for runtime_mro_class in runtime_class.__mro__:
+        _ensure_runtime_class_projection(role, role_projection, runtime_mro_class)
+
     runtime_to_provider = _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role]
-    provider = _provider_fullname(category, role_projection)
+    provider = _provider_fullname(projected_category, role_projection)
     provider_bases = _project_runtime_classes(
         runtime_class.__bases__,
         runtime_to_provider,
-        allow_unmapped=frozenset({object}),
+        allow_unmapped=frozenset(
+            {object, *_UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role]}
+        ),
     )
     provider_mro = _project_runtime_classes(
         runtime_class.__mro__,
         runtime_to_provider,
-        allow_unmapped=frozenset({object}),
+        allow_unmapped=frozenset(
+            {object, *_UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role]}
+        ),
     )
 
     assert provider_mro[0] == provider, (
@@ -118,6 +153,49 @@ def _provider_projection(category: SageCategory, role: ProviderRole) -> Provider
         f"got {provider_mro!r}"
     )
 
+    return ProviderProjection(
+        provider=provider,
+        role=role,
+        runtime_class=_class_fullname(runtime_class),
+        runtime_bases=tuple(_class_fullname(base) for base in runtime_class.__bases__),
+        runtime_mro=tuple(_class_fullname(base) for base in runtime_class.__mro__),
+        provider_bases=provider_bases,
+        provider_mro=provider_mro,
+    )
+
+
+def _provider_projection_from_runtime_class(
+    *,
+    role: ProviderRole,
+    provider: str,
+    runtime_class: type[object],
+) -> ProviderProjection:
+    role_projection = ROLE_PROJECTIONS[role]
+    for runtime_mro_class in runtime_class.__mro__:
+        _ensure_runtime_class_projection(
+            role,
+            role_projection,
+            runtime_mro_class,
+        )
+
+    runtime_to_provider = _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role]
+    allow_unmapped = frozenset(
+        {object, *_UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role]}
+    )
+    provider_bases = _project_runtime_classes(
+        runtime_class.__bases__,
+        runtime_to_provider,
+        allow_unmapped=allow_unmapped,
+    )
+    provider_mro = _project_runtime_classes(
+        runtime_class.__mro__,
+        runtime_to_provider,
+        allow_unmapped=allow_unmapped,
+    )
+    assert provider_mro[0] == provider, (
+        f"Projected MRO for {provider} must start with the provider itself; "
+        f"got {provider_mro!r}"
+    )
     return ProviderProjection(
         provider=provider,
         role=role,
@@ -152,6 +230,60 @@ def _project_runtime_classes(
     )
 
 
+def _ensure_runtime_class_projection(
+    role: ProviderRole,
+    role_projection: RoleProjection,
+    runtime_class: type[object],
+) -> None:
+    if runtime_class is object:
+        return
+    if runtime_class in _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role]:
+        return
+    if runtime_class in _UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role]:
+        return
+
+    provider = _provider_fullname_from_runtime_class_or_none(
+        runtime_class,
+        role_projection,
+    )
+    if provider is None:
+        _UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role].add(runtime_class)
+        return
+
+    _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role][runtime_class] = provider
+    _RUNTIME_CLASS_BY_PROVIDER_ROLE[(role, provider)] = runtime_class
+
+
+def _provider_fullname_from_runtime_class_or_none(
+    runtime_class: type[object],
+    role_projection: RoleProjection,
+) -> str | None:
+    suffix = f".{role_projection.runtime_attr}"
+    if not runtime_class.__qualname__.endswith(suffix):
+        return None
+
+    provider_qualname = (
+        runtime_class.__qualname__[: -len(role_projection.runtime_attr)]
+        + role_projection.provider_attr
+    )
+    provider = _resolve_module_qualname(
+        module_name=runtime_class.__module__,
+        qualname=provider_qualname,
+    )
+    if not isinstance(provider, type):
+        return None
+    return _class_fullname(provider)
+
+
+def _resolve_module_qualname(module_name: str, qualname: str) -> object | None:
+    current: object = import_module(module_name)
+    for name in qualname.split("."):
+        current = getattr(current, name, None)
+        if current is None:
+            return None
+    return current
+
+
 def _runtime_named_class(
     category: SageCategory,
     role_projection: RoleProjection,
@@ -168,6 +300,22 @@ def _runtime_named_class(
     return runtime_class
 
 
+def _projected_category(
+    category: SageCategory,
+    role_projection: RoleProjection,
+) -> SageCategory:
+    if role_projection.category_attr is None:
+        return category
+
+    category_constructor = getattr(category, role_projection.category_attr)
+    projected_category = category_constructor()
+    assert isinstance(projected_category, SageCategory), (
+        f"{category!r}.{role_projection.category_attr}() must be a Sage category; "
+        f"got {projected_category!r}"
+    )
+    return projected_category
+
+
 def _invalidate_named_class_cache(
     category: SageCategory,
     role_projection: RoleProjection,
@@ -179,11 +327,20 @@ def _invalidate_named_class_cache(
 
 
 def _provider_fullname(category: SageCategory, role_projection: RoleProjection) -> str:
-    provider_class = getattr(type(category), role_projection.provider_attr)
-    assert isinstance(provider_class, type), (
-        f"{type(category)!r}.{role_projection.provider_attr} must be a class; "
-        f"got {provider_class!r}"
+    provider = _provider_fullname_or_none(category, role_projection)
+    assert provider is not None, (
+        f"{type(category)!r}.{role_projection.provider_attr} must be a class"
     )
+    return provider
+
+
+def _provider_fullname_or_none(
+    category: SageCategory,
+    role_projection: RoleProjection,
+) -> str | None:
+    provider_class = getattr(type(category), role_projection.provider_attr, None)
+    if not isinstance(provider_class, type):
+        return None
     return _class_fullname(provider_class)
 
 
@@ -211,12 +368,7 @@ def _trace_make_named_class(
 ) -> Iterator[None]:
     from sage.categories.category import Category  # type: ignore[import-untyped]
 
-    role_by_provider_attr = {
-        ROLE_PROJECTIONS[role].provider_attr: role for role in roles
-    }
-    role_by_runtime_attr = {
-        ROLE_PROJECTIONS[role].runtime_attr: role for role in roles
-    }
+    role_projections = tuple((role, ROLE_PROJECTIONS[role]) for role in roles)
     original_make_named_class = Category._make_named_class
 
     def traced_make_named_class(
@@ -233,24 +385,37 @@ def _trace_make_named_class(
             cache=cache,
             picklable=picklable,
         )
-        role = role_by_provider_attr.get(method_provider)
-        if role is None or role_by_runtime_attr.get(name) != role:
+        matching_roles = tuple(
+            role
+            for role, role_projection in role_projections
+            if role_projection.provider_attr == method_provider
+            and role_projection.runtime_attr == name
+        )
+        if not matching_roles:
             return runtime_class
 
-        provider = _provider_fullname(self, ROLE_PROJECTIONS[role])
-        trace = NamedClassTrace(
-            category=_class_fullname(type(self)),
-            provider=provider,
-            role=role,
-            trace_source=_TRACE_SOURCE,
-            runtime_class=_class_fullname(runtime_class),
-            runtime_bases=tuple(_class_fullname(base) for base in runtime_class.__bases__),
-            runtime_mro=tuple(_class_fullname(base) for base in runtime_class.__mro__),
-            runtime_attr=name,
-            provider_attr=method_provider,
-        )
-        _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role][runtime_class] = provider
-        _NAMED_CLASS_TRACES_BY_PROVIDER[provider] = trace
+        for role in matching_roles:
+            provider = _provider_fullname_or_none(self, ROLE_PROJECTIONS[role])
+            if provider is None:
+                _UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role].add(runtime_class)
+                continue
+
+            trace = NamedClassTrace(
+                category=_class_fullname(type(self)),
+                provider=provider,
+                role=role,
+                trace_source=_TRACE_SOURCE,
+                runtime_class=_class_fullname(runtime_class),
+                runtime_bases=tuple(
+                    _class_fullname(base) for base in runtime_class.__bases__
+                ),
+                runtime_mro=tuple(_class_fullname(base) for base in runtime_class.__mro__),
+                runtime_attr=name,
+                provider_attr=method_provider,
+            )
+            _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role][runtime_class] = provider
+            _RUNTIME_CLASS_BY_PROVIDER_ROLE[(role, provider)] = runtime_class
+            _NAMED_CLASS_TRACES_BY_PROVIDER[(role, provider)] = trace
         return runtime_class
 
     Category._make_named_class = traced_make_named_class  # type: ignore[assignment]

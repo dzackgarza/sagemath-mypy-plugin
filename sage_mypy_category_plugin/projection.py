@@ -4,7 +4,14 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, StrictStr
 
-ProviderRole = Literal["parent", "element", "subcategory", "morphism"]
+ProviderRole = Literal[
+    "parent",
+    "element",
+    "subcategory",
+    "morphism",
+    "homset_parent",
+    "homset_element",
+]
 
 
 class ProviderProjection(BaseModel):
