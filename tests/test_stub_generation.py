@@ -218,6 +218,60 @@ def test_generated_stub_cli_writes_manifest_with_stub_source_metadata(
     assert source_record.mtime_ns == source_path.stat().st_mtime_ns
 
 
+def test_generated_stub_cli_preserves_requested_source_modules(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "source"
+    source_path = source_root / "fixtures" / "self_type.py"
+    source_path.parent.mkdir(parents=True)
+    source_path.write_text(
+        "\n".join(
+            (
+                "class BaseCategory:",
+                "    class ParentMethods:",
+                "        pass",
+                "class ChildCategory:",
+                "    class ParentMethods:",
+                "        pass",
+                "",
+            )
+        )
+    )
+    source_record = SourceModuleRecord(
+        module="fixtures.self_type",
+        path=str(source_path),
+        sha256=sha256(source_path.read_bytes()).hexdigest(),
+        mtime_ns=source_path.stat().st_mtime_ns,
+    )
+    manifest = _self_return_provider_manifest().model_copy(
+        update={"source_modules": (source_record,)}
+    )
+    manifest_path = tmp_path / "manifest.json"
+    output_root = tmp_path / "generated-stubs"
+    manifest_output_path = tmp_path / "manifest.with-stubs.json"
+    manifest_path.write_text(manifest.model_dump_json())
+
+    assert (
+        stubs_cli.main(
+            [
+                str(manifest_path),
+                str(output_root),
+                "--manifest-output",
+                str(manifest_output_path),
+                "--preserve-source-module-prefix",
+                "fixtures",
+            ]
+        )
+        == 0
+    )
+
+    stub_manifest = load_manifest(manifest_output_path)
+
+    assert not (output_root / "fixtures" / "self_type.pyi").exists()
+    assert (output_root / "_sage_category_types.pyi").is_file()
+    assert stub_manifest.source_module_by_module["fixtures.self_type"] == source_record
+
+
 def test_generated_stubs_include_concrete_parent_runtime_aliases() -> None:
     manifest = _left_zero_semigroup_concrete_parent_manifest()
 

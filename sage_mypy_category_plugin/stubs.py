@@ -20,9 +20,14 @@ type ProviderMethodMap = dict[
 ]
 
 
-def generated_stub_sources(manifest: ProjectionManifest) -> dict[Path, str]:
+def generated_stub_sources(
+    manifest: ProjectionManifest,
+    *,
+    preserved_source_module_prefixes: Sequence[str] = (),
+) -> dict[Path, str]:
     source_modules = tuple(record.module for record in manifest.source_modules)
     assert source_modules, "generated stubs require manifest source_modules"
+    preserved_prefixes = tuple(dict.fromkeys(preserved_source_module_prefixes))
 
     module_trees: dict[str, StubTree] = {}
     for fullname in _manifest_stub_fullnames(manifest):
@@ -47,6 +52,7 @@ def generated_stub_sources(manifest: ProjectionManifest) -> dict[Path, str]:
             provider_methods=provider_methods,
         )
         for module_name, tree in sorted(module_trees.items())
+        if not _is_preserved_source_module(module_name, preserved_prefixes)
     }
     stub_sources[Path("_sage_category_types.pyi")] = _runtime_alias_stub_source(
         manifest,
@@ -58,9 +64,18 @@ def generated_stub_sources(manifest: ProjectionManifest) -> dict[Path, str]:
 def write_generated_stub_tree(
     output_root: Path,
     manifest: ProjectionManifest,
+    *,
+    preserved_source_module_prefixes: Sequence[str] = (),
 ) -> tuple[SourceModuleRecord, ...]:
+    preserved_prefixes = tuple(dict.fromkeys(preserved_source_module_prefixes))
     source_modules: list[SourceModuleRecord] = []
-    for relative_path, source in generated_stub_sources(manifest).items():
+    for record in manifest.source_modules:
+        if _is_preserved_source_module(record.module, preserved_prefixes):
+            source_modules.append(record)
+    for relative_path, source in generated_stub_sources(
+        manifest,
+        preserved_source_module_prefixes=preserved_prefixes,
+    ).items():
         path = output_root / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         _write_package_markers(output_root, path.parent)
@@ -76,6 +91,13 @@ def write_generated_stub_tree(
             )
         )
     return tuple(source_modules)
+
+
+def _is_preserved_source_module(module_name: str, prefixes: Sequence[str]) -> bool:
+    return any(
+        module_name == prefix or module_name.startswith(f"{prefix}.")
+        for prefix in prefixes
+    )
 
 
 def _stub_argument_parser() -> ArgumentParser:
@@ -98,13 +120,29 @@ def _stub_argument_parser() -> ArgumentParser:
             "the generated stub tree."
         ),
     )
+    parser.add_argument(
+        "--preserve-source-module-prefix",
+        action="append",
+        default=[],
+        dest="preserved_source_module_prefixes",
+        metavar="MODULE",
+        help=(
+            "Keep matching source modules in the emitted manifest and do not "
+            "write their generated .pyi files. Pass multiple times for multiple "
+            "module prefixes."
+        ),
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _stub_argument_parser().parse_args(argv)
     manifest = load_manifest(Path(args.manifest))
-    source_modules = write_generated_stub_tree(Path(args.output_root), manifest)
+    source_modules = write_generated_stub_tree(
+        Path(args.output_root),
+        manifest,
+        preserved_source_module_prefixes=args.preserved_source_module_prefixes,
+    )
     if args.manifest_output is not None:
         write_manifest(
             Path(args.manifest_output),
