@@ -15,6 +15,10 @@ class TopCategory(LocalCategoryBase):
         def top_subcategory(self) -> int:
             return 10
 
+    class MorphismMethods:
+        def top_morphism(self) -> int:
+            return 100
+
 
 class LeftCategory(LocalCategoryBase):
     def super_categories(self) -> list[LocalCategoryBase]:
@@ -27,6 +31,10 @@ class LeftCategory(LocalCategoryBase):
     class SubcategoryMethods:
         def left_subcategory(self) -> int:
             return 20
+
+    class MorphismMethods:
+        def left_morphism(self) -> int:
+            return 200
 
 
 class RightCategory(LocalCategoryBase):
@@ -41,6 +49,10 @@ class RightCategory(LocalCategoryBase):
         def right_subcategory(self) -> int:
             return 30
 
+    class MorphismMethods:
+        def right_morphism(self) -> int:
+            return 300
+
 
 class BottomCategory(LocalCategoryBase):
     def super_categories(self) -> list[LocalCategoryBase]:
@@ -53,3 +65,7 @@ class BottomCategory(LocalCategoryBase):
     class SubcategoryMethods:
         def bottom_subcategory(self) -> int:
             return 40
+
+    class MorphismMethods:
+        def bottom_morphism(self) -> int:
+            return 400
