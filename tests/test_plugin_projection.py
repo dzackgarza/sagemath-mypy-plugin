@@ -10,6 +10,7 @@ from mypy.options import Options
 
 from sage_mypy_category_plugin.manifest import ProjectionManifest, write_manifest
 from sage_mypy_category_plugin.oracle import provider_projections_for_categories
+from sage_mypy_category_plugin.plugin import SageCategoryProjectionPlugin
 from sage_mypy_category_plugin.projection import ProviderProjection
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -168,6 +169,50 @@ def test_plugin_fails_strict_projection_for_mutated_field(
     )
 
     assert any("missing symbols" in error for error in result.errors)
+
+
+def test_plugin_reports_semantic_manifest_config_data(tmp_path: Path) -> None:
+    projections = provider_projections_for_categories(
+        CATEGORY_FULLNAMES,
+        roles=("parent",),
+    )
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=tuple(projections.values()),
+    )
+    manifest_path = tmp_path / "sage-category-projections.json"
+    config_path = tmp_path / "mypy.ini"
+    write_manifest(manifest_path, manifest)
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+
+    options = Options()
+    options.config_file = str(config_path)
+    config_data = SageCategoryProjectionPlugin(options).report_config_data(
+        ctx=None,  # type: ignore[arg-type]
+    )
+
+    assert config_data["manifest_semantic_projection_digest"] == (
+        manifest.semantic_projection_digest
+    )
+    assert config_data["manifest_plugin_schema_version"] == (
+        manifest.plugin_schema_version
+    )
+    assert config_data["manifest_mypy_min_version"] == manifest.mypy_min_version
+    assert config_data["manifest_mypy_max_version"] == manifest.mypy_max_version
 
 
 def _build_fixture(config_path: Path, tmp_path: Path) -> BuildResult:
