@@ -182,7 +182,7 @@ class SageCategoryPlugin(Plugin):
         ):
             ctx.api.defer()
             return
-        if _has_receiver_self_methods(ctx, info) and not ctx.api.final_iteration:
+        if _receiver_self_target(ctx, info) is not None and not ctx.api.final_iteration:
             ctx.api.defer()
             return
         _materialize_receiver_self_methods(ctx, info)
@@ -575,12 +575,6 @@ class SageCategoryPlugin(Plugin):
 
 _METHOD_KINDS = frozenset({
     "ParentMethods", "ElementMethods", "MorphismMethods", "SubcategoryMethods",
-})
-
-_RECEIVER_SELF_METHODS = frozenset({
-    "base_category",
-    "base_ring",
-    "category",
 })
 
 _RECEIVER_RUNTIME_BASE_FULLNAMES = {
@@ -1533,23 +1527,12 @@ def _base_alias_candidate_names(short_name: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(candidates))
 
 
-def _has_receiver_self_methods(ctx: ClassDefContext, info: TypeInfo) -> bool:
-    target = _receiver_self_target(ctx, info)
-    if target is None:
-        return False
-    for name in _RECEIVER_SELF_METHODS:
-        if name not in info.names and not _class_body_defines(ctx.cls, name):
-            if _receiver_self_method_type(ctx, info, target, name) is not None:
-                return True
-    return False
-
-
 def _materialize_receiver_self_methods(ctx: ClassDefContext, info: TypeInfo) -> None:
     """Expose selected category receiver methods on method-container ``self``."""
     target = _receiver_self_target(ctx, info)
     if target is None:
         return
-    for name in _RECEIVER_SELF_METHODS:
+    for name in _class_body_self_member_names(ctx.cls):
         if name in info.names or _class_body_defines(ctx.cls, name):
             continue
         method_type = _receiver_self_method_type(ctx, info, target, name)
