@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from sage_mypy_category_plugin.oracle import provider_projections_for_categories
+from sage_mypy_category_plugin.oracle import named_class_traces
 from tests.fixtures.invariant_core.diamond_runtime import (
     BottomCategory,
     LeftCategory,
@@ -86,3 +87,30 @@ def test_root_parent_projection_keeps_only_provider_classes() -> None:
     assert projection.provider_mro == (
         "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ParentMethods",
     )
+
+
+def test_tracing_observes_make_named_class() -> None:
+    provider = "tests.fixtures.invariant_core.diamond_runtime.BottomCategory.ParentMethods"
+
+    projections = provider_projections_for_categories(
+        ("tests.fixtures.invariant_core.diamond_runtime.BottomCategory",),
+        roles=("parent",),
+    )
+    projection = projections[provider]
+    traces = named_class_traces()
+    trace = next(trace for trace in traces if trace.provider == provider)
+
+    assert projection.runtime_class == trace.runtime_class
+    assert projection.runtime_bases == trace.runtime_bases
+    assert projection.runtime_mro == trace.runtime_mro
+    assert projection.provider_bases == (
+        "tests.fixtures.invariant_core.diamond_runtime.RightCategory.ParentMethods",
+        "tests.fixtures.invariant_core.diamond_runtime.LeftCategory.ParentMethods",
+    )
+    assert projection.provider_mro == (
+        "tests.fixtures.invariant_core.diamond_runtime.BottomCategory.ParentMethods",
+        "tests.fixtures.invariant_core.diamond_runtime.RightCategory.ParentMethods",
+        "tests.fixtures.invariant_core.diamond_runtime.LeftCategory.ParentMethods",
+        "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ParentMethods",
+    )
+    assert trace.trace_source == "Category._make_named_class"

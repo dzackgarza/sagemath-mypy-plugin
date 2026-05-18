@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from dataclasses import dataclass
 from importlib import import_module
 from typing import Protocol, runtime_checkable
 
@@ -43,26 +45,63 @@ ROLE_PROJECTIONS: Mapping[ProviderRole, RoleProjection] = {
 }
 
 
+_TRACE_SOURCE = "Category._make_named_class"
+
+
+@dataclass(frozen=True)
+class NamedClassTrace:
+    category: str
+    provider: str
+    role: ProviderRole
+    trace_source: str
+    runtime_class: str
+    runtime_bases: tuple[str, ...]
+    runtime_mro: tuple[str, ...]
+    runtime_attr: str
+    provider_attr: str
+
+
+_NAMED_CLASS_TRACES_BY_PROVIDER: dict[str, NamedClassTrace] = {}
+_RUNTIME_CLASS_TO_PROVIDER_BY_ROLE: dict[ProviderRole, dict[type[object], str]] = {
+    role: {}
+    for role in ("parent", "element", "subcategory", "morphism")
+}
+
+
 def provider_projections_for_categories(
     category_fullnames: Iterable[str],
     *,
     roles: Iterable[ProviderRole],
 ) -> dict[str, ProviderProjection]:
-    projections: dict[str, ProviderProjection] = {}
-    for category_fullname in category_fullnames:
-        category_factory = _import_category_factory(category_fullname)
-        category = category_factory.an_instance()
-        for role in roles:
-            projection = _provider_projection(category, role)
-            projections[projection.provider] = projection
-    return projections
+    _NAMED_CLASS_TRACES_BY_PROVIDER.clear()
+    for role in roles:
+        _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role].clear()
+
+    with _trace_make_named_class(roles=roles):
+        projections: dict[str, ProviderProjection] = {}
+        for category_fullname in category_fullnames:
+            category_factory = _import_category_factory(category_fullname)
+            category = category_factory.an_instance()
+            for role in roles:
+                projection = _provider_projection(category, role)
+                projections[projection.provider] = projection
+        return projections
+
+
+def named_class_traces() -> tuple[NamedClassTrace, ...]:
+    return tuple(_NAMED_CLASS_TRACES_BY_PROVIDER.values())
 
 
 def _provider_projection(category: SageCategory, role: ProviderRole) -> ProviderProjection:
     role_projection = ROLE_PROJECTIONS[role]
-    runtime_class = _runtime_named_class(category, role_projection)
+    _invalidate_named_class_cache(category, role_projection)
+    runtime_class = _runtime_named_class(
+        category,
+        role_projection,
+        force_recompute=True,
+    )
+    runtime_to_provider = _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role]
     provider = _provider_fullname(category, role_projection)
-    runtime_to_provider = _runtime_to_provider_map(category, role_projection)
     provider_bases = _project_runtime_classes(
         runtime_class.__bases__,
         runtime_to_provider,
@@ -88,21 +127,6 @@ def _provider_projection(category: SageCategory, role: ProviderRole) -> Provider
         provider_bases=provider_bases,
         provider_mro=provider_mro,
     )
-
-
-def _runtime_to_provider_map(
-    category: SageCategory,
-    role_projection: RoleProjection,
-) -> dict[type[object], str]:
-    categories = (category, *category.all_super_categories(proper=True))
-    runtime_to_provider: dict[type[object], str] = {}
-    for current_category in categories:
-        runtime_class = _runtime_named_class(current_category, role_projection)
-        runtime_to_provider[runtime_class] = _provider_fullname(
-            current_category,
-            role_projection,
-        )
-    return runtime_to_provider
 
 
 def _project_runtime_classes(
@@ -131,13 +155,27 @@ def _project_runtime_classes(
 def _runtime_named_class(
     category: SageCategory,
     role_projection: RoleProjection,
+    *,
+    force_recompute: bool = False,
 ) -> type[object]:
+    if force_recompute and isinstance(category.__dict__, dict):
+        category.__dict__.pop(role_projection.runtime_attr, None)
     runtime_class = getattr(category, role_projection.runtime_attr)
     assert isinstance(runtime_class, type), (
         f"{category!r}.{role_projection.runtime_attr} must be a class; "
         f"got {runtime_class!r}"
     )
     return runtime_class
+
+
+def _invalidate_named_class_cache(
+    category: SageCategory,
+    role_projection: RoleProjection,
+) -> None:
+    all_categories = (category, *category.all_super_categories(proper=True))
+    for current_category in all_categories:
+        if isinstance(current_category.__dict__, dict):
+            current_category.__dict__.pop(role_projection.runtime_attr, None)
 
 
 def _provider_fullname(category: SageCategory, role_projection: RoleProjection) -> str:
@@ -166,8 +204,66 @@ def _class_fullname(cls: type[object]) -> str:
     return f"{cls.__module__}.{cls.__qualname__}"
 
 
+@contextmanager
+def _trace_make_named_class(
+    *,
+    roles: Iterable[ProviderRole],
+) -> Iterator[None]:
+    from sage.categories.category import Category  # type: ignore[import-untyped]
+
+    role_by_provider_attr = {
+        ROLE_PROJECTIONS[role].provider_attr: role for role in roles
+    }
+    role_by_runtime_attr = {
+        ROLE_PROJECTIONS[role].runtime_attr: role for role in roles
+    }
+    original_make_named_class = Category._make_named_class
+
+    def traced_make_named_class(
+        self: SageCategory,
+        name: str,
+        method_provider: str,
+        cache: bool = False,
+        picklable: bool = True,
+    ) -> type[object]:
+        runtime_class = original_make_named_class(
+            self,
+            name,
+            method_provider,
+            cache=cache,
+            picklable=picklable,
+        )
+        role = role_by_provider_attr.get(method_provider)
+        if role is None or role_by_runtime_attr.get(name) != role:
+            return runtime_class
+
+        provider = _provider_fullname(self, ROLE_PROJECTIONS[role])
+        trace = NamedClassTrace(
+            category=_class_fullname(type(self)),
+            provider=provider,
+            role=role,
+            trace_source=_TRACE_SOURCE,
+            runtime_class=_class_fullname(runtime_class),
+            runtime_bases=tuple(_class_fullname(base) for base in runtime_class.__bases__),
+            runtime_mro=tuple(_class_fullname(base) for base in runtime_class.__mro__),
+            runtime_attr=name,
+            provider_attr=method_provider,
+        )
+        _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role][runtime_class] = provider
+        _NAMED_CLASS_TRACES_BY_PROVIDER[provider] = trace
+        return runtime_class
+
+    Category._make_named_class = traced_make_named_class  # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        Category._make_named_class = original_make_named_class  # type: ignore[assignment]
+
+
 __all__ = [
     "ProviderProjection",
     "ProviderRole",
+    "NamedClassTrace",
+    "named_class_traces",
     "provider_projections_for_categories",
 ]

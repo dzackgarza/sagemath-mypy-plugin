@@ -44,13 +44,68 @@ def _projection() -> ProviderProjection:
     )
 
 
+def _base_projection() -> ProviderProjection:
+    return _projection().model_copy(
+        update={
+            "provider": "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ParentMethods",
+            "runtime_class": "tests.fixtures.invariant_core.diamond_runtime.TopCategory.parent_class",
+            "runtime_bases": ("builtins.object",),
+            "runtime_mro": (
+                "tests.fixtures.invariant_core.diamond_runtime.TopCategory.parent_class",
+                "builtins.object",
+            ),
+            "provider_bases": (),
+            "provider_mro": (
+                "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ParentMethods",
+            ),
+        }
+    )
+
+
+def _left_projection() -> ProviderProjection:
+    return _projection().model_copy(
+        update={
+            "provider": "tests.fixtures.invariant_core.diamond_runtime.LeftCategory.ParentMethods",
+            "runtime_class": "tests.fixtures.invariant_core.diamond_runtime.LeftCategory.parent_class",
+            "provider_bases": (
+                "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ParentMethods",
+            ),
+            "provider_mro": (
+                "tests.fixtures.invariant_core.diamond_runtime.LeftCategory.ParentMethods",
+                "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ParentMethods",
+            ),
+        }
+    )
+
+
+def _right_projection() -> ProviderProjection:
+    return _projection().model_copy(
+        update={
+            "provider": "tests.fixtures.invariant_core.diamond_runtime.RightCategory.ParentMethods",
+            "runtime_class": "tests.fixtures.invariant_core.diamond_runtime.RightCategory.parent_class",
+            "provider_bases": (
+                "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ParentMethods",
+            ),
+            "provider_mro": (
+                "tests.fixtures.invariant_core.diamond_runtime.RightCategory.ParentMethods",
+                "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ParentMethods",
+            ),
+        }
+    )
+
+
 def _manifest_payload() -> dict[str, Any]:
     manifest = ProjectionManifest(
         schema_version=1,
         generated_by="tests",
         sage_version="10.7",
         python_version="3.12.13",
-        projections=(_projection(),),
+        projections=(
+            _base_projection(),
+            _left_projection(),
+            _right_projection(),
+            _projection(),
+        ),
     )
     return manifest.model_dump(mode="json")
 
@@ -64,7 +119,13 @@ def test_manifest_round_trips_projection_records(tmp_path: Path) -> None:
 
     assert loaded == manifest
     assert loaded.projection_by_provider == {
-        _projection().provider: _projection(),
+        projection.provider: projection
+        for projection in (
+            _base_projection(),
+            _left_projection(),
+            _right_projection(),
+            _projection(),
+        )
     }
 
 
@@ -102,3 +163,26 @@ def test_manifest_rejects_missing_required_fields() -> None:
         ProjectionManifest.model_validate(payload)
 
     assert "generated_by" in str(raised.value)
+
+
+def test_manifest_rejects_duplicate_provider_records() -> None:
+    payload = _manifest_payload()
+    payload["projections"] = [
+        payload["projections"][0],
+        deepcopy(payload["projections"][0]),
+    ]
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    assert "duplicate provider" in str(raised.value)
+
+
+def test_manifest_rejects_unresolved_provider_references() -> None:
+    payload = _manifest_payload()
+    payload["projections"] = [payload["projections"][-1]]
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    assert "unresolved provider reference" in str(raised.value)

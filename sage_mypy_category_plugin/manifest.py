@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, ConfigDict, StrictStr
+from pydantic import BaseModel, ConfigDict, StrictStr, model_validator
 
 from sage_mypy_category_plugin.projection import ProviderProjection
 
@@ -18,6 +18,35 @@ class ProjectionManifest(BaseModel):
     sage_version: StrictStr
     python_version: StrictStr
     projections: tuple[ProviderProjection, ...]
+
+    @model_validator(mode="after")
+    def _validate_projection_graph(self) -> Self:
+        providers = tuple(projection.provider for projection in self.projections)
+        duplicate_providers = tuple(
+            provider
+            for provider in dict.fromkeys(providers)
+            if providers.count(provider) > 1
+        )
+        if duplicate_providers:
+            raise ValueError(
+                "duplicate provider records: " + ", ".join(duplicate_providers)
+            )
+
+        declared_providers = frozenset(providers)
+        referenced_providers = frozenset(
+            provider
+            for projection in self.projections
+            for provider in (*projection.provider_bases, *projection.provider_mro)
+        )
+        unresolved_references = tuple(
+            sorted(referenced_providers - declared_providers)
+        )
+        if unresolved_references:
+            raise ValueError(
+                "unresolved provider reference: "
+                + ", ".join(unresolved_references)
+            )
+        return self
 
     @property
     def projection_by_provider(self) -> dict[str, ProviderProjection]:
