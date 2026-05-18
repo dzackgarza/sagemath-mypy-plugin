@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -424,23 +425,305 @@ def test_plugin_reports_semantic_manifest_config_data(tmp_path: Path) -> None:
     assert manifest.source_module_by_module == {FIXTURE_MODULE: DIAMOND_SOURCE_MODULE}
 
 
+def test_plugin_resolves_cross_module_provider_bases_via_additional_deps(
+    tmp_path: Path,
+) -> None:
+    base_path = tmp_path / "base_provider.py"
+    consumer_path = tmp_path / "consumer.py"
+    base_path.write_text(
+        "\n".join(
+            (
+                "from __future__ import annotations",
+                "",
+                "class BaseCategory:",
+                "    class ParentMethods:",
+                "        def base_method(self) -> int:",
+                "            return 1",
+                "",
+            )
+        )
+    )
+    consumer_path.write_text(
+        "\n".join(
+            (
+                "from __future__ import annotations",
+                "",
+                "class ConsumerCategory:",
+                "    class ParentMethods:",
+                "        def consumer_method(self) -> int:",
+                "            return 2",
+                "",
+            )
+        )
+    )
+
+    consumer_provider = "consumer.ConsumerCategory.ParentMethods"
+    base_provider = "base_provider.BaseCategory.ParentMethods"
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=(
+            ProviderProjection(
+                provider=base_provider,
+                role="parent",
+                runtime_class="base_provider.BaseCategory.parent_class",
+                runtime_bases=("builtins.object",),
+                runtime_mro=(
+                    "base_provider.BaseCategory.parent_class",
+                    "builtins.object",
+                ),
+                provider_bases=(),
+                provider_mro=(base_provider,),
+            ),
+            ProviderProjection(
+                provider=consumer_provider,
+                role="parent",
+                runtime_class="consumer.ConsumerCategory.parent_class",
+                runtime_bases=("base_provider.BaseCategory.parent_class",),
+                runtime_mro=(
+                    "consumer.ConsumerCategory.parent_class",
+                    "base_provider.BaseCategory.parent_class",
+                    "builtins.object",
+                ),
+                provider_bases=(base_provider,),
+                provider_mro=(consumer_provider, base_provider),
+            ),
+        ),
+    )
+    manifest_path = tmp_path / "cross-module-projections.json"
+    config_path = tmp_path / "mypy.ini"
+    write_manifest(manifest_path, manifest)
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+
+    result = _build_fixture(
+        config_path,
+        tmp_path,
+        fixture_path=consumer_path,
+        fixture_module="consumer",
+        mypy_path_entries=(REPO_ROOT, tmp_path),
+    )
+    result_without_plugin = _build_fixture_without_plugin(
+        tmp_path,
+        fixture_path=consumer_path,
+        fixture_module="consumer",
+        mypy_path_entries=(REPO_ROOT, tmp_path),
+    )
+    consumer_info = _nested_typeinfo(
+        result,
+        module="consumer",
+        outer="ConsumerCategory",
+        inner="ParentMethods",
+    )
+    baseline_consumer_info = _nested_typeinfo(
+        result_without_plugin,
+        module="consumer",
+        outer="ConsumerCategory",
+        inner="ParentMethods",
+    )
+
+    assert result.errors == []
+    assert result_without_plugin.errors == []
+    assert "base_provider" in result.files
+    assert "base_provider" not in result_without_plugin.files
+    assert tuple(info.fullname for info in baseline_consumer_info.mro) == (
+        consumer_provider,
+        "builtins.object",
+    )
+    assert tuple(info.fullname for info in consumer_info.mro) == (
+        consumer_provider,
+        base_provider,
+        "builtins.object",
+    )
+
+
+def test_plugin_projection_is_stable_across_repeated_builds(tmp_path: Path) -> None:
+    projections = provider_projections_for_categories(
+        CATEGORY_FULLNAMES,
+        roles=("parent",),
+    )
+    expected_provider_mro = projections[BOTTOM_PROVIDER].provider_mro
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=tuple(projections.values()),
+    )
+    manifest_path = tmp_path / "stable-projections.json"
+    config_path = tmp_path / "mypy.ini"
+    write_manifest(manifest_path, manifest)
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "ignore_missing_imports = True",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+
+    first_result = _build_fixture(config_path, tmp_path)
+    second_result = _build_fixture(config_path, tmp_path)
+    first_info = _nested_typeinfo(
+        first_result,
+        module=FIXTURE_MODULE,
+        outer="BottomCategory",
+        inner="ParentMethods",
+    )
+    second_info = _nested_typeinfo(
+        second_result,
+        module=FIXTURE_MODULE,
+        outer="BottomCategory",
+        inner="ParentMethods",
+    )
+
+    assert first_result.errors == []
+    assert second_result.errors == []
+    assert tuple(info.fullname for info in first_info.mro) == (
+        *expected_provider_mro,
+        "builtins.object",
+    )
+    assert tuple(info.fullname for info in second_info.mro) == (
+        *expected_provider_mro,
+        "builtins.object",
+    )
+
+
+def test_plugin_reports_manifest_drift_and_rebuilds_projection(
+    tmp_path: Path,
+) -> None:
+    projections = provider_projections_for_categories(
+        CATEGORY_FULLNAMES,
+        roles=("parent",),
+    )
+    original_projection = projections[BOTTOM_PROVIDER]
+    original_mro = original_projection.provider_mro
+    drifted_mro = (
+        original_mro[0],
+        original_mro[2],
+        original_mro[1],
+        *original_mro[3:],
+    )
+    drifted_projection = original_projection.model_copy(
+        update={"provider_mro": drifted_mro}
+    )
+    original_manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=tuple(projections.values()),
+    )
+    drifted_manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=tuple(
+            projection
+            if projection.provider != BOTTOM_PROVIDER
+            else drifted_projection
+            for projection in projections.values()
+        ),
+    )
+    manifest_path = tmp_path / "drifting-projections.json"
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "ignore_missing_imports = True",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+
+    write_manifest(manifest_path, original_manifest)
+    first_config_data = _plugin_config_data(config_path)
+    first_result = _build_fixture(config_path, tmp_path)
+    first_info = _nested_typeinfo(
+        first_result,
+        module=FIXTURE_MODULE,
+        outer="BottomCategory",
+        inner="ParentMethods",
+    )
+
+    write_manifest(manifest_path, drifted_manifest)
+    second_config_data = _plugin_config_data(config_path)
+    second_result = _build_fixture(config_path, tmp_path)
+    second_info = _nested_typeinfo(
+        second_result,
+        module=FIXTURE_MODULE,
+        outer="BottomCategory",
+        inner="ParentMethods",
+    )
+
+    assert original_manifest.semantic_projection_digest != (
+        drifted_manifest.semantic_projection_digest
+    )
+    assert first_config_data["manifest_digest"] != second_config_data["manifest_digest"]
+    assert first_config_data["manifest_semantic_projection_digest"] != (
+        second_config_data["manifest_semantic_projection_digest"]
+    )
+    assert first_result.errors == []
+    assert second_result.errors == []
+    assert tuple(info.fullname for info in first_info.mro) == (
+        *original_mro,
+        "builtins.object",
+    )
+    assert tuple(info.fullname for info in second_info.mro) == (
+        *drifted_mro,
+        "builtins.object",
+    )
+
+
 def _build_fixture(
     config_path: Path,
     tmp_path: Path,
     *,
     fixture_path: Path = FIXTURE_PATH,
     fixture_module: str = FIXTURE_MODULE,
+    mypy_path_entries: Sequence[Path] = (REPO_ROOT,),
 ) -> BuildResult:
     options = Options()
     options.config_file = str(config_path)
     options.plugins = ["sage_mypy_category_plugin.plugin"]
     options.incremental = False
     options.cache_dir = str(tmp_path / "mypy-cache")
-    options.mypy_path = [str(REPO_ROOT)]
+    options.mypy_path = [str(path) for path in mypy_path_entries]
     options.ignore_missing_imports = True
     return build(
         sources=[BuildSource(str(fixture_path), fixture_module, None)],
         options=options,
+    )
+
+
+def _plugin_config_data(config_path: Path) -> dict[str, str]:
+    options = Options()
+    options.config_file = str(config_path)
+    return SageCategoryProjectionPlugin(options).report_config_data(
+        ctx=None,  # type: ignore[arg-type]
     )
 
 
@@ -449,11 +732,12 @@ def _build_fixture_without_plugin(
     *,
     fixture_path: Path = FIXTURE_PATH,
     fixture_module: str = FIXTURE_MODULE,
+    mypy_path_entries: Sequence[Path] = (REPO_ROOT,),
 ) -> BuildResult:
     options = Options()
     options.incremental = False
     options.cache_dir = str(tmp_path / "baseline-mypy-cache")
-    options.mypy_path = [str(REPO_ROOT)]
+    options.mypy_path = [str(path) for path in mypy_path_entries]
     options.ignore_missing_imports = True
     return build(
         sources=[BuildSource(str(fixture_path), fixture_module, None)],
