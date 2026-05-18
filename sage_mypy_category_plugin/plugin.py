@@ -88,33 +88,64 @@ def _lookup_provider_bases(
     ctx: ClassDefContext,
     projection: ProviderProjection,
 ) -> tuple[TypeInfo, ...] | None:
-    return _lookup_typeinfos(ctx, projection.provider_bases)
+    return _lookup_typeinfos(
+        ctx=ctx,
+        fullnames=projection.provider_bases,
+        projection_field="provider_bases",
+        projection_fullname=projection.provider,
+    )
 
 
 def _lookup_provider_mro(
     ctx: ClassDefContext,
     projection: ProviderProjection,
 ) -> tuple[TypeInfo, ...] | None:
-    return _lookup_typeinfos(ctx, projection.provider_mro)
+    return _lookup_typeinfos(
+        ctx=ctx,
+        fullnames=projection.provider_mro,
+        projection_field="provider_mro",
+        projection_fullname=projection.provider,
+    )
 
 
 def _lookup_typeinfos(
     ctx: ClassDefContext,
+    *,
+    projection_field: str,
+    projection_fullname: str,
     fullnames: tuple[str, ...],
 ) -> tuple[TypeInfo, ...] | None:
     typeinfos: list[TypeInfo] = []
+    missing_names: list[str] = []
     for fullname in fullnames:
-        typeinfo = _lookup_typeinfo(ctx, fullname)
+        typeinfo = _lookup_typeinfo(ctx, fullname, report_missing=False)
         if typeinfo is None:
-            return None
+            missing_names.append(fullname)
+            continue
         typeinfos.append(typeinfo)
+
+    if missing_names:
+        ctx.api.fail(
+            "Sage category provider projection for "
+            f"{projection_fullname!r} cannot be applied because {projection_field} "
+            f"references missing symbols: {', '.join(missing_names)}",
+            ctx.cls,
+        )
+        return None
+
     return tuple(typeinfos)
 
 
-def _lookup_typeinfo(ctx: ClassDefContext, fullname: str) -> TypeInfo | None:
+def _lookup_typeinfo(
+    ctx: ClassDefContext,
+    fullname: str,
+    *,
+    report_missing: bool = True,
+) -> TypeInfo | None:
     symbol = ctx.api.lookup_fully_qualified_or_none(fullname)
     if symbol is None or not isinstance(symbol.node, TypeInfo):
-        ctx.api.fail(f"Sage category TypeInfo is missing: {fullname}", ctx.cls)
+        if report_missing:
+            ctx.api.fail(f"Sage category TypeInfo is missing: {fullname}", ctx.cls)
         return None
     return symbol.node
 
