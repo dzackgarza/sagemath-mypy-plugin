@@ -36,6 +36,10 @@ BEHAVIOR_CASES = {
         "tests.fixtures.invariant_core.diamond_behavior_signature_mismatch.SignatureBaseCategory",
         "tests.fixtures.invariant_core.diamond_behavior_signature_mismatch.SignatureMismatchCategory",
     ),
+    "missing_explicit_override": (
+        "tests.fixtures.invariant_core.diamond_behavior_missing_explicit_override",
+        "tests.fixtures.invariant_core.diamond_behavior_missing_explicit_override.MissingExplicitOverrideCategory",
+    ),
 }
 
 
@@ -61,6 +65,8 @@ def test_behavior_matrix_uses_standard_mypy_inheritance_rules(tmp_path: Path) ->
     assert _case_contains(with_plugin, "signature", 'Argument 1 of "signature_method"')
     assert _case_contains(with_plugin, "signature", "[override]")
     assert _case_contains(without_plugin, "signature", "no base method was found")
+    assert _case_contains(with_plugin, "missing_explicit_override", "[explicit-override]")
+    assert not _case_errors(without_plugin, "missing_explicit_override")
 
 
 def _write_plugin_config(tmp_path: Path) -> Path:
@@ -113,6 +119,7 @@ def _options(tmp_path: Path) -> Options:
     options = Options()
     options.incremental = False
     options.cache_dir = str(tmp_path / "mypy-cache")
+    options.enable_error_code = ["explicit-override"]
     options.mypy_path = [str(REPO_ROOT)]
     options.ignore_missing_imports = True
     return options
