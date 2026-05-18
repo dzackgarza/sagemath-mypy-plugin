@@ -18,6 +18,10 @@ BASE_CATEGORY_FULLNAMES = (
     "tests.fixtures.invariant_core.provider_roles.diamond.RightCategory",
     "tests.fixtures.invariant_core.provider_roles.diamond.BottomCategory",
 )
+HOMSET_CATEGORY_FULLNAMES = (
+    "tests.fixtures.invariant_core.provider_roles.homsets.TopCategory",
+    "tests.fixtures.invariant_core.provider_roles.homsets.BottomCategory",
+)
 
 ROLE_BEHAVIOR_CASES = {
     "element_valid": (
@@ -44,6 +48,22 @@ ROLE_BEHAVIOR_CASES = {
         "tests.fixtures.invariant_core.role_behavior_morphism_invalid",
         "tests.fixtures.invariant_core.role_behavior_morphism_invalid.InvalidMorphismOverrideCategory",
     ),
+    "homset_parent_valid": (
+        "tests.fixtures.invariant_core.role_behavior_homset_parent_valid",
+        "tests.fixtures.invariant_core.role_behavior_homset_parent_valid.ValidHomsetParentOverrideCategory",
+    ),
+    "homset_parent_invalid": (
+        "tests.fixtures.invariant_core.role_behavior_homset_parent_invalid",
+        "tests.fixtures.invariant_core.role_behavior_homset_parent_invalid.InvalidHomsetParentOverrideCategory",
+    ),
+    "homset_element_valid": (
+        "tests.fixtures.invariant_core.role_behavior_homset_element_valid",
+        "tests.fixtures.invariant_core.role_behavior_homset_element_valid.ValidHomsetElementOverrideCategory",
+    ),
+    "homset_element_invalid": (
+        "tests.fixtures.invariant_core.role_behavior_homset_element_invalid",
+        "tests.fixtures.invariant_core.role_behavior_homset_element_invalid.InvalidHomsetElementOverrideCategory",
+    ),
 }
 
 ROLE_GROUPS = {
@@ -59,22 +79,33 @@ ROLE_GROUPS = {
         "morphism_valid",
         "morphism_invalid",
     ),
+    "homset_parent": (
+        "homset_parent_valid",
+        "homset_parent_invalid",
+    ),
+    "homset_element": (
+        "homset_element_valid",
+        "homset_element_invalid",
+    ),
 }
 
 
 def test_non_parent_role_behavior_matrix_uses_standard_mypy_inheritance_rules(
     tmp_path: Path,
 ) -> None:
+    visible_sage_stubs = _write_visible_sage_homset_stubs(tmp_path)
     config_path = _write_plugin_config(tmp_path)
 
     with_plugin = _run_mypy(
         tuple(case[0] for case in ROLE_BEHAVIOR_CASES.values()),
         config_path,
         tmp_path,
+        mypy_path_entries=(REPO_ROOT, visible_sage_stubs),
     )
     without_plugin = _run_mypy_without_plugin(
         tuple(case[0] for case in ROLE_BEHAVIOR_CASES.values()),
         tmp_path,
+        mypy_path_entries=(REPO_ROOT, visible_sage_stubs),
     )
 
     assert not _case_errors(with_plugin, "element_valid")
@@ -92,11 +123,45 @@ def test_non_parent_role_behavior_matrix_uses_standard_mypy_inheritance_rules(
     assert _case_contains(with_plugin, "morphism_invalid", "no base method was found")
     assert _case_contains(without_plugin, "morphism_invalid", "no base method was found")
 
+    assert not _case_errors(with_plugin, "homset_parent_valid")
+    assert _case_contains(
+        without_plugin,
+        "homset_parent_valid",
+        "no base method was found",
+    )
+    assert _case_contains(
+        with_plugin,
+        "homset_parent_invalid",
+        "no base method was found",
+    )
+    assert _case_contains(
+        without_plugin,
+        "homset_parent_invalid",
+        "no base method was found",
+    )
+
+    assert not _case_errors(with_plugin, "homset_element_valid")
+    assert _case_contains(
+        without_plugin,
+        "homset_element_valid",
+        "no base method was found",
+    )
+    assert _case_contains(
+        with_plugin,
+        "homset_element_invalid",
+        "no base method was found",
+    )
+    assert _case_contains(
+        without_plugin,
+        "homset_element_invalid",
+        "no base method was found",
+    )
+
 
 def _write_plugin_config(tmp_path: Path) -> Path:
     projected_providers = {}
     for role, case_names in ROLE_GROUPS.items():
-        category_fullnames = list(BASE_CATEGORY_FULLNAMES)
+        category_fullnames = list(_base_category_fullnames_for_role(role))
         category_fullnames.extend(ROLE_BEHAVIOR_CASES[case_name][1] for case_name in case_names)
         projected_providers.update(
             provider_projections_for_categories(category_fullnames, roles=(role,))
@@ -128,19 +193,77 @@ def _write_plugin_config(tmp_path: Path) -> Path:
     return config_path
 
 
+def _base_category_fullnames_for_role(role: str) -> tuple[str, ...]:
+    if role in {"homset_parent", "homset_element"}:
+        return HOMSET_CATEGORY_FULLNAMES
+    return BASE_CATEGORY_FULLNAMES
+
+
+def _write_visible_sage_homset_stubs(tmp_path: Path) -> Path:
+    stub_root = tmp_path / "visible-sage-stubs"
+    categories = stub_root / "sage" / "categories"
+    categories.mkdir(parents=True)
+    (stub_root / "sage" / "__init__.pyi").write_text("")
+    (categories / "__init__.pyi").write_text("")
+    (categories / "homsets.pyi").write_text(
+        "\n".join(
+            (
+                "class HomsetsCategory: ...",
+                "class Homsets:",
+                "    class ParentMethods:",
+                "        def top_homset_parent(self) -> int: ...",
+                "",
+            )
+        )
+    )
+    (categories / "sets_cat.pyi").write_text(
+        "\n".join(
+            (
+                "class Sets:",
+                "    class ParentMethods:",
+                "        def top_homset_parent(self) -> int: ...",
+                "    class ElementMethods:",
+                "        def top_homset_element(self) -> int: ...",
+                "",
+            )
+        )
+    )
+    (categories / "objects.pyi").write_text(
+        "\n".join(
+            (
+                "class Objects:",
+                "    class ParentMethods:",
+                "        def top_homset_parent(self) -> int: ...",
+                "",
+            )
+        )
+    )
+    return stub_root
+
+
 def _run_mypy(
     modules: tuple[str, ...],
     config_path: Path,
     tmp_path: Path,
+    *,
+    mypy_path_entries: tuple[Path, ...] = (REPO_ROOT,),
 ) -> BuildResult:
     options = _options(tmp_path)
     options.config_file = str(config_path)
     options.plugins = ["sage_mypy_category_plugin.plugin"]
+    options.mypy_path = [str(path) for path in mypy_path_entries]
     return build(sources=[_source(module) for module in modules], options=options)
 
 
-def _run_mypy_without_plugin(modules: tuple[str, ...], tmp_path: Path) -> BuildResult:
-    return build(sources=[_source(module) for module in modules], options=_options(tmp_path))
+def _run_mypy_without_plugin(
+    modules: tuple[str, ...],
+    tmp_path: Path,
+    *,
+    mypy_path_entries: tuple[Path, ...] = (REPO_ROOT,),
+) -> BuildResult:
+    options = _options(tmp_path)
+    options.mypy_path = [str(path) for path in mypy_path_entries]
+    return build(sources=[_source(module) for module in modules], options=options)
 
 
 def _options(tmp_path: Path) -> Options:
