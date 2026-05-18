@@ -50,6 +50,7 @@ Surfaces covered:
     Cross-module aliased provider type aliases — test_plugin_cross_module_alias_provider_type_alias_correctness
     Covariant container assignment — test_plugin_covariant_assignment_correctness
     Relative-import axiom base categories — test_plugin_relative_import_axiom_base_correctness
+    Base-category subcategory selectors — test_plugin_base_category_subcategory_selector_correctness
 """
 from __future__ import annotations
 
@@ -364,6 +365,14 @@ def test_plugin_relative_import_axiom_base_correctness() -> None:
     _assert_override_conjunction(
         "test_relative_axiom_over_pid",
         "test_invalid_override",
+    )
+
+
+def test_plugin_base_category_subcategory_selector_correctness() -> None:
+    """Axiom base_category() calls retain the declared base category selector methods."""
+    _assert_clean_conjunction(
+        "test_base_category_subcategory_selector",
+        "[attr-defined]",
     )
 
 

@@ -43,7 +43,7 @@ from mypy.nodes import (
     OverloadedFuncDef,
     Var,
 )
-from mypy.plugin import Plugin, ClassDefContext
+from mypy.plugin import Plugin, ClassDefContext, MethodContext
 from mypy.types import (
     AnyType,
     CallableType,
@@ -51,6 +51,7 @@ from mypy.types import (
     Overloaded,
     Parameters,
     TypeOfAny,
+    Type,
     TypeType,
     UnboundType,
     get_proper_type,
@@ -132,6 +133,11 @@ class SageCategoryPlugin(Plugin):
             return self._parent_hom_signature_hook
         if fullname.rsplit(".", 1)[-1] == "Constructors":
             return self._constructors_signature_hook
+        return None
+
+    def get_method_hook(self, fullname: str) -> Callable | None:
+        if fullname.rsplit(".", 1)[-1] == "base_category":
+            return self._base_category_method_hook
         return None
 
     def get_additional_deps(self, file: Any) -> list[Tuple[int, str, int]]:
@@ -434,8 +440,21 @@ class SageCategoryPlugin(Plugin):
         module = ctx.api.modules.get(info.module_name)
         if module is None:
             return
+        _materialize_subcategory_selector_methods(ctx, info)
         _materialize_construction_selector_methods(ctx, info)
         _inject_class_body_method_container_bases(ctx, info, module)
+
+    def _base_category_method_hook(self, ctx: MethodContext) -> Type:
+        receiver_type = get_proper_type(ctx.type)
+        if not isinstance(receiver_type, Instance):
+            return ctx.default_return_type
+        base_info = _axiom_base_category_typeinfo_from_modules(
+            self._modules,
+            receiver_type.type,
+        )
+        if base_info is None:
+            return ctx.default_return_type
+        return fill_typevars(base_info)
 
     def _resolve_projection(self, ctx: ClassDefContext, fullname: str) -> Any | None:
         try:
@@ -980,6 +999,15 @@ def _axiom_base_category_typeinfo(
     ctx: ClassDefContext,
     info: TypeInfo,
 ) -> TypeInfo | None:
+    return _axiom_base_category_typeinfo_from_modules(ctx.api.modules, info)
+
+
+def _axiom_base_category_typeinfo_from_modules(
+    modules: dict[str, Any] | None,
+    info: TypeInfo,
+) -> TypeInfo | None:
+    if modules is None:
+        return None
     for statement in getattr(info.defn.defs, "body", ()):
         if not isinstance(statement, AssignmentStmt) or len(statement.lvalues) != 1:
             continue
@@ -992,7 +1020,11 @@ def _axiom_base_category_typeinfo(
         rvalue = statement.rvalue
         if not isinstance(rvalue, TupleExpr) or not rvalue.items:
             continue
-        return _typeinfo_from_axiom_base_expr(ctx, info, rvalue.items[0])
+        return _typeinfo_from_axiom_base_expr_from_modules(
+            modules,
+            info,
+            rvalue.items[0],
+        )
     return None
 
 
@@ -1001,15 +1033,35 @@ def _typeinfo_from_axiom_base_expr(
     owner: TypeInfo,
     expr: Any,
 ) -> TypeInfo | None:
+    return _typeinfo_from_axiom_base_expr_from_modules(
+        ctx.api.modules,
+        owner,
+        expr,
+    )
+
+
+def _typeinfo_from_axiom_base_expr_from_modules(
+    modules: dict[str, Any],
+    owner: TypeInfo,
+    expr: Any,
+) -> TypeInfo | None:
     direct = _typeinfo_from_expr(expr)
     if direct is not None:
         return direct
     if not isinstance(expr, NameExpr):
         return None
-    imported = _typeinfo_from_imported_name(ctx, owner.module_name, expr.name)
+    imported = _typeinfo_from_imported_name_from_modules(
+        modules,
+        owner.module_name,
+        expr.name,
+    )
     if imported is not None:
         return imported
-    return _typeinfo_from_module_assignment(ctx, owner.module_name, expr.name)
+    return _typeinfo_from_module_assignment_from_modules(
+        modules,
+        owner.module_name,
+        expr.name,
+    )
 
 
 def _typeinfo_from_expr(expr: Any) -> TypeInfo | None:
@@ -1023,7 +1075,19 @@ def _typeinfo_from_imported_name(
     module_name: str,
     name: str,
 ) -> TypeInfo | None:
-    module = ctx.api.modules.get(module_name)
+    return _typeinfo_from_imported_name_from_modules(
+        ctx.api.modules,
+        module_name,
+        name,
+    )
+
+
+def _typeinfo_from_imported_name_from_modules(
+    modules: dict[str, Any],
+    module_name: str,
+    name: str,
+) -> TypeInfo | None:
+    module = modules.get(module_name)
     if module is None:
         return None
     for statement in _module_statements(module):
@@ -1036,10 +1100,14 @@ def _typeinfo_from_imported_name(
             if target_module is None:
                 continue
             target_fullname = f"{target_module}.{imported_name}"
-            target = _lookup_typeinfo(ctx, target_fullname)
+            target = _lookup_typeinfo_in_modules(modules, target_fullname)
             if target is not None:
                 return target
-            assigned = _typeinfo_from_module_assignment(ctx, target_module, imported_name)
+            assigned = _typeinfo_from_module_assignment_from_modules(
+                modules,
+                target_module,
+                imported_name,
+            )
             if assigned is not None:
                 return assigned
     return None
@@ -1066,7 +1134,19 @@ def _typeinfo_from_module_assignment(
     module_name: str,
     name: str,
 ) -> TypeInfo | None:
-    module = ctx.api.modules.get(module_name)
+    return _typeinfo_from_module_assignment_from_modules(
+        ctx.api.modules,
+        module_name,
+        name,
+    )
+
+
+def _typeinfo_from_module_assignment_from_modules(
+    modules: dict[str, Any],
+    module_name: str,
+    name: str,
+) -> TypeInfo | None:
+    module = modules.get(module_name)
     if module is None:
         return None
     symbol = _module_symbol(module, name)
@@ -1078,7 +1158,10 @@ def _typeinfo_from_module_assignment(
             get_proper_type(symbol.node.type),
             AnyType,
         ):
-            private_export = _lookup_typeinfo(ctx, f"{module_name}._{name}")
+            private_export = _lookup_typeinfo_in_modules(
+                modules,
+                f"{module_name}._{name}",
+            )
             if (
                 isinstance(private_export, TypeInfo)
                 and _looks_like_sage_category_typeinfo(private_export)
@@ -1094,8 +1177,8 @@ def _typeinfo_from_module_assignment(
         if assigned is not None:
             return assigned
         if isinstance(statement.rvalue, NameExpr):
-            assigned = _lookup_typeinfo(
-                ctx,
+            assigned = _lookup_typeinfo_in_modules(
+                modules,
                 f"{module_name}.{statement.rvalue.name}",
             )
             if assigned is not None:
@@ -1110,13 +1193,20 @@ def _projection_with_static_bases(projection: Any, static_bases: tuple[str, ...]
 
 
 def _lookup_typeinfo(ctx: ClassDefContext, fullname: str) -> Any | None:
+    return _lookup_typeinfo_in_modules(ctx.api.modules, fullname)
+
+
+def _lookup_typeinfo_in_modules(
+    modules: dict[str, Any],
+    fullname: str,
+) -> Any | None:
     parts = fullname.split(".")
     for i in range(len(parts) - 1, -1, -1):
         candidate_mod = ".".join(parts[:i])
         rel = ".".join(parts[i:])
         if not rel:
             continue
-        for mod_key, mod in ctx.api.modules.items():
+        for mod_key, mod in modules.items():
             if mod_key.endswith(candidate_mod):
                 if not hasattr(mod, "names"):
                     continue
@@ -1392,6 +1482,28 @@ def _materialize_operator_helpers(ctx: ClassDefContext, info: TypeInfo) -> None:
             [ctx.api.named_type("builtins.object")],
             ctx.api.named_type("builtins.bool"),
         )
+
+
+def _materialize_subcategory_selector_methods(
+    ctx: ClassDefContext,
+    info: TypeInfo,
+) -> None:
+    """Expose SubcategoryMethods methods as methods on the category object."""
+    provider = _method_container_provider_typeinfo(ctx, info, "SubcategoryMethods")
+    if provider is None:
+        return
+    for name, symbol in provider.names.items():
+        if name.startswith("_"):
+            continue
+        if name in info.names or _class_body_defines(ctx.cls, name):
+            continue
+        method_type = _callable_type_from_method_symbol(ctx, provider, symbol.node)
+        if method_type is None:
+            continue
+        var = Var(name, method_type.copy_modified(name=name))
+        var.info = info
+        var._fullname = f"{info.fullname}.{name}"
+        info.names[name] = SymbolTableNode(MDEF, var, plugin_generated=True)
 
 
 def _materialize_construction_selector_methods(
