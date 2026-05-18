@@ -8,6 +8,7 @@ from mypy.modulefinder import BuildSource
 from mypy.options import Options
 
 from sage_mypy_category_plugin.manifest import ProjectionManifest, SourceModuleRecord
+from sage_mypy_category_plugin.projection import ConcreteParentRecord
 from sage_mypy_category_plugin.projection import ProviderProjection
 from sage_mypy_category_plugin.stubs import generated_stub_sources
 from sage_mypy_category_plugin.stubs import write_generated_stub_tree
@@ -143,6 +144,34 @@ def test_generated_stub_tree_records_written_source_metadata(tmp_path: Path) -> 
     assert sets_record.mtime_ns == sets_path.stat().st_mtime_ns
 
 
+def test_generated_stubs_include_concrete_parent_runtime_aliases() -> None:
+    manifest = _left_zero_semigroup_concrete_parent_manifest()
+
+    assert generated_stub_sources(manifest)[Path("_sage_category_types.pyi")] == (
+        "from sage.categories.semigroups import Semigroups\n"
+        "\n"
+        "class sage_categories_examples_semigroups__LeftZeroSemigroup_with_category(\n"
+        "    Semigroups.ParentMethods,\n"
+        "):\n"
+        "    ...\n"
+        "\n"
+        "class sage_categories_examples_semigroups__LeftZeroSemigroup_with_category__element_class(\n"
+        "    Semigroups.ElementMethods,\n"
+        "):\n"
+        "    ...\n"
+        "\n"
+        "class sage_categories_semigroups__Semigroups__element_class(\n"
+        "    Semigroups.ElementMethods,\n"
+        "):\n"
+        "    ...\n"
+        "\n"
+        "class sage_categories_semigroups__Semigroups__parent_class(\n"
+        "    Semigroups.ParentMethods,\n"
+        "):\n"
+        "    ...\n"
+    )
+
+
 def _sets_cartesian_products_manifest() -> ProjectionManifest:
     return ProjectionManifest(
         schema_version=1,
@@ -237,6 +266,80 @@ def _sets_cartesian_products_manifest() -> ProjectionManifest:
                 path="sage/categories/sets_cat.py",
                 sha256="1" * 64,
                 mtime_ns=1_789_000_000_000_000_001,
+            ),
+        ),
+    )
+
+
+def _left_zero_semigroup_concrete_parent_manifest() -> ProjectionManifest:
+    return ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=(
+            ProviderProjection(
+                provider="sage.categories.semigroups.Semigroups.ParentMethods",
+                role="parent",
+                runtime_class="sage.categories.semigroups.Semigroups.parent_class",
+                runtime_bases=("builtins.object",),
+                runtime_mro=(
+                    "sage.categories.semigroups.Semigroups.parent_class",
+                    "builtins.object",
+                ),
+                provider_bases=(),
+                provider_mro=("sage.categories.semigroups.Semigroups.ParentMethods",),
+            ),
+            ProviderProjection(
+                provider="sage.categories.semigroups.Semigroups.ElementMethods",
+                role="element",
+                runtime_class="sage.categories.semigroups.Semigroups.element_class",
+                runtime_bases=("builtins.object",),
+                runtime_mro=(
+                    "sage.categories.semigroups.Semigroups.element_class",
+                    "builtins.object",
+                ),
+                provider_bases=(),
+                provider_mro=("sage.categories.semigroups.Semigroups.ElementMethods",),
+            ),
+        ),
+        source_modules=(
+            SourceModuleRecord(
+                module="sage.categories.semigroups",
+                path="sage/categories/semigroups.py",
+                sha256="0" * 64,
+                mtime_ns=1_789_000_000_000_000_000,
+            ),
+            SourceModuleRecord(
+                module="sage.categories.examples.semigroups",
+                path="sage/categories/examples/semigroups.py",
+                sha256="1" * 64,
+                mtime_ns=1_789_000_000_000_000_001,
+            ),
+        ),
+        concrete_parents=(
+            ConcreteParentRecord(
+                concrete_class="sage.categories.examples.semigroups.LeftZeroSemigroup",
+                runtime_class=(
+                    "sage.categories.examples.semigroups."
+                    "LeftZeroSemigroup_with_category"
+                ),
+                runtime_mro=(
+                    "sage.categories.examples.semigroups."
+                    "LeftZeroSemigroup_with_category",
+                    "sage.categories.examples.semigroups.LeftZeroSemigroup",
+                ),
+                category_class="sage.categories.semigroups.Semigroups_with_category",
+                parent_provider_mro=(
+                    "sage.categories.semigroups.Semigroups.ParentMethods",
+                ),
+                element_runtime_class=(
+                    "sage.categories.examples.semigroups."
+                    "LeftZeroSemigroup_with_category.element_class"
+                ),
+                element_provider_mro=(
+                    "sage.categories.semigroups.Semigroups.ElementMethods",
+                ),
             ),
         ),
     )

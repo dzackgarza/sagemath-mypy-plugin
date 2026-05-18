@@ -73,20 +73,32 @@ def _runtime_alias_stub_source(
     imported_names: dict[str, set[str]] = {}
     alias_blocks: list[tuple[str, tuple[str, ...]]] = []
     for projection in manifest.projections:
-        runtime_module, runtime_qualname = _source_module_and_qualname(
-            projection.runtime_class,
-            source_modules=source_modules,
-        )
-        alias_name = _runtime_alias_name(runtime_module, runtime_qualname)
-        provider_bases = tuple(
-            _provider_base_expression(
-                provider,
+        alias_blocks.append(
+            _runtime_alias_block(
+                projection.runtime_class,
+                projection.provider_mro,
                 source_modules=source_modules,
                 imported_names=imported_names,
             )
-            for provider in projection.provider_mro
         )
-        alias_blocks.append((alias_name, provider_bases))
+    for concrete_parent in manifest.concrete_parents:
+        alias_blocks.append(
+            _runtime_alias_block(
+                concrete_parent.runtime_class,
+                concrete_parent.parent_provider_mro,
+                source_modules=source_modules,
+                imported_names=imported_names,
+            )
+        )
+        if concrete_parent.element_runtime_class is not None:
+            alias_blocks.append(
+                _runtime_alias_block(
+                    concrete_parent.element_runtime_class,
+                    concrete_parent.element_provider_mro,
+                    source_modules=source_modules,
+                    imported_names=imported_names,
+                )
+            )
 
     lines: list[str] = []
     for module_name, names in sorted(imported_names.items()):
@@ -99,6 +111,31 @@ def _runtime_alias_stub_source(
         lines.append("    ...")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _runtime_alias_block(
+    runtime_class: str,
+    provider_mro: tuple[str, ...],
+    *,
+    source_modules: tuple[str, ...],
+    imported_names: dict[str, set[str]],
+) -> tuple[str, tuple[str, ...]]:
+    assert provider_mro, f"{runtime_class!r} must have a nonempty provider MRO"
+    runtime_module, runtime_qualname = _source_module_and_qualname(
+        runtime_class,
+        source_modules=source_modules,
+    )
+    return (
+        _runtime_alias_name(runtime_module, runtime_qualname),
+        tuple(
+            _provider_base_expression(
+                provider,
+                source_modules=source_modules,
+                imported_names=imported_names,
+            )
+            for provider in provider_mro
+        ),
+    )
 
 
 def _runtime_alias_name(module_name: str, qualname: tuple[str, ...]) -> str:
