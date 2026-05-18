@@ -514,6 +514,7 @@ def test_plugin_reports_semantic_manifest_config_data(tmp_path: Path) -> None:
         schema_version=1,
         generated_by="tests",
         sage_version="10.7",
+        sage_git_revision="abc123abc123abc123abc123abc123abc123abcd",
         python_version="3.12.13",
         projections=tuple(projections.values()),
         source_modules=(DIAMOND_SOURCE_MODULE,),
@@ -546,6 +547,8 @@ def test_plugin_reports_semantic_manifest_config_data(tmp_path: Path) -> None:
     assert config_data["manifest_plugin_schema_version"] == (
         manifest.plugin_schema_version
     )
+    assert config_data["manifest_sage_version"] == manifest.sage_version
+    assert config_data["manifest_sage_git_revision"] == manifest.sage_git_revision
     assert config_data["manifest_mypy_min_version"] == manifest.mypy_min_version
     assert config_data["manifest_mypy_max_version"] == manifest.mypy_max_version
     assert config_data["manifest_source_module_digest"] == (

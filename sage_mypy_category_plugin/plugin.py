@@ -60,6 +60,8 @@ class SageCategoryProjectionPlugin(Plugin):
                 self._manifest.semantic_projection_digest
             ),
             "manifest_plugin_schema_version": self._manifest.plugin_schema_version,
+            "manifest_sage_version": self._manifest.sage_version,
+            "manifest_sage_git_revision": self._manifest.sage_git_revision or "",
             "manifest_mypy_min_version": self._manifest.mypy_min_version,
             "manifest_mypy_max_version": self._manifest.mypy_max_version,
             "manifest_source_module_digest": self._manifest.source_module_digest,
