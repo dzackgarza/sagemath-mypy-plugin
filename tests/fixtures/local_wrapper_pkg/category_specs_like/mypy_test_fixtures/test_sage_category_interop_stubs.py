@@ -68,6 +68,12 @@ class CategoryWithAxiomOverrides(CategoryWithAxiom):
         return bool(candidate)
 
 
+class CategoryExtraSuper(Category):
+    @override
+    def extra_super_categories(self) -> list[Category]:
+        return []
+
+
 def imported_category_bases(
     parameterized: CategoryWithParameters,
     axiom: CategoryWithAxiom,
