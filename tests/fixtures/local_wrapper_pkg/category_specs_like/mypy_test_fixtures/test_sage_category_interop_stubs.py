@@ -92,6 +92,12 @@ class CategorySuperSpecific(Category):
         return []
 
 
+class CategoryNamedClassKey(Category):
+    @override
+    def _make_named_class_key(self, name: str) -> tuple[str]:
+        return (name,)
+
+
 def imported_category_bases(
     parameterized: CategoryWithParameters,
     axiom: CategoryWithAxiom,
