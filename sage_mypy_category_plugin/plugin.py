@@ -458,6 +458,8 @@ class SageCategoryPlugin(Plugin):
         _materialize_subcategory_selector_methods(ctx, info)
         _materialize_construction_selector_methods(ctx, info)
         _inject_class_body_method_container_bases(ctx, info, module)
+        if _inject_assigned_construction_method_container_bases(ctx, info):
+            ctx.api.defer()
 
     def _base_category_method_hook(self, ctx: MethodContext) -> Type:
         receiver_type = get_proper_type(ctx.type)
@@ -795,10 +797,18 @@ def _projected_method_container_bases(
     projected_bases: tuple[str, ...],
 ) -> tuple[str, ...]:
     bases = list(projected_bases)
+    enclosing_cat = _lookup_enclosing_category_typeinfo(ctx, info)
+    if enclosing_cat is not None:
+        bases.extend(
+            _resolve_static_construction_owner_method_container_bases(
+                ctx,
+                enclosing_cat,
+                info.name,
+            )
+        )
     override_names = _explicit_override_method_names(info)
     if not override_names:
         return tuple(dict.fromkeys(bases))
-    enclosing_cat = _lookup_enclosing_category_typeinfo(ctx, info)
     if enclosing_cat is not None:
         for base in _resolve_python_category_method_container_bases(
             ctx,
@@ -1226,7 +1236,7 @@ def _resolve_static_construction_owner_method_container_bases(
             owner = _typeinfo_from_symbol_node(symbol.node)
             if owner is None or owner.fullname == construction_cat.fullname:
                 continue
-            if not _class_assigns_typeinfo(owner, construction_cat):
+            if not _class_assigns_typeinfo(ctx, owner, construction_cat):
                 continue
             provider = _method_container_provider_typeinfo(ctx, owner, method_kind)
             if provider is not None:
@@ -1234,7 +1244,11 @@ def _resolve_static_construction_owner_method_container_bases(
     return tuple(dict.fromkeys(bases))
 
 
-def _class_assigns_typeinfo(owner: TypeInfo, assigned: TypeInfo) -> bool:
+def _class_assigns_typeinfo(
+    ctx: ClassDefContext,
+    owner: TypeInfo,
+    assigned: TypeInfo,
+) -> bool:
     for statement in getattr(owner.defn.defs, "body", ()):
         if not isinstance(statement, AssignmentStmt) or len(statement.lvalues) != 1:
             continue
@@ -1242,6 +1256,14 @@ def _class_assigns_typeinfo(owner: TypeInfo, assigned: TypeInfo) -> bool:
             continue
         if _typeinfo_from_expr(statement.rvalue) is assigned:
             return True
+        if isinstance(statement.rvalue, NameExpr):
+            imported = _typeinfo_from_imported_name(
+                ctx,
+                owner.module_name,
+                statement.rvalue.name,
+            )
+            if imported is assigned:
+                return True
     return False
 
 
@@ -2800,6 +2822,67 @@ def _inject_class_body_method_container_bases(
                 continue
             _append_typeinfo_base(helper_ti, base_ti)
             break
+
+
+def _inject_assigned_construction_method_container_bases(
+    ctx: ClassDefContext,
+    owner_info: TypeInfo,
+) -> bool:
+    for statement in ctx.cls.defs.body:
+        if not isinstance(statement, AssignmentStmt) or len(statement.lvalues) != 1:
+            continue
+        target = statement.lvalues[0]
+        if not isinstance(target, NameExpr) or target.name in _METHOD_KINDS:
+            continue
+        construction_info = _assigned_category_typeinfo(
+            ctx,
+            owner_info.module_name,
+            statement.rvalue,
+        )
+        if construction_info is None:
+            continue
+        if not _has_base_category_extra_super_category(construction_info):
+            if not ctx.api.final_iteration:
+                return True
+            continue
+        for method_kind in _METHOD_KINDS:
+            construction_provider = _method_container_provider_typeinfo(
+                ctx,
+                construction_info,
+                method_kind,
+            )
+            owner_provider = _method_container_provider_typeinfo(
+                ctx,
+                owner_info,
+                method_kind,
+            )
+            if construction_provider is None or owner_provider is None:
+                continue
+            if construction_provider.fullname == owner_provider.fullname:
+                continue
+            _append_typeinfo_base(construction_provider, owner_provider)
+    return False
+
+
+def _assigned_category_typeinfo(
+    ctx: ClassDefContext,
+    module_name: str,
+    expr: Expression,
+) -> TypeInfo | None:
+    direct = _typeinfo_from_expr(expr)
+    if direct is not None:
+        return direct
+    if isinstance(expr, NameExpr):
+        return (
+            _typeinfo_from_imported_name(ctx, module_name, expr.name)
+            or _typeinfo_from_module_assignment(ctx, module_name, expr.name)
+            or _lookup_typeinfo(ctx, f"{module_name}.{expr.name}")
+        )
+    return None
+
+
+def _has_base_category_extra_super_category(info: TypeInfo) -> bool:
+    return "base_category" in info.names and "extra_super_categories" in info.names
 
 
 def _append_typeinfo_base(info: TypeInfo, base_ti: TypeInfo) -> None:

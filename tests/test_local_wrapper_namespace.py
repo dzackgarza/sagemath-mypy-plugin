@@ -35,6 +35,7 @@ Surfaces covered:
     Static axiom base receiver self surfaces — test_plugin_static_axiom_base_receiver_self_correctness
     Static axiom SubcategoryMethods receiver self surfaces — test_plugin_static_axiom_subcategory_receiver_self_correctness
     Static construction extra-super receiver self surfaces — test_plugin_static_construction_extra_super_receiver_self_correctness
+    Construction return aliases inherit base methods — test_plugin_construction_return_type_alias_base_methods_correctness
     Python-base construction method containers — test_plugin_python_base_construction_method_container_correctness
     Static construction selectors avoid runtime import — test_plugin_static_construction_selector_no_runtime_import_correctness
     Runtime construction selector import failures stay diagnostic — test_plugin_runtime_construction_selector_import_failure_correctness
@@ -426,6 +427,14 @@ def test_plugin_static_construction_extra_super_receiver_self_correctness() -> N
     _assert_override_conjunction(
         "test_static_construction_extra_super_receiver_self",
         "test_invalid_override",
+    )
+
+
+def test_plugin_construction_return_type_alias_base_methods_correctness() -> None:
+    """Construction return aliases inherit base category methods."""
+    _assert_clean_conjunction(
+        "test_construction_return_type_alias_base_methods",
+        "[attr-defined]",
     )
 
 
