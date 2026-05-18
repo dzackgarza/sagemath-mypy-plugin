@@ -10,7 +10,11 @@ from pydantic import BaseModel, ConfigDict
 
 import sage.all  # type: ignore[import-untyped] # noqa: F401
 
-from sage_mypy_category_plugin.projection import ProviderProjection, ProviderRole
+from sage_mypy_category_plugin.projection import (
+    ConcreteParentRecord,
+    ProviderProjection,
+    ProviderRole,
+)
 
 
 @runtime_checkable
@@ -22,6 +26,15 @@ class SageCategory(Protocol):
 @runtime_checkable
 class SageCategoryFactory(Protocol):
     def an_instance(self) -> SageCategory:
+        pass
+
+
+@runtime_checkable
+class SageConcreteParent(Protocol):
+    def category(self) -> SageCategory:
+        pass
+
+    def _underlying_class(self) -> type[object]:
         pass
 
 
@@ -58,6 +71,7 @@ ROLE_PROJECTIONS: Mapping[ProviderRole, RoleProjection] = {
 
 
 _TRACE_SOURCE = "Category._make_named_class"
+_CONCRETE_PARENT_ROLES: tuple[ProviderRole, ...] = ("parent", "element")
 
 
 @dataclass(frozen=True)
@@ -112,6 +126,28 @@ def provider_projections_for_categories(
                     runtime_class=runtime_class,
                 )
         return projections
+
+
+def concrete_parent_records_for_factories(
+    factory_fullnames: Iterable[str],
+) -> dict[str, ConcreteParentRecord]:
+    for role in _CONCRETE_PARENT_ROLES:
+        _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role].clear()
+        _UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role].clear()
+
+    records: dict[str, ConcreteParentRecord] = {}
+    with _trace_make_named_class(roles=_CONCRETE_PARENT_ROLES):
+        for factory_fullname in factory_fullnames:
+            factory = _import_concrete_parent_factory(factory_fullname)
+            parent = factory()
+            assert isinstance(parent, SageConcreteParent), (
+                f"{factory_fullname!r} must construct a Sage parent with "
+                "category() and _underlying_class(); got "
+                f"{parent!r}"
+            )
+            record = _concrete_parent_record(parent)
+            records[record.concrete_class] = record
+    return records
 
 
 def named_class_traces() -> tuple[NamedClassTrace, ...]:
@@ -249,6 +285,74 @@ def _project_runtime_classes(
     )
 
 
+def _provider_mro_from_runtime_mro(
+    role: ProviderRole,
+    runtime_mro: tuple[type[object], ...],
+) -> tuple[str, ...]:
+    role_projection = ROLE_PROJECTIONS[role]
+    for runtime_class in runtime_mro:
+        _ensure_runtime_class_projection(role, role_projection, runtime_class)
+
+    runtime_to_provider = _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role]
+    return _project_runtime_classes(
+        runtime_mro,
+        runtime_to_provider,
+        allow_unmapped=frozenset(
+            {object, *_UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role]}
+        ),
+    )
+
+
+def _concrete_parent_record(parent: SageConcreteParent) -> ConcreteParentRecord:
+    runtime_class = type(parent)
+    concrete_class = parent._underlying_class()
+    assert isinstance(concrete_class, type), (
+        f"{parent!r}._underlying_class() must return a class; "
+        f"got {concrete_class!r}"
+    )
+
+    category = parent.category()
+    assert isinstance(category, SageCategory), (
+        f"{parent!r}.category() must return a Sage category; got {category!r}"
+    )
+
+    parent_provider_mro = _provider_mro_from_runtime_mro(
+        "parent",
+        runtime_class.__mro__,
+    )
+    assert parent_provider_mro, (
+        f"{_class_fullname(runtime_class)} must project at least one parent provider"
+    )
+
+    element_runtime_class = _element_runtime_class_from_parent(parent)
+    element_provider_mro = _provider_mro_from_runtime_mro(
+        "element",
+        element_runtime_class.__mro__,
+    )
+    assert element_provider_mro, (
+        f"{_class_fullname(element_runtime_class)} must project at least one "
+        "element provider"
+    )
+
+    return ConcreteParentRecord(
+        concrete_class=_class_fullname(concrete_class),
+        runtime_class=_class_fullname(runtime_class),
+        runtime_mro=tuple(_class_fullname(base) for base in runtime_class.__mro__),
+        category_class=_class_fullname(type(category)),
+        parent_provider_mro=parent_provider_mro,
+        element_runtime_class=_class_fullname(element_runtime_class),
+        element_provider_mro=element_provider_mro,
+    )
+
+
+def _element_runtime_class_from_parent(parent: SageConcreteParent) -> type[object]:
+    element_runtime_class = getattr(parent, "element_class", None)
+    assert isinstance(element_runtime_class, type), (
+        f"{parent!r}.element_class must be a class; got {element_runtime_class!r}"
+    )
+    return element_runtime_class
+
+
 def _ensure_runtime_class_projection(
     role: ProviderRole,
     role_projection: RoleProjection,
@@ -286,10 +390,8 @@ def _provider_fullname_from_runtime_class_or_none(
         module_name=runtime_class.__module__,
         qualname=owner_qualname,
     )
-    assert owner is not None, (
-        f"Could not resolve owner {runtime_class.__module__}.{owner_qualname} "
-        f"for runtime class {_class_fullname(runtime_class)}"
-    )
+    if owner is None:
+        return None
 
     if not hasattr(owner, role_projection.provider_attr):
         return None
@@ -384,6 +486,18 @@ def _import_category_factory(fullname: str) -> SageCategoryFactory:
     return category_factory
 
 
+def _import_concrete_parent_factory(fullname: str) -> type[object]:
+    module_name, separator, class_name = fullname.rpartition(".")
+    assert separator == ".", f"Expected fully-qualified class name, got {fullname!r}"
+
+    module = import_module(module_name)
+    factory = getattr(module, class_name)
+    assert isinstance(factory, type), (
+        f"{fullname!r} must resolve to a concrete parent class; got {factory!r}"
+    )
+    return factory
+
+
 def _class_fullname(cls: type[object]) -> str:
     return f"{cls.__module__}.{cls.__qualname__}"
 
@@ -453,9 +567,11 @@ def _trace_make_named_class(
 
 
 __all__ = [
+    "ConcreteParentRecord",
     "ProviderProjection",
     "ProviderRole",
     "NamedClassTrace",
+    "concrete_parent_records_for_factories",
     "named_class_traces",
     "provider_projections_for_categories",
 ]

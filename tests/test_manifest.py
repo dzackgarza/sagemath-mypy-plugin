@@ -16,6 +16,7 @@ from sage_mypy_category_plugin.manifest import (
     load_manifest,
     write_manifest,
 )
+from sage_mypy_category_plugin.projection import ConcreteParentRecord
 from sage_mypy_category_plugin.projection import ProviderProjection
 
 
@@ -66,6 +67,25 @@ def _base_projection() -> ProviderProjection:
     )
 
 
+def _base_element_projection() -> ProviderProjection:
+    return _projection().model_copy(
+        update={
+            "provider": "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ElementMethods",
+            "role": "element",
+            "runtime_class": "tests.fixtures.invariant_core.diamond_runtime.TopCategory.element_class",
+            "runtime_bases": ("builtins.object",),
+            "runtime_mro": (
+                "tests.fixtures.invariant_core.diamond_runtime.TopCategory.element_class",
+                "builtins.object",
+            ),
+            "provider_bases": (),
+            "provider_mro": (
+                "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ElementMethods",
+            ),
+        }
+    )
+
+
 def _left_projection() -> ProviderProjection:
     return _projection().model_copy(
         update={
@@ -110,6 +130,7 @@ def _manifest_payload() -> dict[str, Any]:
         mypy_max_version=MYPY_VERSION,
         projections=(
             _base_projection(),
+            _base_element_projection(),
             _left_projection(),
             _right_projection(),
             _projection(),
@@ -120,6 +141,34 @@ def _manifest_payload() -> dict[str, Any]:
                 path="tests/fixtures/invariant_core/diamond_runtime.py",
                 sha256="9f1f7a4a0d0b6dfd7f9d2d2c1d3b5e6a"
                 "8b1c0f7a6d5e4c3b2a19080706050403",
+            ),
+        ),
+        concrete_parents=(
+            ConcreteParentRecord(
+                concrete_class="sage.categories.examples.semigroups.LeftZeroSemigroup",
+                runtime_class=(
+                    "sage.categories.examples.semigroups."
+                    "LeftZeroSemigroup_with_category"
+                ),
+                runtime_mro=(
+                    "sage.categories.examples.semigroups."
+                    "LeftZeroSemigroup_with_category",
+                    "sage.categories.examples.semigroups.LeftZeroSemigroup",
+                    "sage.structure.parent.Parent",
+                ),
+                category_class="sage.categories.semigroups.Semigroups_with_category",
+                parent_provider_mro=(
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "TopCategory.ParentMethods",
+                ),
+                element_runtime_class=(
+                    "sage.categories.examples.semigroups."
+                    "LeftZeroSemigroup_with_category.element_class"
+                ),
+                element_provider_mro=(
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "TopCategory.ElementMethods",
+                ),
             ),
         ),
     )
@@ -141,6 +190,7 @@ def test_manifest_round_trips_projection_records(tmp_path: Path) -> None:
         projection.provider: projection
         for projection in (
             _base_projection(),
+            _base_element_projection(),
             _left_projection(),
             _right_projection(),
             _projection(),
@@ -153,6 +203,10 @@ def test_manifest_round_trips_projection_records(tmp_path: Path) -> None:
             sha256="9f1f7a4a0d0b6dfd7f9d2d2c1d3b5e6a"
             "8b1c0f7a6d5e4c3b2a19080706050403",
         )
+    }
+    assert loaded.concrete_parent_by_class == {
+        record.concrete_class: record
+        for record in loaded.concrete_parents
     }
 
 
@@ -249,6 +303,18 @@ def test_manifest_rejects_invalid_sage_git_revision() -> None:
 def test_manifest_rejects_unresolved_provider_references() -> None:
     payload = _manifest_payload()
     payload["projections"] = [payload["projections"][-1]]
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    assert "unresolved provider reference" in str(raised.value)
+
+
+def test_manifest_rejects_unresolved_concrete_parent_provider_references() -> None:
+    payload = _manifest_payload()
+    payload["concrete_parents"][0]["element_provider_mro"] = [
+        "tests.fixtures.invariant_core.diamond_runtime.MissingCategory.ElementMethods"
+    ]
 
     with pytest.raises(ValidationError) as raised:
         ProjectionManifest.model_validate(payload)

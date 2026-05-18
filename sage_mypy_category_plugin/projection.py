@@ -27,7 +27,20 @@ class ProviderProjection(BaseModel):
     unprojected_runtime_mro: tuple[StrictStr, ...] = ()
 
 
+class ConcreteParentRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    concrete_class: StrictStr
+    runtime_class: StrictStr
+    runtime_mro: tuple[StrictStr, ...]
+    category_class: StrictStr
+    parent_provider_mro: tuple[StrictStr, ...]
+    element_runtime_class: StrictStr | None = None
+    element_provider_mro: tuple[StrictStr, ...] = ()
+
+
 __all__ = [
+    "ConcreteParentRecord",
     "ProviderProjection",
     "ProviderRole",
 ]

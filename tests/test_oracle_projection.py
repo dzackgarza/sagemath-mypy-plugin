@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from sage_mypy_category_plugin.oracle import RoleProjection
+from sage_mypy_category_plugin.oracle import concrete_parent_records_for_factories
 from sage_mypy_category_plugin.oracle import provider_projections_for_categories
 from sage_mypy_category_plugin.oracle import named_class_traces
 from sage_mypy_category_plugin.oracle import _provider_fullname_from_runtime_class_or_none
@@ -345,3 +346,31 @@ def test_parameterized_projection_uses_sage_runtime_named_class_identity() -> No
     )
     assert modules_projection.provider_mro[0] == modules_provider
     assert modules_projection.runtime_class != vector_spaces_projection.runtime_class
+
+
+def test_concrete_parent_record_matches_sage_initialized_category() -> None:
+    records = concrete_parent_records_for_factories(
+        ("sage.categories.examples.semigroups.LeftZeroSemigroup",),
+    )
+
+    record = records["sage.categories.examples.semigroups.LeftZeroSemigroup"]
+
+    assert record.concrete_class == (
+        "sage.categories.examples.semigroups.LeftZeroSemigroup"
+    )
+    assert record.runtime_class == (
+        "sage.categories.examples.semigroups.LeftZeroSemigroup_with_category"
+    )
+    assert record.category_class == "sage.categories.semigroups.Semigroups_with_category"
+    assert record.parent_provider_mro[:2] == (
+        "sage.categories.semigroups.Semigroups.ParentMethods",
+        "sage.categories.magmas.Magmas.ParentMethods",
+    )
+    assert record.element_runtime_class == (
+        "sage.categories.examples.semigroups.LeftZeroSemigroup_with_category."
+        "element_class"
+    )
+    assert record.element_provider_mro[:2] == (
+        "sage.categories.semigroups.Semigroups.ElementMethods",
+        "sage.categories.magmas.Magmas.ElementMethods",
+    )

@@ -11,7 +11,10 @@ from mypy.version import __version__ as MYPY_VERSION
 from packaging.version import Version
 from pydantic import BaseModel, ConfigDict, StrictStr, model_validator
 
-from sage_mypy_category_plugin.projection import ProviderProjection
+from sage_mypy_category_plugin.projection import (
+    ConcreteParentRecord,
+    ProviderProjection,
+)
 
 CURRENT_PLUGIN_SCHEMA_VERSION = "1"
 SHA256_HEX_PATTERN = re.compile(r"[0-9a-f]{64}")
@@ -48,6 +51,7 @@ class ProjectionManifest(BaseModel):
     python_version: StrictStr
     projections: tuple[ProviderProjection, ...]
     source_modules: tuple[SourceModuleRecord, ...] = ()
+    concrete_parents: tuple[ConcreteParentRecord, ...] = ()
 
     @model_validator(mode="after")
     def _validate_git_revision(self) -> Self:
@@ -84,11 +88,32 @@ class ProjectionManifest(BaseModel):
                 + ", ".join(duplicate_source_modules)
             )
 
+        concrete_classes = tuple(
+            record.concrete_class for record in self.concrete_parents
+        )
+        duplicate_concrete_classes = tuple(
+            concrete_class
+            for concrete_class in dict.fromkeys(concrete_classes)
+            if concrete_classes.count(concrete_class) > 1
+        )
+        if duplicate_concrete_classes:
+            raise ValueError(
+                "duplicate concrete parent records: "
+                + ", ".join(duplicate_concrete_classes)
+            )
+
         declared_providers = frozenset(providers)
         referenced_providers = frozenset(
             provider
             for projection in self.projections
             for provider in (*projection.provider_bases, *projection.provider_mro)
+        ) | frozenset(
+            provider
+            for concrete_parent in self.concrete_parents
+            for provider in (
+                *concrete_parent.parent_provider_mro,
+                *concrete_parent.element_provider_mro,
+            )
         )
         unresolved_references = tuple(
             sorted(referenced_providers - declared_providers)
@@ -127,6 +152,10 @@ class ProjectionManifest(BaseModel):
         return {record.module: record for record in self.source_modules}
 
     @property
+    def concrete_parent_by_class(self) -> dict[str, ConcreteParentRecord]:
+        return {record.concrete_class: record for record in self.concrete_parents}
+
+    @property
     def source_module_digest(self) -> str:
         source_modules = tuple(
             (record.module, record.path, record.sha256)
@@ -161,7 +190,24 @@ class ProjectionManifest(BaseModel):
             )
         )
         digest_payload = json.dumps(
-            projections,
+            {
+                "concrete_parents": tuple(
+                    (
+                        record.concrete_class,
+                        record.runtime_class,
+                        record.runtime_mro,
+                        record.category_class,
+                        record.parent_provider_mro,
+                        record.element_runtime_class,
+                        record.element_provider_mro,
+                    )
+                    for record in sorted(
+                        self.concrete_parents,
+                        key=lambda record: record.concrete_class,
+                    )
+                ),
+                "projections": projections,
+            },
             sort_keys=True,
             separators=(",", ":"),
         )
@@ -180,6 +226,7 @@ def write_manifest(path: Path, manifest: ProjectionManifest) -> None:
 
 
 __all__ = [
+    "ConcreteParentRecord",
     "SourceModuleRecord",
     "ProjectionManifest",
     "load_manifest",
