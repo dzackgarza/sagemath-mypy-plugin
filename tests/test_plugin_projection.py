@@ -68,6 +68,13 @@ PROVIDER_ROLES_FULLNAMES = (
     f"{PROVIDER_ROLES_MODULE}.RightCategory",
     f"{PROVIDER_ROLES_MODULE}.BottomCategory",
 )
+HOMSET_ROLES_MODULE = "tests.fixtures.invariant_core.provider_roles.homsets"
+HOMSET_ROLES_PATH = (
+    REPO_ROOT / "tests" / "fixtures" / "invariant_core" / "provider_roles" / "homsets.py"
+)
+HOMSET_ROLES_FULLNAMES = (
+    f"{HOMSET_ROLES_MODULE}.BottomCategory",
+)
 DIAMOND_SOURCE_MODULE = SourceModuleRecord(
     module=FIXTURE_MODULE,
     path="tests/fixtures/invariant_core/diamond_runtime.py",
@@ -288,6 +295,58 @@ def test_plugin_projects_non_parent_provider_role_typeinfo_mro(
     assert tuple(info.fullname for info in role_info.mro) == (
         *expected_provider_mro,
         "builtins.object",
+    )
+
+
+def test_plugin_reports_homset_external_provider_boundary(
+    tmp_path: Path,
+) -> None:
+    projections = provider_projections_for_categories(
+        HOMSET_ROLES_FULLNAMES,
+        roles=("homset_parent", "homset_element"),
+    )
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=tuple(projections.values()),
+    )
+    manifest_path = tmp_path / "sage-category-homset-projections.json"
+    config_path = tmp_path / "mypy.ini"
+    write_manifest(manifest_path, manifest)
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "ignore_missing_imports = True",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+
+    result = _build_fixture(
+        config_path,
+        tmp_path,
+        fixture_path=HOMSET_ROLES_PATH,
+        fixture_module=HOMSET_ROLES_MODULE,
+    )
+
+    assert _contains_error_fragment(
+        result,
+        "sage.categories.homsets.Homsets.ParentMethods",
+    )
+    assert _contains_error_fragment(
+        result,
+        "sage.categories.sets_cat.Sets.ParentMethods",
+    )
+    assert _contains_error_fragment(
+        result,
+        "sage.categories.sets_cat.Sets.ElementMethods",
     )
 
 
@@ -786,3 +845,7 @@ def _nested_typeinfo(
     inner_node = outer_node.names[inner].node
     assert isinstance(inner_node, TypeInfo)
     return inner_node
+
+
+def _contains_error_fragment(result: BuildResult, fragment: str) -> bool:
+    return any(fragment in error for error in result.errors)
