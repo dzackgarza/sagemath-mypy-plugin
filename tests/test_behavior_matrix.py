@@ -15,6 +15,7 @@ from sage_mypy_category_plugin.manifest import (
     write_manifest,
 )
 from sage_mypy_category_plugin.oracle import provider_projections_for_categories
+from sage_mypy_category_plugin.projection import ProviderProjection
 
 type SourceTree = dict[str, "SourceTree"]
 
@@ -211,20 +212,9 @@ def _run_nested_provider_mypy(
         **functorial_projections,
         **parameterized_projections,
     }
-    provider_mro = tuple(
-        dict.fromkeys(
-            (
-                *axiom_projections[COMMUTATIVE_RINGS_PROVIDER].provider_mro,
-                *functorial_projections[
-                    FUNCTORIAL_CARTESIAN_PARENT_PROVIDER
-                ].provider_mro,
-                *parameterized_projections[VECTOR_SPACES_PROVIDER].provider_mro,
-            )
-        )
-    )
     source_modules = _write_nested_provider_sources(
         source_root,
-        providers=provider_mro,
+        projections=tuple(projections.values()),
     )
     config_path = tmp_path / "nested-provider-mypy.ini"
     manifest_path = tmp_path / "nested-provider-manifest.json"
@@ -284,11 +274,13 @@ def _run_nested_provider_mypy(
 def _write_nested_provider_sources(
     source_root: Path,
     *,
-    providers: tuple[str, ...],
+    projections: tuple[ProviderProjection, ...],
 ) -> tuple[SourceModuleRecord, ...]:
     module_trees: dict[str, SourceTree] = defaultdict(dict)
-    for provider in providers:
-        module_name, qualname = _importable_module_and_qualname(provider)
+    for fullname in _projection_fullnames(projections):
+        if fullname == "builtins.object":
+            continue
+        module_name, qualname = _importable_module_and_qualname(fullname)
         _add_qualname(module_trees[module_name], qualname)
 
     method_bodies = {
@@ -362,6 +354,26 @@ def _write_nested_provider_sources(
             )
         )
     return tuple(source_modules)
+
+
+def _projection_fullnames(
+    projections: tuple[ProviderProjection, ...],
+) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            fullname
+            for projection in projections
+            for fullname in (
+                projection.provider,
+                projection.runtime_class,
+                *projection.runtime_bases,
+                *projection.runtime_mro,
+                *projection.provider_bases,
+                *projection.provider_mro,
+                *projection.unprojected_runtime_mro,
+            )
+        )
+    )
 
 
 def _importable_module_and_qualname(fullname: str) -> tuple[str, tuple[str, ...]]:

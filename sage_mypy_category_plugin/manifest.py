@@ -10,6 +10,7 @@ from typing import Literal, Self
 from mypy.version import __version__ as MYPY_VERSION
 from packaging.version import Version
 from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr, model_validator
+from pydantic_core import PydanticCustomError
 
 from sage_mypy_category_plugin.projection import (
     ConcreteParentRecord,
@@ -20,6 +21,7 @@ from sage_mypy_category_plugin.projection import (
 CURRENT_PLUGIN_SCHEMA_VERSION = "1"
 SHA256_HEX_PATTERN = re.compile(r"[0-9a-f]{64}")
 GIT_REVISION_PATTERN = re.compile(r"[0-9a-f]{40}")
+INTRINSIC_MODULES = frozenset(("builtins",))
 
 
 class SourceModuleRecord(BaseModel):
@@ -162,6 +164,25 @@ class ProjectionManifest(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _validate_source_module_coverage(self) -> Self:
+        source_modules = frozenset(record.module for record in self.source_modules)
+        if not source_modules:
+            return self
+
+        missing_symbols = tuple(
+            fullname
+            for fullname in _semantic_fullnames(self)
+            if not _fullname_has_source_module_coverage(fullname, source_modules)
+        )
+        if missing_symbols:
+            raise PydanticCustomError(
+                "source_module_coverage",
+                "source-backed symbols lack source module coverage",
+                {"symbols": ", ".join(missing_symbols)},
+            )
+        return self
+
+    @model_validator(mode="after")
     def _validate_mypy_interval(self) -> Self:
         mypy_min = Version(self.mypy_min_version)
         mypy_max = Version(self.mypy_max_version)
@@ -265,6 +286,59 @@ class ProjectionManifest(BaseModel):
             separators=(",", ":"),
         )
         return sha256(digest_payload.encode()).hexdigest()
+
+
+def _semantic_fullnames(manifest: ProjectionManifest) -> tuple[str, ...]:
+    fullnames: list[str] = []
+    for projection in manifest.projections:
+        fullnames.extend(
+            (
+                projection.provider,
+                projection.runtime_class,
+                *projection.runtime_bases,
+                *projection.runtime_mro,
+                *projection.provider_bases,
+                *projection.provider_mro,
+                *projection.unprojected_runtime_mro,
+            )
+        )
+    for named_class in manifest.named_classes:
+        fullnames.extend(
+            (
+                named_class.category,
+                named_class.provider,
+                named_class.runtime_class,
+                *named_class.runtime_bases,
+                *named_class.runtime_mro,
+            )
+        )
+    for concrete_parent in manifest.concrete_parents:
+        fullnames.extend(
+            (
+                concrete_parent.concrete_class,
+                concrete_parent.runtime_class,
+                *concrete_parent.runtime_mro,
+                concrete_parent.category_class,
+                *concrete_parent.parent_provider_mro,
+                *concrete_parent.element_provider_mro,
+            )
+        )
+        if concrete_parent.element_runtime_class is not None:
+            fullnames.append(concrete_parent.element_runtime_class)
+    return tuple(dict.fromkeys(fullnames))
+
+
+def _fullname_has_source_module_coverage(
+    fullname: str,
+    source_modules: frozenset[str],
+) -> bool:
+    if any(_fullname_belongs_to_module(fullname, module) for module in INTRINSIC_MODULES):
+        return True
+    return any(_fullname_belongs_to_module(fullname, module) for module in source_modules)
+
+
+def _fullname_belongs_to_module(fullname: str, module: str) -> bool:
+    return fullname == module or fullname.startswith(f"{module}.")
 
 
 def load_manifest(path: Path) -> ProjectionManifest:

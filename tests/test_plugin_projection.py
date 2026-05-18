@@ -1100,14 +1100,9 @@ def _write_projected_provider_stubs(
     *,
     projections: tuple[ProviderProjection, ...],
 ) -> tuple[SourceModuleRecord, ...]:
-    source_modules = tuple(
-        SourceModuleRecord(
-            module=module_name,
-            path=str(stub_root.joinpath(*module_name.split(".")).with_suffix(".pyi")),
-            sha256="0" * 64,
-            mtime_ns=0,
-        )
-        for module_name in _projected_provider_module_names(projections)
+    manifest_source_modules = _source_module_records_for_modules(
+        stub_root,
+        _projected_source_module_names(projections),
     )
     manifest = ProjectionManifest(
         schema_version=1,
@@ -1115,21 +1110,98 @@ def _write_projected_provider_stubs(
         sage_version="10.7",
         python_version="3.12.13",
         projections=projections,
-        source_modules=source_modules,
+        source_modules=manifest_source_modules,
     )
-    return write_generated_stub_tree(stub_root, manifest)
+    written_source_modules = {
+        record.module: record for record in write_generated_stub_tree(stub_root, manifest)
+    }
+    for source_module in manifest_source_modules:
+        if source_module.module not in written_source_modules:
+            placeholder = _write_empty_stub_module(stub_root, source_module.module)
+            written_source_modules[placeholder.module] = placeholder
+    return tuple(
+        record
+        for module, record in sorted(
+            written_source_modules.items(),
+            key=lambda item: item[0],
+        )
+    )
 
 
-def _projected_provider_module_names(
+def _source_module_records_for_modules(
+    stub_root: Path,
+    module_names: tuple[str, ...],
+) -> tuple[SourceModuleRecord, ...]:
+    return tuple(
+        SourceModuleRecord(
+            module=module_name,
+            path=str(stub_root.joinpath(*module_name.split(".")).with_suffix(".pyi")),
+            sha256="0" * 64,
+            mtime_ns=0,
+        )
+        for module_name in module_names
+    )
+
+
+def _write_empty_stub_module(stub_root: Path, module_name: str) -> SourceModuleRecord:
+    path = stub_root.joinpath(*module_name.split(".")).with_suffix(".pyi")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _write_stub_package_markers(stub_root, path.parent)
+    path.write_text("")
+    path_bytes = path.read_bytes()
+    path_stat = path.stat()
+    return SourceModuleRecord(
+        module=module_name,
+        path=str(path),
+        sha256=sha256(path_bytes).hexdigest(),
+        mtime_ns=path_stat.st_mtime_ns,
+    )
+
+
+def _write_stub_package_markers(stub_root: Path, package_dir: Path) -> None:
+    current = package_dir
+    packages: list[Path] = []
+    while current != stub_root:
+        packages.append(current)
+        current = current.parent
+    for package in reversed(packages):
+        (package / "__init__.pyi").write_text("")
+
+
+def _projected_source_module_names(
     projections: tuple[ProviderProjection, ...],
 ) -> tuple[str, ...]:
     return tuple(
         dict.fromkeys(
-            _importable_module_name(provider)
-            for projection in projections
-            for provider in projection.provider_mro
+            _importable_module_name(fullname)
+            for fullname in _projection_fullnames(projections)
+            if not _is_intrinsic_fullname(fullname)
         )
     )
+
+
+def _projection_fullnames(
+    projections: tuple[ProviderProjection, ...],
+) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            fullname
+            for projection in projections
+            for fullname in (
+                projection.provider,
+                projection.runtime_class,
+                *projection.runtime_bases,
+                *projection.runtime_mro,
+                *projection.provider_bases,
+                *projection.provider_mro,
+                *projection.unprojected_runtime_mro,
+            )
+        )
+    )
+
+
+def _is_intrinsic_fullname(fullname: str) -> bool:
+    return fullname == "builtins" or fullname.startswith("builtins.")
 
 
 def _importable_module_name(fullname: str) -> str:

@@ -179,6 +179,24 @@ def _manifest_payload() -> dict[str, Any]:
                 "8b1c0f7a6d5e4c3b2a19080706050403",
                 mtime_ns=1_789_000_000_000_000_000,
             ),
+            SourceModuleRecord(
+                module="sage.categories.examples.semigroups",
+                path="sage/categories/examples/semigroups.py",
+                sha256="0" * 64,
+                mtime_ns=1_789_000_000_000_000_001,
+            ),
+            SourceModuleRecord(
+                module="sage.categories.semigroups",
+                path="sage/categories/semigroups.py",
+                sha256="1" * 64,
+                mtime_ns=1_789_000_000_000_000_002,
+            ),
+            SourceModuleRecord(
+                module="sage.structure.parent",
+                path="sage/structure/parent.pyx",
+                sha256="2" * 64,
+                mtime_ns=1_789_000_000_000_000_003,
+            ),
         ),
         concrete_parents=(
             ConcreteParentRecord(
@@ -240,7 +258,25 @@ def test_manifest_round_trips_projection_records(tmp_path: Path) -> None:
             sha256="9f1f7a4a0d0b6dfd7f9d2d2c1d3b5e6a"
             "8b1c0f7a6d5e4c3b2a19080706050403",
             mtime_ns=1_789_000_000_000_000_000,
-        )
+        ),
+        "sage.categories.examples.semigroups": SourceModuleRecord(
+            module="sage.categories.examples.semigroups",
+            path="sage/categories/examples/semigroups.py",
+            sha256="0" * 64,
+            mtime_ns=1_789_000_000_000_000_001,
+        ),
+        "sage.categories.semigroups": SourceModuleRecord(
+            module="sage.categories.semigroups",
+            path="sage/categories/semigroups.py",
+            sha256="1" * 64,
+            mtime_ns=1_789_000_000_000_000_002,
+        ),
+        "sage.structure.parent": SourceModuleRecord(
+            module="sage.structure.parent",
+            path="sage/structure/parent.pyx",
+            sha256="2" * 64,
+            mtime_ns=1_789_000_000_000_000_003,
+        ),
     }
     assert loaded.concrete_parent_by_class == {
         record.concrete_class: record
@@ -379,6 +415,32 @@ def test_manifest_rejects_unresolved_concrete_parent_provider_references() -> No
         ProjectionManifest.model_validate(payload)
 
     assert "unresolved provider reference" in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    "missing_module",
+    (
+        "tests.fixtures.invariant_core.diamond_runtime",
+        "sage.categories.examples.semigroups",
+        "sage.structure.parent",
+    ),
+)
+def test_manifest_rejects_source_backed_symbols_without_module_coverage(
+    missing_module: str,
+) -> None:
+    payload = _manifest_payload()
+    payload["source_modules"] = [
+        source_module
+        for source_module in payload["source_modules"]
+        if source_module["module"] != missing_module
+    ]
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    assert {error["type"] for error in raised.value.errors()} == {
+        "source_module_coverage"
+    }
 
 
 def test_manifest_semantic_digest_is_deterministic_for_equivalent_content() -> None:
