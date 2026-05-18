@@ -168,6 +168,10 @@ def _manifest_path_from_config(options: Options) -> Path:
         raise CompileError([f"Could not read {config_path}"])
     if not parser.has_section(CONFIG_SECTION):
         raise CompileError([f"Missing [{CONFIG_SECTION}] section in {config_path}"])
+    if not parser.has_option(CONFIG_SECTION, "manifest"):
+        raise CompileError(
+            [f"Missing manifest option in [{CONFIG_SECTION}] section of {config_path}"]
+        )
 
     manifest_path = Path(parser.get(CONFIG_SECTION, "manifest"))
     if not manifest_path.is_absolute():

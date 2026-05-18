@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from mypy.build import BuildResult, build
+from mypy.errors import CompileError
 from mypy.modulefinder import BuildSource
 from mypy.nodes import TypeInfo
 from mypy.options import Options
@@ -15,7 +16,10 @@ from sage_mypy_category_plugin.manifest import (
     write_manifest,
 )
 from sage_mypy_category_plugin.oracle import provider_projections_for_categories
-from sage_mypy_category_plugin.plugin import SageCategoryProjectionPlugin
+from sage_mypy_category_plugin.plugin import (
+    CONFIG_SECTION,
+    SageCategoryProjectionPlugin,
+)
 from sage_mypy_category_plugin.projection import ProviderProjection, ProviderRole
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -423,6 +427,30 @@ def test_plugin_reports_semantic_manifest_config_data(tmp_path: Path) -> None:
         manifest.source_module_digest
     )
     assert manifest.source_module_by_module == {FIXTURE_MODULE: DIAMOND_SOURCE_MODULE}
+
+
+def test_plugin_fails_clearly_when_manifest_option_is_missing(tmp_path: Path) -> None:
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                "[sage-mypy-category-plugin]",
+                "",
+            )
+        )
+    )
+    options = Options()
+    options.config_file = str(config_path)
+
+    with pytest.raises(CompileError) as raised:
+        SageCategoryProjectionPlugin(options)
+
+    assert raised.value.messages == [
+        f"Missing manifest option in [{CONFIG_SECTION}] section of {config_path}"
+    ]
 
 
 def test_plugin_resolves_cross_module_provider_bases_via_additional_deps(
