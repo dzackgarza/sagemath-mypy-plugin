@@ -169,7 +169,8 @@ consumer-mypy manifest *args:
   #!/usr/bin/env bash
   set -euo pipefail
   args=({{args}})
-  consumer_root="/home/dzack/research"
+  repo_root="${PWD}"
+  consumer_root="${SAGE_MYPY_CONSUMER_ROOT:-/home/dzack/research}"
   consumer_package="${consumer_root}/category_specs"
   if [[ ! -d "$consumer_package" ]]; then
     printf 'category_specs consumer tree not found at %s\n' "$consumer_package" >&2
@@ -180,8 +181,15 @@ consumer-mypy manifest *args:
     printf 'Generate one with just generate-manifest before running consumer evidence.\n' >&2
     exit 2
   fi
-  config_path="$(mktemp)"
-  trap 'rm -f "$config_path"' EXIT
+  stub_root="$(mktemp -d)"
+  trap 'rm -rf "$stub_root"' EXIT
+  stub_manifest="${stub_root}/projection-manifest.json"
+  config_path="${stub_root}/mypy.ini"
+  sage -python -m sage_mypy_category_plugin.stubs \
+    "{{manifest}}" \
+    "$stub_root" \
+    --manifest-output "$stub_manifest" \
+    --preserve-source-module-prefix category_specs
   cat >"$config_path" <<EOF
   [mypy]
   plugins = sage_mypy_category_plugin.plugin
@@ -189,8 +197,9 @@ consumer-mypy manifest *args:
   explicit_package_bases = True
 
   [sage-mypy-category-plugin]
-  manifest = {{manifest}}
+  manifest = ${stub_manifest}
   EOF
-  export PYTHONPATH="${PWD}:${consumer_root}${PYTHONPATH:+:${PYTHONPATH}}"
+  export PYTHONPATH="${repo_root}:${consumer_root}${PYTHONPATH:+:${PYTHONPATH}}"
+  export MYPYPATH="${stub_root}${MYPYPATH:+:${MYPYPATH}}"
   cd "$consumer_root"
   sage -python -m mypy --config-file "$config_path" category_specs "${args[@]}"
