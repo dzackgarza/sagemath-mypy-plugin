@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr, model_validato
 from sage_mypy_category_plugin.projection import (
     ConcreteParentRecord,
     ProviderProjection,
+    ProviderRole,
 )
 
 CURRENT_PLUGIN_SCHEMA_VERSION = "1"
@@ -41,6 +42,20 @@ class SourceModuleRecord(BaseModel):
         return self
 
 
+class NamedClassRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    category: StrictStr
+    provider: StrictStr
+    role: ProviderRole
+    trace_source: StrictStr
+    runtime_class: StrictStr
+    runtime_bases: tuple[StrictStr, ...]
+    runtime_mro: tuple[StrictStr, ...]
+    runtime_attr: StrictStr
+    provider_attr: StrictStr
+
+
 class ProjectionManifest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -52,6 +67,7 @@ class ProjectionManifest(BaseModel):
     mypy_min_version: StrictStr = "0.0.0"
     mypy_max_version: StrictStr = "9999.9999.9999"
     python_version: StrictStr
+    named_classes: tuple[NamedClassRecord, ...] = ()
     projections: tuple[ProviderProjection, ...]
     source_modules: tuple[SourceModuleRecord, ...] = ()
     concrete_parents: tuple[ConcreteParentRecord, ...] = ()
@@ -89,6 +105,23 @@ class ProjectionManifest(BaseModel):
             raise ValueError(
                 "duplicate source module records: "
                 + ", ".join(duplicate_source_modules)
+            )
+
+        named_class_keys = tuple(
+            (record.role, record.provider) for record in self.named_classes
+        )
+        duplicate_named_classes = tuple(
+            key
+            for key in dict.fromkeys(named_class_keys)
+            if named_class_keys.count(key) > 1
+        )
+        if duplicate_named_classes:
+            duplicate_descriptions = tuple(
+                f"{role}:{provider}" for role, provider in duplicate_named_classes
+            )
+            raise ValueError(
+                "duplicate named class records: "
+                + ", ".join(duplicate_descriptions)
             )
 
         concrete_classes = tuple(
@@ -209,6 +242,23 @@ class ProjectionManifest(BaseModel):
                         key=lambda record: record.concrete_class,
                     )
                 ),
+                "named_classes": tuple(
+                    (
+                        record.category,
+                        record.provider,
+                        record.role,
+                        record.trace_source,
+                        record.runtime_class,
+                        record.runtime_bases,
+                        record.runtime_mro,
+                        record.runtime_attr,
+                        record.provider_attr,
+                    )
+                    for record in sorted(
+                        self.named_classes,
+                        key=lambda record: (record.role, record.provider),
+                    )
+                ),
                 "projections": projections,
             },
             sort_keys=True,
@@ -230,6 +280,7 @@ def write_manifest(path: Path, manifest: ProjectionManifest) -> None:
 
 __all__ = [
     "ConcreteParentRecord",
+    "NamedClassRecord",
     "SourceModuleRecord",
     "ProjectionManifest",
     "load_manifest",

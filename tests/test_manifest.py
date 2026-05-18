@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from sage_mypy_category_plugin.manifest import (
     CURRENT_PLUGIN_SCHEMA_VERSION,
+    NamedClassRecord,
     ProjectionManifest,
     SourceModuleRecord,
     load_manifest,
@@ -115,6 +116,41 @@ def _right_projection() -> ProviderProjection:
                 "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ParentMethods",
             ),
         }
+    )
+
+
+def _named_class_record() -> NamedClassRecord:
+    return NamedClassRecord(
+        category="tests.fixtures.invariant_core.diamond_runtime.BottomCategory_with_category",
+        provider=(
+            "tests.fixtures.invariant_core.diamond_runtime."
+            "BottomCategory.ParentMethods"
+        ),
+        role="parent",
+        trace_source="Category._make_named_class",
+        runtime_class=(
+            "tests.fixtures.invariant_core.diamond_runtime."
+            "BottomCategory.parent_class"
+        ),
+        runtime_bases=(
+            "tests.fixtures.invariant_core.diamond_runtime."
+            "RightCategory.parent_class",
+            "tests.fixtures.invariant_core.diamond_runtime."
+            "LeftCategory.parent_class",
+        ),
+        runtime_mro=(
+            "tests.fixtures.invariant_core.diamond_runtime."
+            "BottomCategory.parent_class",
+            "tests.fixtures.invariant_core.diamond_runtime."
+            "RightCategory.parent_class",
+            "tests.fixtures.invariant_core.diamond_runtime."
+            "LeftCategory.parent_class",
+            "tests.fixtures.invariant_core.diamond_runtime."
+            "TopCategory.parent_class",
+            "builtins.object",
+        ),
+        runtime_attr="parent_class",
+        provider_attr="ParentMethods",
     )
 
 
@@ -282,6 +318,17 @@ def test_manifest_rejects_duplicate_source_module_records() -> None:
     assert "duplicate source module" in str(raised.value)
 
 
+def test_manifest_rejects_duplicate_named_class_records() -> None:
+    payload = _manifest_payload()
+    named_class_record = _named_class_record().model_dump(mode="json")
+    payload["named_classes"] = [named_class_record, deepcopy(named_class_record)]
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    assert "duplicate named class" in str(raised.value)
+
+
 def test_manifest_rejects_malformed_source_module_hash() -> None:
     payload = _manifest_payload()
     payload["source_modules"][0]["sha256"] = "not-a-sha256"
@@ -365,6 +412,19 @@ def test_manifest_semantic_digest_tracks_projection_changes() -> None:
     mutated_manifest = ProjectionManifest.model_validate(mutated_payload)
 
     assert base_manifest.semantic_projection_digest != mutated_manifest.semantic_projection_digest
+
+
+def test_manifest_semantic_digest_tracks_named_class_trace_changes() -> None:
+    base_payload = _manifest_payload()
+    base_payload["named_classes"] = [_named_class_record().model_dump(mode="json")]
+    base_manifest = ProjectionManifest.model_validate(base_payload)
+    mutated_payload = base_manifest.model_dump(mode="json")
+    mutated_payload["named_classes"][0]["runtime_attr"] = "element_class"
+    mutated_manifest = ProjectionManifest.model_validate(mutated_payload)
+
+    assert base_manifest.semantic_projection_digest != (
+        mutated_manifest.semantic_projection_digest
+    )
 
 
 def test_manifest_source_module_digest_tracks_source_hash_changes() -> None:

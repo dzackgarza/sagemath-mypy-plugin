@@ -76,6 +76,38 @@ def test_resolver_manifest_round_trip_preserves_bottom_parent_mro(tmp_path: Path
     )
 
 
+def test_resolver_manifest_preserves_named_class_trace_records(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "sage-category-projections.json"
+    resolver.main(
+        [
+            "--output",
+            str(manifest_path),
+            "--role",
+            "parent",
+            *FIXTURE_CATEGORIES,
+        ]
+    )
+    manifest = load_manifest(manifest_path)
+    projection = manifest.projection_by_provider[BOTTOM_PARENT_PROVIDER]
+    trace = next(
+        record
+        for record in manifest.named_classes
+        if record.provider == BOTTOM_PARENT_PROVIDER
+    )
+
+    assert trace.category == f"{FIXTURE_MODULE}.BottomCategory_with_category"
+    assert trace.provider == BOTTOM_PARENT_PROVIDER
+    assert trace.role == "parent"
+    assert trace.trace_source == "Category._make_named_class"
+    assert trace.runtime_class == projection.runtime_class
+    assert trace.runtime_bases == projection.runtime_bases
+    assert trace.runtime_mro == projection.runtime_mro
+    assert trace.runtime_attr == "parent_class"
+    assert trace.provider_attr == "ParentMethods"
+
+
 def test_resolver_accepts_homset_provider_roles(tmp_path: Path) -> None:
     manifest_path = tmp_path / "sage-category-homsets.json"
     resolver.main(

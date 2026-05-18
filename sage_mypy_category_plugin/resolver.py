@@ -11,12 +11,14 @@ from typing import Sequence, cast, get_args
 from mypy.version import __version__ as MYPY_VERSION
 
 from sage_mypy_category_plugin.manifest import (
+    NamedClassRecord,
     ProjectionManifest,
     SourceModuleRecord,
     write_manifest,
 )
 from sage_mypy_category_plugin.oracle import (
     concrete_parent_records_for_factories,
+    named_class_traces,
     provider_projections_for_categories,
 )
 from sage_mypy_category_plugin.projection import (
@@ -58,6 +60,7 @@ def resolve_projection_manifest(
         python_version=f"{version_info.major}.{version_info.minor}.{version_info.micro}",
         mypy_min_version=mypy_min_version,
         mypy_max_version=mypy_max_version,
+        named_classes=_named_class_records(),
         projections=tuple(projections.values()),
         concrete_parents=concrete_parents,
         source_modules=_source_module_records(
@@ -65,6 +68,23 @@ def resolve_projection_manifest(
             projections=projections.values(),
             concrete_parents=concrete_parents,
         ),
+    )
+
+
+def _named_class_records() -> tuple[NamedClassRecord, ...]:
+    return tuple(
+        NamedClassRecord(
+            category=trace.category,
+            provider=trace.provider,
+            role=trace.role,
+            trace_source=trace.trace_source,
+            runtime_class=trace.runtime_class,
+            runtime_bases=trace.runtime_bases,
+            runtime_mro=trace.runtime_mro,
+            runtime_attr=trace.runtime_attr,
+            provider_attr=trace.provider_attr,
+        )
+        for trace in named_class_traces()
     )
 
 
