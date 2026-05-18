@@ -164,6 +164,31 @@ class ProjectionManifest(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _validate_named_class_projection_consistency(self) -> Self:
+        projection_by_provider = self.projection_by_provider
+        for named_class in self.named_classes:
+            projection = projection_by_provider.get(named_class.provider)
+            if projection is None:
+                raise PydanticCustomError(
+                    "named_class_projection_mismatch",
+                    "named class trace has no matching provider projection",
+                    {"provider": named_class.provider, "field": "provider"},
+                )
+            for field_name, traced_value, projected_value in (
+                ("role", named_class.role, projection.role),
+                ("runtime_class", named_class.runtime_class, projection.runtime_class),
+                ("runtime_bases", named_class.runtime_bases, projection.runtime_bases),
+                ("runtime_mro", named_class.runtime_mro, projection.runtime_mro),
+            ):
+                if traced_value != projected_value:
+                    raise PydanticCustomError(
+                        "named_class_projection_mismatch",
+                        "named class trace disagrees with provider projection",
+                        {"provider": named_class.provider, "field": field_name},
+                    )
+        return self
+
+    @model_validator(mode="after")
     def _validate_source_module_coverage(self) -> Self:
         source_modules = frozenset(record.module for record in self.source_modules)
         if not source_modules:

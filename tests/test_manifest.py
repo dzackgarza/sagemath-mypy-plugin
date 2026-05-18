@@ -365,6 +365,67 @@ def test_manifest_rejects_duplicate_named_class_records() -> None:
     assert "duplicate named class" in str(raised.value)
 
 
+@pytest.mark.parametrize(
+    ("mutation", "expected_field"),
+    (
+        ({"role": "element"}, "role"),
+        (
+            {
+                "runtime_class": (
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "TopCategory.parent_class"
+                )
+            },
+            "runtime_class",
+        ),
+        (
+            {
+                "runtime_bases": (
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "LeftCategory.parent_class",
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "RightCategory.parent_class",
+                )
+            },
+            "runtime_bases",
+        ),
+        (
+            {
+                "runtime_mro": (
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "BottomCategory.parent_class",
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "LeftCategory.parent_class",
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "RightCategory.parent_class",
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "TopCategory.parent_class",
+                    "builtins.object",
+                )
+            },
+            "runtime_mro",
+        ),
+    ),
+)
+def test_manifest_rejects_named_class_trace_projection_mismatch(
+    mutation: dict[str, Any],
+    expected_field: str,
+) -> None:
+    payload = _manifest_payload()
+    named_class_record = _named_class_record().model_dump(mode="json")
+    named_class_record.update(mutation)
+    payload["named_classes"] = [named_class_record]
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    errors = raised.value.errors()
+    assert {error["type"] for error in errors} == {
+        "named_class_projection_mismatch"
+    }
+    assert errors[0]["ctx"]["field"] == expected_field
+
+
 def test_manifest_rejects_malformed_source_module_hash() -> None:
     payload = _manifest_payload()
     payload["source_modules"][0]["sha256"] = "not-a-sha256"
