@@ -889,6 +889,33 @@ def test_plugin_fails_clearly_when_manifest_option_is_missing(tmp_path: Path) ->
     ]
 
 
+def test_plugin_fails_clearly_when_manifest_file_is_missing(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "missing-manifest.json"
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+    options = Options()
+    options.config_file = str(config_path)
+
+    with pytest.raises(CompileError) as raised:
+        SageCategoryProjectionPlugin(options)
+
+    assert raised.value.messages == [
+        f"Could not read Sage category projection manifest {manifest_path}: "
+        "file is missing"
+    ]
+
+
 def test_plugin_fails_clearly_for_invalid_manifest_schema(tmp_path: Path) -> None:
     projections = _provider_projections(
         CATEGORY_FULLNAMES,

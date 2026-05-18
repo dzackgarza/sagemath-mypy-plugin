@@ -207,6 +207,13 @@ def _manifest_path_from_config(options: Options) -> Path:
 def _load_manifest_for_plugin(path: Path) -> ProjectionManifest:
     try:
         return load_manifest(path)
+    except FileNotFoundError as error:
+        raise CompileError(
+            [
+                f"Could not read Sage category projection manifest {path}: "
+                "file is missing"
+            ]
+        ) from error
     except ValidationError as error:
         raise CompileError(
             [
