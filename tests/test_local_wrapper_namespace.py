@@ -31,6 +31,7 @@ Surfaces covered:
     Method-container receiver runtime bases — test_plugin_receiver_runtime_base_correctness
     Concrete receiver class override bases — test_plugin_receiver_runtime_class_override_correctness
     Imported receiver class override bases — test_plugin_receiver_imported_runtime_class_override_correctness
+    Refined runtime object override bases — test_plugin_receiver_refine_category_runtime_object_correctness
     ParentMethods runtime parent methods — test_plugin_parent_runtime_change_ring_correctness
     SubcategoryMethods base_category receiver — test_plugin_subcategory_base_category_receiver_correctness
     Aliased receiver self surfaces — test_plugin_alias_receiver_self_surface_correctness
@@ -370,6 +371,14 @@ def test_plugin_receiver_imported_runtime_class_override_correctness() -> None:
     """ParentMethods may override methods from imported Sage receiver classes."""
     _assert_override_conjunction(
         "test_receiver_imported_runtime_class_override",
+        "test_invalid_override",
+    )
+
+
+def test_plugin_receiver_refine_category_runtime_object_correctness() -> None:
+    """ParentMethods may override methods from runtime objects passed to refine_category."""
+    _assert_override_conjunction(
+        "test_receiver_refine_category_runtime_object",
         "test_invalid_override",
     )
 

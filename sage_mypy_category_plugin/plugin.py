@@ -14,7 +14,7 @@ from __future__ import annotations
 import configparser
 import csv
 import logging
-from typing import Any, Callable, Tuple
+from typing import Any, Callable, NamedTuple, Tuple
 from mypy.build import PRI_MED
 from mypy.errorcodes import ErrorCode
 from mypy.mro import MroError, calculate_mro
@@ -64,6 +64,12 @@ from mypy.typevars import fill_typevars
 
 
 _LOG = logging.getLogger(__name__)
+
+
+class _RefineCategoryCallSite(NamedTuple):
+    module_name: str
+    call: CallExpr
+    local_imports: dict[str, str]
 
 SAGE_CATEGORY_UNRESOLVED = ErrorCode(
     "sage-category-unresolved",
@@ -191,6 +197,7 @@ class SageCategoryPlugin(Plugin):
         _materialize_operator_helpers(ctx, info)
         runtime_base_ti = _receiver_runtime_base_typeinfo(ctx, info)
         runtime_body_tis = _receiver_runtime_body_typeinfos(ctx, ctx.cls, info)
+        runtime_refine_tis = _receiver_refine_category_typeinfos(ctx, info)
         if _has_explicit_non_object_base(info):
             return
 
@@ -301,6 +308,7 @@ class SageCategoryPlugin(Plugin):
             base_tis.append(ti)
 
         base_tis.extend(runtime_body_tis)
+        base_tis.extend(runtime_refine_tis)
         if runtime_base_ti is not None:
             base_tis.append(runtime_base_ti)
 
@@ -655,6 +663,281 @@ def _receiver_runtime_body_typeinfos(
                 continue
             candidates.append(_receiver_method_provider_typeinfo(candidate, needed_names))
     return tuple(dict.fromkeys(candidates))
+
+
+def _receiver_refine_category_typeinfos(
+    ctx: ClassDefContext,
+    info: TypeInfo,
+) -> tuple[TypeInfo, ...]:
+    if _method_container_kind_for_typeinfo(ctx, info) != "ParentMethods":
+        return ()
+    owner = _lookup_enclosing_category_typeinfo(ctx, info)
+    if owner is None:
+        return ()
+    needed_names = _explicit_override_method_names(info)
+    if not needed_names:
+        return ()
+    candidates: list[TypeInfo] = []
+    for module_name, module in ctx.api.modules.items():
+        for statement in _module_statements(module):
+            for call_site in _refine_category_call_sites_from_statement(
+                module_name,
+                statement,
+                {},
+            ):
+                candidate = _refine_category_runtime_typeinfo(
+                    ctx,
+                    owner,
+                    call_site,
+                )
+                if candidate is None:
+                    continue
+                if not _typeinfo_defines_any_name(candidate, needed_names):
+                    continue
+                candidates.append(
+                    _receiver_method_provider_typeinfo(candidate, needed_names)
+                )
+    return tuple(dict.fromkeys(candidates))
+
+
+def _refine_category_runtime_typeinfo(
+    ctx: ClassDefContext,
+    owner: TypeInfo,
+    call_site: _RefineCategoryCallSite,
+) -> TypeInfo | None:
+    call = call_site.call
+    if len(call.args) < 2:
+        return None
+    callee = call.callee
+    if not isinstance(callee, RefExpr) or callee.name != "refine_category":
+        return None
+    if not _refine_category_targets_owner(ctx, owner, call_site, call.args[1]):
+        return None
+    return _runtime_typeinfo_from_call_site_expr(ctx, call_site, call.args[0])
+
+
+def _refine_category_targets_owner(
+    ctx: ClassDefContext,
+    owner: TypeInfo,
+    call_site: _RefineCategoryCallSite,
+    expr: Expression,
+) -> bool:
+    if not isinstance(expr, ListExpr | TupleExpr):
+        return False
+    for item in expr.items:
+        category = _typeinfo_from_call_site_expr(ctx, call_site, item)
+        if category is not None and category.fullname == owner.fullname:
+            return True
+    return False
+
+
+def _refine_category_call_sites_from_statement(
+    module_name: str,
+    statement: Any,
+    local_imports: dict[str, str],
+) -> tuple[_RefineCategoryCallSite, ...]:
+    call_sites: list[_RefineCategoryCallSite] = []
+    if isinstance(statement, ClassDef):
+        return _refine_category_call_sites_from_block(
+            module_name,
+            statement.defs,
+            local_imports,
+        )
+    if isinstance(statement, Decorator):
+        return _refine_category_call_sites_from_statement(
+            module_name,
+            statement.func,
+            local_imports,
+        )
+    if isinstance(statement, FuncDef):
+        return _refine_category_call_sites_from_block(module_name, statement.body, {})
+    if isinstance(statement, IfStmt):
+        call_sites.extend(
+            _refine_category_call_sites_from_exprs(
+                module_name,
+                statement.expr,
+                local_imports,
+            )
+        )
+        for block in statement.body:
+            call_sites.extend(
+                _refine_category_call_sites_from_block(
+                    module_name,
+                    block,
+                    dict(local_imports),
+                )
+            )
+        if statement.else_body is not None:
+            call_sites.extend(
+                _refine_category_call_sites_from_block(
+                    module_name,
+                    statement.else_body,
+                    dict(local_imports),
+                )
+            )
+        return tuple(call_sites)
+    if isinstance(statement, Block):
+        return _refine_category_call_sites_from_block(
+            module_name,
+            statement,
+            local_imports,
+        )
+    expr = getattr(statement, "expr", None)
+    if expr is not None:
+        call_sites.extend(
+            _refine_category_call_sites_from_expr(module_name, expr, local_imports)
+        )
+    rvalue = getattr(statement, "rvalue", None)
+    if rvalue is not None:
+        call_sites.extend(
+            _refine_category_call_sites_from_expr(module_name, rvalue, local_imports)
+        )
+    return tuple(call_sites)
+
+
+def _refine_category_call_sites_from_block(
+    module_name: str,
+    block: Block,
+    local_imports: dict[str, str],
+) -> tuple[_RefineCategoryCallSite, ...]:
+    visible_imports = dict(local_imports)
+    call_sites: list[_RefineCategoryCallSite] = []
+    for statement in block.body:
+        if isinstance(statement, ImportFrom):
+            visible_imports.update(_local_import_fullnames(module_name, statement))
+            continue
+        call_sites.extend(
+            _refine_category_call_sites_from_statement(
+                module_name,
+                statement,
+                visible_imports,
+            )
+        )
+    return tuple(call_sites)
+
+
+def _local_import_fullnames(
+    module_name: str,
+    statement: ImportFrom,
+) -> dict[str, str]:
+    target_module = _resolve_import_from_module(module_name, statement)
+    if target_module is None:
+        return {}
+    return {
+        alias or imported_name: f"{target_module}.{imported_name}"
+        for imported_name, alias in statement.names
+    }
+
+
+def _refine_category_call_sites_from_exprs(
+    module_name: str,
+    exprs: Any,
+    local_imports: dict[str, str],
+) -> tuple[_RefineCategoryCallSite, ...]:
+    if isinstance(exprs, list | tuple):
+        call_sites: list[_RefineCategoryCallSite] = []
+        for expr in exprs:
+            call_sites.extend(
+                _refine_category_call_sites_from_expr(
+                    module_name,
+                    expr,
+                    local_imports,
+                )
+            )
+        return tuple(call_sites)
+    return _refine_category_call_sites_from_expr(module_name, exprs, local_imports)
+
+
+def _refine_category_call_sites_from_expr(
+    module_name: str,
+    expr: Any,
+    local_imports: dict[str, str],
+) -> tuple[_RefineCategoryCallSite, ...]:
+    call_sites: list[_RefineCategoryCallSite] = []
+    if isinstance(expr, CallExpr):
+        if isinstance(expr.callee, RefExpr) and expr.callee.name == "refine_category":
+            call_sites.append(
+                _RefineCategoryCallSite(module_name, expr, dict(local_imports))
+            )
+        call_sites.extend(
+            _refine_category_call_sites_from_expr(
+                module_name,
+                expr.callee,
+                local_imports,
+            )
+        )
+        for arg in expr.args:
+            call_sites.extend(
+                _refine_category_call_sites_from_expr(module_name, arg, local_imports)
+            )
+        return tuple(call_sites)
+    if isinstance(expr, MemberExpr):
+        return _refine_category_call_sites_from_expr(
+            module_name,
+            expr.expr,
+            local_imports,
+        )
+    if isinstance(expr, CastExpr):
+        return _refine_category_call_sites_from_expr(
+            module_name,
+            expr.expr,
+            local_imports,
+        )
+    if isinstance(expr, ListExpr | TupleExpr):
+        for item in expr.items:
+            call_sites.extend(
+                _refine_category_call_sites_from_expr(module_name, item, local_imports)
+            )
+        return tuple(call_sites)
+    nested = getattr(expr, "expr", None)
+    if nested is not None:
+        call_sites.extend(
+            _refine_category_call_sites_from_expr(module_name, nested, local_imports)
+        )
+    return tuple(call_sites)
+
+
+def _runtime_typeinfo_from_call_site_expr(
+    ctx: ClassDefContext,
+    call_site: _RefineCategoryCallSite,
+    expr: Expression,
+) -> TypeInfo | None:
+    if isinstance(expr, CallExpr):
+        return _typeinfo_from_call_site_expr(ctx, call_site, expr.callee)
+    return _typeinfo_from_call_site_expr(ctx, call_site, expr)
+
+
+def _typeinfo_from_call_site_expr(
+    ctx: ClassDefContext,
+    call_site: _RefineCategoryCallSite,
+    expr: Expression,
+) -> TypeInfo | None:
+    if isinstance(expr, CallExpr):
+        return _typeinfo_from_call_site_expr(ctx, call_site, expr.callee)
+    direct = _typeinfo_from_expr(expr)
+    if direct is not None:
+        return direct
+    if isinstance(expr, RefExpr) and expr.name in call_site.local_imports:
+        local_import = call_site.local_imports[expr.name]
+        found = _lookup_typeinfo(ctx, local_import)
+        if found is not None:
+            return found
+        target_module, _, imported_name = local_import.rpartition(".")
+        if target_module:
+            found = _typeinfo_from_module_assignment(ctx, target_module, imported_name)
+            if found is not None:
+                return found
+    if isinstance(expr, RefExpr) and expr.fullname:
+        found = _lookup_typeinfo(ctx, expr.fullname)
+        if found is not None:
+            return found
+    if isinstance(expr, RefExpr):
+        return (
+            _typeinfo_from_imported_name(ctx, call_site.module_name, expr.name)
+            or _typeinfo_from_module_assignment(ctx, call_site.module_name, expr.name)
+            or _lookup_typeinfo(ctx, f"{call_site.module_name}.{expr.name}")
+        )
+    return None
 
 
 def _receiver_method_provider_typeinfo(
