@@ -27,9 +27,11 @@ from mypy.nodes import (
     CallExpr,
     ClassDef,
     Decorator,
+    Expression,
     IS_ABSTRACT,
     IfStmt,
     ImportFrom,
+    ListExpr,
     MDEF,
     MemberExpr,
     NameExpr,
@@ -805,6 +807,19 @@ def _projected_method_container_bases(
                 for name in override_names
             ):
                 bases.append(base)
+    missing_names = frozenset(
+        name
+        for name in override_names
+        if not _projected_bases_define_name(ctx, tuple(bases), name)
+    )
+    if missing_names:
+        bases.extend(
+            _static_bases_defining_names(
+                ctx,
+                _resolve_static_category_method_container_bases(ctx, info),
+                missing_names,
+            )
+        )
     return tuple(dict.fromkeys(bases))
 
 
@@ -936,6 +951,10 @@ def _resolve_static_category_method_container_bases(
         provider = _method_container_provider_typeinfo(ctx, axiom_base, info.name)
         if provider is not None:
             bases.append(provider.fullname)
+    for extra_super in _static_extra_super_category_typeinfos(ctx, enclosing_cat):
+        provider = _method_container_provider_typeinfo(ctx, extra_super, info.name)
+        if provider is not None:
+            bases.append(provider.fullname)
     bases.extend(
         _resolve_static_construction_owner_method_container_bases(
             ctx,
@@ -947,6 +966,99 @@ def _resolve_static_category_method_container_bases(
         _resolve_python_category_method_container_bases(ctx, enclosing_cat, info.name)
     )
     return tuple(dict.fromkeys(bases))
+
+
+def _static_extra_super_category_typeinfos(
+    ctx: ClassDefContext,
+    category: TypeInfo,
+) -> tuple[TypeInfo, ...]:
+    extras: list[TypeInfo] = []
+    for method in _class_methods_named(category, "extra_super_categories"):
+        for expr in _return_expressions(method.body):
+            for item in _category_items_from_return_expr(expr):
+                ti = _typeinfo_from_static_category_expr(ctx, item)
+                if ti is not None:
+                    extras.append(ti)
+    return tuple(dict.fromkeys(extras))
+
+
+def _class_methods_named(info: TypeInfo, name: str) -> tuple[FuncDef, ...]:
+    methods: list[FuncDef] = []
+    for statement in getattr(info.defn.defs, "body", ()):
+        func = statement.func if isinstance(statement, Decorator) else statement
+        if isinstance(func, FuncDef) and func.name == name:
+            methods.append(func)
+    return tuple(methods)
+
+
+def _return_expressions(block: Block) -> tuple[Expression, ...]:
+    expressions: list[Expression] = []
+    for statement in block.body:
+        if isinstance(statement, ReturnStmt) and statement.expr is not None:
+            expressions.append(statement.expr)
+        elif isinstance(statement, IfStmt):
+            for nested in statement.body:
+                expressions.extend(_return_expressions(nested))
+            if statement.else_body is not None:
+                expressions.extend(_return_expressions(statement.else_body))
+        elif isinstance(statement, Block):
+            expressions.extend(_return_expressions(statement))
+    return tuple(expressions)
+
+
+def _category_items_from_return_expr(expr: Expression) -> tuple[Expression, ...]:
+    if isinstance(expr, ListExpr):
+        return tuple(expr.items)
+    if isinstance(expr, TupleExpr):
+        return tuple(expr.items)
+    return (expr,)
+
+
+def _typeinfo_from_static_category_expr(
+    ctx: ClassDefContext,
+    expr: Expression,
+) -> TypeInfo | None:
+    direct = _typeinfo_from_expr(expr)
+    if direct is not None:
+        return direct
+    if isinstance(expr, RefExpr) and expr.fullname is not None:
+        referenced = _lookup_typeinfo(ctx, expr.fullname)
+        if referenced is not None:
+            return referenced
+    if isinstance(expr, RefExpr):
+        local = _local_typeinfo_named(ctx, expr.name)
+        if local is not None:
+            return local
+    if isinstance(expr, CallExpr):
+        return _typeinfo_from_static_category_call(ctx, expr)
+    return None
+
+
+def _typeinfo_from_static_category_call(
+    ctx: ClassDefContext,
+    expr: CallExpr,
+) -> TypeInfo | None:
+    callee = expr.callee
+    if isinstance(callee, MemberExpr):
+        if callee.name == "an_instance":
+            returned = _typeinfo_from_symbol_node(callee.node)
+            if returned is not None:
+                return returned
+            return _typeinfo_from_static_category_expr(ctx, callee.expr)
+        return None
+    if isinstance(callee, RefExpr):
+        return _typeinfo_from_symbol_node(callee.node)
+    return None
+
+
+def _local_typeinfo_named(ctx: ClassDefContext, name: str) -> TypeInfo | None:
+    module = ctx.api.modules.get(ctx.cls.info.module_name)
+    if module is None:
+        return None
+    symbol = module.names.get(name)
+    if symbol is None:
+        return None
+    return _typeinfo_from_symbol_node(symbol.node)
 
 
 def _resolve_static_construction_owner_method_container_bases(
@@ -1610,6 +1722,13 @@ def _typeinfo_from_symbol_node(node: Any) -> TypeInfo | None:
             item = get_proper_type(target.item)
             if isinstance(item, Instance):
                 return item.type
+    raw_type = getattr(node, "type", None)
+    if raw_type is not None:
+        typ = get_proper_type(raw_type)
+        if isinstance(typ, CallableType):
+            ret = get_proper_type(typ.ret_type)
+            if isinstance(ret, Instance):
+                return ret.type
     if not isinstance(node, Var) or node.type is None:
         return None
     typ = get_proper_type(node.type)

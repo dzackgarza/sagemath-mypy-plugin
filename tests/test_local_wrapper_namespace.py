@@ -51,6 +51,7 @@ Surfaces covered:
     Covariant container assignment — test_plugin_covariant_assignment_correctness
     Relative-import axiom base categories — test_plugin_relative_import_axiom_base_correctness
     Base-category subcategory selectors — test_plugin_base_category_subcategory_selector_correctness
+    Static extra-super method containers — test_plugin_static_extra_super_method_container_correctness
 """
 from __future__ import annotations
 
@@ -373,6 +374,14 @@ def test_plugin_base_category_subcategory_selector_correctness() -> None:
     _assert_clean_conjunction(
         "test_base_category_subcategory_selector",
         "[attr-defined]",
+    )
+
+
+def test_plugin_static_extra_super_method_container_correctness() -> None:
+    """Static fallback reads extra_super_categories() when runtime projection fails."""
+    _assert_override_conjunction(
+        "test_static_extra_super_method_container",
+        "test_invalid_override",
     )
 
 
