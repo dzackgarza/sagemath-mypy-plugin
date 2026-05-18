@@ -49,6 +49,7 @@ Surfaces covered:
     Aliased provider type aliases — test_plugin_alias_provider_type_alias_correctness
     Cross-module aliased provider type aliases — test_plugin_cross_module_alias_provider_type_alias_correctness
     Covariant container assignment — test_plugin_covariant_assignment_correctness
+    Relative-import axiom base categories — test_plugin_relative_import_axiom_base_correctness
 """
 from __future__ import annotations
 
@@ -62,7 +63,7 @@ _LOCAL_WRAPPER_FIXTURES = (
 )
 _CONFIG_WITH_PLUGIN = Path(__file__).resolve().parent / "mypy_test.ini"
 _CONFIG_WITHOUT_PLUGIN = Path(__file__).resolve().parent / "mypy_no_plugin.ini"
-_FIXTURE_FILES = tuple(sorted(_LOCAL_WRAPPER_FIXTURES.glob("test_*.py")))
+_FIXTURE_FILES = tuple(sorted(_LOCAL_WRAPPER_FIXTURES.rglob("test_*.py")))
 _FIXTURE_BY_NAME = {path.stem: path for path in _FIXTURE_FILES}
 _FATAL_MYPY_MARKERS = (
     "INTERNAL ERROR",
@@ -354,6 +355,14 @@ def test_plugin_static_axiom_base_receiver_self_correctness() -> None:
     """Axiom metadata supplies semantic bases when runtime projection is unavailable."""
     _assert_override_conjunction(
         "test_static_axiom_base_receiver_self",
+        "test_invalid_override",
+    )
+
+
+def test_plugin_relative_import_axiom_base_correctness() -> None:
+    """Axiom metadata may name a category imported from a parent package."""
+    _assert_override_conjunction(
+        "test_relative_axiom_over_pid",
         "test_invalid_override",
     )
 

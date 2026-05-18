@@ -29,6 +29,7 @@ from mypy.nodes import (
     Decorator,
     IS_ABSTRACT,
     IfStmt,
+    ImportFrom,
     MDEF,
     MemberExpr,
     NameExpr,
@@ -263,12 +264,18 @@ class SageCategoryPlugin(Plugin):
                 ti,
                 materialize=True,
             )
+            missing_required_names = frozenset(
+                name
+                for name in _explicit_override_method_names(info)
+                if not _typeinfo_defines_name(ti, name)
+            )
             if (
-                self._ensure_projected_base_mro(
+                missing_required_names
+                and self._ensure_projected_base_mro(
                     ctx,
                     ti,
                     {info.fullname},
-                    _explicit_override_method_names(info),
+                    missing_required_names,
                 )
                 and not ctx.api.final_iteration
             ):
@@ -345,7 +352,11 @@ class SageCategoryPlugin(Plugin):
         if info.fullname in seen:
             return False
         seen.add(info.fullname)
+        if not _looks_like_method_container(info.fullname):
+            return False
         if _has_explicit_non_object_base(info):
+            return False
+        if all(_typeinfo_defines_name(info, name) for name in required_names):
             return False
 
         projection = self._resolve_projection(ctx, info.fullname)
@@ -377,14 +388,22 @@ class SageCategoryPlugin(Plugin):
                 if not ctx.api.final_iteration:
                     deferred = True
                 continue
+            if ti.fullname in seen:
+                continue
             _recover_method_helper_bindings(
                 ctx.api,
                 ctx.api.modules.get(ti.module_name),
                 ti,
                 materialize=True,
             )
-            if self._ensure_projected_base_mro(ctx, ti, seen, required_names):
+            branch_seen = set(seen)
+            if self._ensure_projected_base_mro(ctx, ti, branch_seen, required_names):
                 deferred = True
+            if (
+                not _looks_like_method_container(info.fullname)
+                and _typeinfo_mro_intersects_names(ti, branch_seen)
+            ):
+                continue
             base_tis.append(ti)
 
         if deferred:
@@ -870,6 +889,10 @@ def _typeinfo_defines_name(info: TypeInfo, name: str) -> bool:
     )
 
 
+def _typeinfo_mro_intersects_names(info: TypeInfo, names: set[str]) -> bool:
+    return any(base.fullname in names for base in getattr(info, "mro", [])[1:])
+
+
 def _dedupe_instances(instances: list[Instance]) -> list[Instance]:
     seen: set[str] = set()
     deduped: list[Instance] = []
@@ -890,7 +913,7 @@ def _resolve_static_category_method_container_bases(
     if enclosing_cat is None:
         return ()
     bases: list[str] = []
-    for axiom_base in _receiver_self_typeinfo_candidates(enclosing_cat)[1:]:
+    for axiom_base in _receiver_self_typeinfo_candidates(ctx, enclosing_cat)[1:]:
         provider = _method_container_provider_typeinfo(ctx, axiom_base, info.name)
         if provider is not None:
             bases.append(provider.fullname)
@@ -953,7 +976,10 @@ def _method_container_provider_typeinfo(
     return _lookup_typeinfo(ctx, f"{owner.fullname}.{method_kind}")
 
 
-def _axiom_base_category_typeinfo(info: TypeInfo) -> TypeInfo | None:
+def _axiom_base_category_typeinfo(
+    ctx: ClassDefContext,
+    info: TypeInfo,
+) -> TypeInfo | None:
     for statement in getattr(info.defn.defs, "body", ()):
         if not isinstance(statement, AssignmentStmt) or len(statement.lvalues) != 1:
             continue
@@ -966,14 +992,115 @@ def _axiom_base_category_typeinfo(info: TypeInfo) -> TypeInfo | None:
         rvalue = statement.rvalue
         if not isinstance(rvalue, TupleExpr) or not rvalue.items:
             continue
-        return _typeinfo_from_expr(rvalue.items[0])
+        return _typeinfo_from_axiom_base_expr(ctx, info, rvalue.items[0])
     return None
+
+
+def _typeinfo_from_axiom_base_expr(
+    ctx: ClassDefContext,
+    owner: TypeInfo,
+    expr: Any,
+) -> TypeInfo | None:
+    direct = _typeinfo_from_expr(expr)
+    if direct is not None:
+        return direct
+    if not isinstance(expr, NameExpr):
+        return None
+    imported = _typeinfo_from_imported_name(ctx, owner.module_name, expr.name)
+    if imported is not None:
+        return imported
+    return _typeinfo_from_module_assignment(ctx, owner.module_name, expr.name)
 
 
 def _typeinfo_from_expr(expr: Any) -> TypeInfo | None:
     if isinstance(expr, RefExpr):
         return _typeinfo_from_symbol_node(expr.node)
     return _typeinfo_from_symbol_node(getattr(expr, "node", None))
+
+
+def _typeinfo_from_imported_name(
+    ctx: ClassDefContext,
+    module_name: str,
+    name: str,
+) -> TypeInfo | None:
+    module = ctx.api.modules.get(module_name)
+    if module is None:
+        return None
+    for statement in _module_statements(module):
+        if not isinstance(statement, ImportFrom):
+            continue
+        for imported_name, alias in statement.names:
+            if (alias or imported_name) != name:
+                continue
+            target_module = _resolve_import_from_module(module_name, statement)
+            if target_module is None:
+                continue
+            target_fullname = f"{target_module}.{imported_name}"
+            target = _lookup_typeinfo(ctx, target_fullname)
+            if target is not None:
+                return target
+            assigned = _typeinfo_from_module_assignment(ctx, target_module, imported_name)
+            if assigned is not None:
+                return assigned
+    return None
+
+
+def _resolve_import_from_module(
+    module_name: str,
+    statement: ImportFrom,
+) -> str | None:
+    if statement.relative == 0:
+        return statement.id
+    package_parts = module_name.split(".")[:-1]
+    parent_count = statement.relative - 1
+    if parent_count > len(package_parts):
+        return None
+    base_parts = package_parts[: len(package_parts) - parent_count]
+    if statement.id:
+        base_parts.extend(statement.id.split("."))
+    return ".".join(base_parts)
+
+
+def _typeinfo_from_module_assignment(
+    ctx: ClassDefContext,
+    module_name: str,
+    name: str,
+) -> TypeInfo | None:
+    module = ctx.api.modules.get(module_name)
+    if module is None:
+        return None
+    symbol = _module_symbol(module, name)
+    if symbol is not None:
+        direct = _typeinfo_from_symbol_node(symbol.node)
+        if direct is not None:
+            return direct
+        if isinstance(symbol.node, Var) and isinstance(
+            get_proper_type(symbol.node.type),
+            AnyType,
+        ):
+            private_export = _lookup_typeinfo(ctx, f"{module_name}._{name}")
+            if (
+                isinstance(private_export, TypeInfo)
+                and _looks_like_sage_category_typeinfo(private_export)
+            ):
+                return private_export
+    for statement in _module_statements(module):
+        if not isinstance(statement, AssignmentStmt) or len(statement.lvalues) != 1:
+            continue
+        target = statement.lvalues[0]
+        if not isinstance(target, NameExpr) or target.name != name:
+            continue
+        assigned = _typeinfo_from_expr(statement.rvalue)
+        if assigned is not None:
+            return assigned
+        if isinstance(statement.rvalue, NameExpr):
+            assigned = _lookup_typeinfo(
+                ctx,
+                f"{module_name}.{statement.rvalue.name}",
+            )
+            if assigned is not None:
+                return assigned
+    return None
 
 
 def _projection_with_static_bases(projection: Any, static_bases: tuple[str, ...]) -> Any:
@@ -1104,14 +1231,17 @@ def _receiver_self_method_type(
             ctx.api.named_type("builtins.function"),
             name=name,
         )
-    for candidate in _receiver_self_typeinfo_candidates(target):
+    for candidate in _receiver_self_typeinfo_candidates(ctx, target):
         method_type = _receiver_method_type(ctx, candidate, name)
         if method_type is not None:
             return method_type
     return None
 
 
-def _receiver_self_typeinfo_candidates(target: TypeInfo) -> tuple[TypeInfo, ...]:
+def _receiver_self_typeinfo_candidates(
+    ctx: ClassDefContext,
+    target: TypeInfo,
+) -> tuple[TypeInfo, ...]:
     candidates: list[TypeInfo] = []
     seen: set[str] = set()
     stack = [target]
@@ -1121,7 +1251,7 @@ def _receiver_self_typeinfo_candidates(target: TypeInfo) -> tuple[TypeInfo, ...]
             continue
         seen.add(candidate.fullname)
         candidates.append(candidate)
-        axiom_base = _axiom_base_category_typeinfo(candidate)
+        axiom_base = _axiom_base_category_typeinfo(ctx, candidate)
         if axiom_base is not None:
             stack.append(axiom_base)
     return tuple(candidates)
