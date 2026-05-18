@@ -24,6 +24,7 @@ class ProviderProjection(BaseModel):
     runtime_mro: tuple[StrictStr, ...]
     provider_bases: tuple[StrictStr, ...]
     provider_mro: tuple[StrictStr, ...]
+    unprojected_runtime_mro: tuple[StrictStr, ...] = ()
 
 
 __all__ = [

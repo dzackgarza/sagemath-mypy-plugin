@@ -48,6 +48,11 @@ def test_homset_parent_projection_matches_sage_runtime_mro() -> None:
         for runtime_class in homsets.parent_class.__mro__
         if runtime_class in runtime_to_provider
     )
+    unprojected_runtime_mro = tuple(
+        _class_fullname(runtime_class)
+        for runtime_class in homsets.parent_class.__mro__
+        if runtime_class not in runtime_to_provider and runtime_class is not object
+    )
 
     assert projection.provider == provider
     assert projection.role == "homset_parent"
@@ -61,6 +66,10 @@ def test_homset_parent_projection_matches_sage_runtime_mro() -> None:
     )
     assert projection.provider_bases == projected_runtime_bases
     assert projection.provider_mro == projected_runtime_mro
+    assert projection.unprojected_runtime_mro == unprojected_runtime_mro
+    assert projection.unprojected_runtime_mro == (
+        "sage.categories.sets_with_partial_maps.SetsWithPartialMaps.parent_class",
+    )
     assert projection.provider_bases == (
         "tests.fixtures.invariant_core.provider_roles.homsets."
         "TopCategory.Homsets.ParentMethods",
@@ -106,6 +115,11 @@ def test_homset_element_projection_matches_sage_runtime_mro() -> None:
         for runtime_class in homsets.element_class.__mro__
         if runtime_class in runtime_to_provider
     )
+    unprojected_runtime_mro = tuple(
+        _class_fullname(runtime_class)
+        for runtime_class in homsets.element_class.__mro__
+        if runtime_class not in runtime_to_provider and runtime_class is not object
+    )
 
     assert projection.provider == provider
     assert projection.role == "homset_element"
@@ -119,6 +133,12 @@ def test_homset_element_projection_matches_sage_runtime_mro() -> None:
     )
     assert projection.provider_bases == projected_runtime_bases
     assert projection.provider_mro == projected_runtime_mro
+    assert projection.unprojected_runtime_mro == unprojected_runtime_mro
+    assert projection.unprojected_runtime_mro == (
+        "sage.categories.homsets.Homsets.element_class",
+        "sage.categories.sets_with_partial_maps.SetsWithPartialMaps.element_class",
+        "sage.categories.objects.Objects.element_class",
+    )
     assert projection.provider_bases == (
         "tests.fixtures.invariant_core.provider_roles.homsets."
         "TopCategory.Homsets.ElementMethods",

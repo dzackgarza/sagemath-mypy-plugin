@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import pytest
+
+from sage_mypy_category_plugin.oracle import RoleProjection
 from sage_mypy_category_plugin.oracle import provider_projections_for_categories
 from sage_mypy_category_plugin.oracle import named_class_traces
+from sage_mypy_category_plugin.oracle import _provider_fullname_from_runtime_class_or_none
 from tests.fixtures.invariant_core.diamond_runtime import (
     BottomCategory,
     LeftCategory,
@@ -13,6 +17,49 @@ from tests.fixtures.invariant_core.local_wrapper import LocalCategoryBase
 
 def _class_fullname(cls: type[object]) -> str:
     return f"{cls.__module__}.{cls.__qualname__}"
+
+
+class RuntimeProviderResolutionFixtures:
+    class WithProvider:
+        class ParentMethods:
+            pass
+
+        class parent_class:
+            pass
+
+    class WithoutProvider:
+        class parent_class:
+            pass
+
+    class BrokenProvider:
+        ParentMethods = object()
+
+        class parent_class:
+            pass
+
+
+def test_runtime_provider_resolution_rejects_broken_provider_attribute() -> None:
+    role_projection = RoleProjection(
+        runtime_attr="parent_class",
+        provider_attr="ParentMethods",
+    )
+
+    assert _provider_fullname_from_runtime_class_or_none(
+        RuntimeProviderResolutionFixtures.WithProvider.parent_class,
+        role_projection,
+    ) == (
+        "tests.test_oracle_projection.RuntimeProviderResolutionFixtures."
+        "WithProvider.ParentMethods"
+    )
+    assert _provider_fullname_from_runtime_class_or_none(
+        RuntimeProviderResolutionFixtures.WithoutProvider.parent_class,
+        role_projection,
+    ) is None
+    with pytest.raises(AssertionError):
+        _provider_fullname_from_runtime_class_or_none(
+            RuntimeProviderResolutionFixtures.BrokenProvider.parent_class,
+            role_projection,
+        )
 
 
 def test_diamond_parent_projection_matches_sage_runtime_mro() -> None:

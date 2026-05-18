@@ -153,6 +153,7 @@ class ProjectionManifest(BaseModel):
                 projection.runtime_mro,
                 projection.provider_bases,
                 projection.provider_mro,
+                projection.unprojected_runtime_mro,
             )
             for projection in sorted(
                 self.projections,

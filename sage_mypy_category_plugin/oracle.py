@@ -161,6 +161,10 @@ def _provider_projection(category: SageCategory, role: ProviderRole) -> Provider
         runtime_mro=tuple(_class_fullname(base) for base in runtime_class.__mro__),
         provider_bases=provider_bases,
         provider_mro=provider_mro,
+        unprojected_runtime_mro=_unprojected_runtime_classes(
+            runtime_class.__mro__,
+            runtime_to_provider,
+        ),
     )
 
 
@@ -204,6 +208,21 @@ def _provider_projection_from_runtime_class(
         runtime_mro=tuple(_class_fullname(base) for base in runtime_class.__mro__),
         provider_bases=provider_bases,
         provider_mro=provider_mro,
+        unprojected_runtime_mro=_unprojected_runtime_classes(
+            runtime_class.__mro__,
+            runtime_to_provider,
+        ),
+    )
+
+
+def _unprojected_runtime_classes(
+    runtime_classes: tuple[type[object], ...],
+    runtime_to_provider: Mapping[type[object], str],
+) -> tuple[str, ...]:
+    return tuple(
+        _class_fullname(runtime_class)
+        for runtime_class in runtime_classes
+        if runtime_class not in runtime_to_provider and runtime_class is not object
     )
 
 
@@ -262,16 +281,24 @@ def _provider_fullname_from_runtime_class_or_none(
     if not runtime_class.__qualname__.endswith(suffix):
         return None
 
-    provider_qualname = (
-        runtime_class.__qualname__[: -len(role_projection.runtime_attr)]
-        + role_projection.provider_attr
-    )
-    provider = _resolve_module_qualname(
+    owner_qualname = runtime_class.__qualname__[: -len(suffix)]
+    owner = _resolve_module_qualname(
         module_name=runtime_class.__module__,
-        qualname=provider_qualname,
+        qualname=owner_qualname,
     )
-    if not isinstance(provider, type):
+    assert owner is not None, (
+        f"Could not resolve owner {runtime_class.__module__}.{owner_qualname} "
+        f"for runtime class {_class_fullname(runtime_class)}"
+    )
+
+    if not hasattr(owner, role_projection.provider_attr):
         return None
+
+    provider = getattr(owner, role_projection.provider_attr)
+    assert isinstance(provider, type), (
+        f"{runtime_class.__module__}.{owner_qualname}."
+        f"{role_projection.provider_attr} must be a class; got {provider!r}"
+    )
     return _class_fullname(provider)
 
 
