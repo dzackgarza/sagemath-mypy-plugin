@@ -1,6 +1,0 @@
-from typing import Any
-
-
-class CategoryObject:
-    def category(self) -> Any: ...
-    def _init_category_(self: Any, category: Any) -> None: ...
