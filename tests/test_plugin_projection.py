@@ -23,6 +23,32 @@ CATEGORY_FULLNAMES = (
     f"{FIXTURE_MODULE}.BottomCategory",
 )
 BOTTOM_PROVIDER = f"{FIXTURE_MODULE}.BottomCategory.ParentMethods"
+CATEGORY_SPECS_LIKE_ROOT_MODULE = (
+    "tests.fixtures.invariant_core.category_specs_like.rings"
+)
+CATEGORY_SPECS_LIKE_SUBCATEGORY_MODULE = (
+    "tests.fixtures.invariant_core.category_specs_like.rings.subcategories.commutative"
+)
+CATEGORY_SPECS_LIKE_SUBCATEGORY_PATH = (
+    REPO_ROOT
+    / "tests"
+    / "fixtures"
+    / "invariant_core"
+    / "category_specs_like"
+    / "rings"
+    / "subcategories"
+    / "commutative.py"
+)
+CATEGORY_SPECS_LIKE_FULLNAMES = (
+    f"{CATEGORY_SPECS_LIKE_ROOT_MODULE}.Rings",
+    f"{CATEGORY_SPECS_LIKE_SUBCATEGORY_MODULE}._CommutativeRings",
+)
+CATEGORY_SPECS_LIKE_ROOT_PROVIDER = (
+    f"{CATEGORY_SPECS_LIKE_ROOT_MODULE}._RingObjectMethods"
+)
+CATEGORY_SPECS_LIKE_COMMUTATIVE_PROVIDER = (
+    f"{CATEGORY_SPECS_LIKE_SUBCATEGORY_MODULE}._CommutativeRings.ParentMethods"
+)
 
 
 def test_plugin_projects_typeinfo_mro_from_manifest(tmp_path: Path) -> None:
@@ -80,6 +106,85 @@ def test_plugin_projects_typeinfo_mro_from_manifest(tmp_path: Path) -> None:
         *expected_provider_mro,
         "builtins.object",
     )
+
+
+def test_plugin_projects_category_specs_like_alias_typeinfo_mro(
+    tmp_path: Path,
+) -> None:
+    projections = provider_projections_for_categories(
+        CATEGORY_SPECS_LIKE_FULLNAMES,
+        roles=("parent",),
+    )
+    expected_provider_mro = projections[
+        CATEGORY_SPECS_LIKE_COMMUTATIVE_PROVIDER
+    ].provider_mro
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=tuple(projections.values()),
+    )
+    manifest_path = tmp_path / "sage-category-specs-like-projections.json"
+    config_path = tmp_path / "mypy.ini"
+    write_manifest(manifest_path, manifest)
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "ignore_missing_imports = True",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+
+    result = _build_fixture(
+        config_path,
+        tmp_path,
+        fixture_path=CATEGORY_SPECS_LIKE_SUBCATEGORY_PATH,
+        fixture_module=CATEGORY_SPECS_LIKE_SUBCATEGORY_MODULE,
+    )
+    result_without_plugin = _build_fixture_without_plugin(
+        tmp_path,
+        fixture_path=CATEGORY_SPECS_LIKE_SUBCATEGORY_PATH,
+        fixture_module=CATEGORY_SPECS_LIKE_SUBCATEGORY_MODULE,
+    )
+    commutative_parent_info = _nested_typeinfo(
+        result,
+        module=CATEGORY_SPECS_LIKE_SUBCATEGORY_MODULE,
+        outer="_CommutativeRings",
+        inner="ParentMethods",
+    )
+    baseline_commutative_parent_info = _nested_typeinfo(
+        result_without_plugin,
+        module=CATEGORY_SPECS_LIKE_SUBCATEGORY_MODULE,
+        outer="_CommutativeRings",
+        inner="ParentMethods",
+    )
+    root_parent_info = result.files[CATEGORY_SPECS_LIKE_ROOT_MODULE].names[
+        "_RingObjectMethods"
+    ].node
+
+    assert isinstance(root_parent_info, TypeInfo)
+    assert result.errors == []
+    assert result_without_plugin.errors == []
+    assert tuple(info.fullname for info in baseline_commutative_parent_info.mro) == (
+        CATEGORY_SPECS_LIKE_COMMUTATIVE_PROVIDER,
+        "builtins.object",
+    )
+    assert tuple(info.fullname for info in commutative_parent_info.mro) == (
+        *expected_provider_mro,
+        "builtins.object",
+    )
+    assert expected_provider_mro == (
+        CATEGORY_SPECS_LIKE_COMMUTATIVE_PROVIDER,
+        CATEGORY_SPECS_LIKE_ROOT_PROVIDER,
+    )
+    assert root_parent_info.fullname == CATEGORY_SPECS_LIKE_ROOT_PROVIDER
 
 
 @pytest.mark.parametrize("field", ("provider_bases", "provider_mro"))
@@ -215,7 +320,13 @@ def test_plugin_reports_semantic_manifest_config_data(tmp_path: Path) -> None:
     assert config_data["manifest_mypy_max_version"] == manifest.mypy_max_version
 
 
-def _build_fixture(config_path: Path, tmp_path: Path) -> BuildResult:
+def _build_fixture(
+    config_path: Path,
+    tmp_path: Path,
+    *,
+    fixture_path: Path = FIXTURE_PATH,
+    fixture_module: str = FIXTURE_MODULE,
+) -> BuildResult:
     options = Options()
     options.config_file = str(config_path)
     options.plugins = ["sage_mypy_category_plugin.plugin"]
@@ -224,19 +335,24 @@ def _build_fixture(config_path: Path, tmp_path: Path) -> BuildResult:
     options.mypy_path = [str(REPO_ROOT)]
     options.ignore_missing_imports = True
     return build(
-        sources=[BuildSource(str(FIXTURE_PATH), FIXTURE_MODULE, None)],
+        sources=[BuildSource(str(fixture_path), fixture_module, None)],
         options=options,
     )
 
 
-def _build_fixture_without_plugin(tmp_path: Path) -> BuildResult:
+def _build_fixture_without_plugin(
+    tmp_path: Path,
+    *,
+    fixture_path: Path = FIXTURE_PATH,
+    fixture_module: str = FIXTURE_MODULE,
+) -> BuildResult:
     options = Options()
     options.incremental = False
     options.cache_dir = str(tmp_path / "baseline-mypy-cache")
     options.mypy_path = [str(REPO_ROOT)]
     options.ignore_missing_imports = True
     return build(
-        sources=[BuildSource(str(FIXTURE_PATH), FIXTURE_MODULE, None)],
+        sources=[BuildSource(str(fixture_path), fixture_module, None)],
         options=options,
     )
 

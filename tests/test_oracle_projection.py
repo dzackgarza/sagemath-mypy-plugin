@@ -114,3 +114,58 @@ def test_tracing_observes_make_named_class() -> None:
         "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ParentMethods",
     )
     assert trace.trace_source == "Category._make_named_class"
+
+
+def test_category_specs_like_parent_projection_uses_local_wrapper_alias() -> None:
+    from tests.fixtures.invariant_core.category_specs_like.cat import (
+        Category,
+        Category_singleton,
+    )
+    from tests.fixtures.invariant_core.category_specs_like.rings import (
+        Rings,
+        _RingObjectMethods,
+    )
+    from tests.fixtures.invariant_core.category_specs_like.rings.subcategories.commutative import (
+        _CommutativeRings,
+    )
+
+    assert Rings.__bases__ == (Category_singleton,)
+    assert _CommutativeRings.__bases__ == (Category,)
+    assert Rings.ParentMethods is _RingObjectMethods
+
+    projections = provider_projections_for_categories(
+        (
+            "tests.fixtures.invariant_core.category_specs_like.rings.Rings",
+            "tests.fixtures.invariant_core.category_specs_like.rings.subcategories.commutative._CommutativeRings",
+        ),
+        roles=("parent",),
+    )
+
+    root_provider = (
+        "tests.fixtures.invariant_core.category_specs_like.rings._RingObjectMethods"
+    )
+    commutative_provider = (
+        "tests.fixtures.invariant_core.category_specs_like.rings.subcategories."
+        "commutative._CommutativeRings.ParentMethods"
+    )
+    projection = projections[commutative_provider]
+    category = _CommutativeRings.an_instance()
+    runtime_to_provider = {
+        category.parent_class: _CommutativeRings.ParentMethods,
+        Rings.an_instance().parent_class: Rings.ParentMethods,
+    }
+    projected_runtime_bases = tuple(
+        _class_fullname(runtime_to_provider[runtime_class])
+        for runtime_class in category.parent_class.__bases__
+    )
+    projected_runtime_mro = tuple(
+        _class_fullname(runtime_to_provider[runtime_class])
+        for runtime_class in category.parent_class.__mro__
+        if runtime_class in runtime_to_provider
+    )
+
+    assert projection.provider == commutative_provider
+    assert projection.provider_bases == projected_runtime_bases
+    assert projection.provider_mro == projected_runtime_mro
+    assert projection.provider_bases == (root_provider,)
+    assert projection.provider_mro == (commutative_provider, root_provider)
