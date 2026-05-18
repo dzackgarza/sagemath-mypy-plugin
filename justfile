@@ -148,6 +148,14 @@ generate-manifest *args:
   args=({{args}})
   sage -python -m sage_mypy_category_plugin.resolver "${args[@]}"
 
+[group('build')]
+generate-stubs *args:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  export PYTHONPATH="${PWD}${PYTHONPATH:+:${PYTHONPATH}}"
+  args=({{args}})
+  sage -python -m sage_mypy_category_plugin.stubs "${args[@]}"
+
 [group('validate')]
 typecheck *args:
   #!/usr/bin/env bash

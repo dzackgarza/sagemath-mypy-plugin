@@ -20,6 +20,7 @@ def test_justfile_exposes_final_state_validation_recipes() -> None:
     assert {
         "consumer-mypy",
         "generate-manifest",
+        "generate-stubs",
         "release-check",
         "test",
         "test-behavior",
@@ -46,3 +47,16 @@ def test_generate_manifest_recipe_forwards_cli_arguments() -> None:
 
     assert "category_fullnames" in result.stdout
     assert "--output OUTPUT" in result.stdout
+
+
+def test_generate_stubs_recipe_forwards_cli_arguments() -> None:
+    result = subprocess.run(
+        ("just", "--", "generate-stubs", "--help"),
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "manifest" in result.stdout
+    assert "output_root" in result.stdout

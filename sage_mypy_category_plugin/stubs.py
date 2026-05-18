@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+from argparse import ArgumentParser
+from collections.abc import Sequence
 from hashlib import sha256
 from pathlib import Path
 
-from sage_mypy_category_plugin.manifest import ProjectionManifest, SourceModuleRecord
+from sage_mypy_category_plugin.manifest import (
+    ProjectionManifest,
+    SourceModuleRecord,
+    load_manifest,
+)
 from sage_mypy_category_plugin.projection import ProviderMethodRecord
 
 type StubTree = dict[str, "StubTree"]
@@ -69,6 +75,29 @@ def write_generated_stub_tree(
             )
         )
     return tuple(source_modules)
+
+
+def _stub_argument_parser() -> ArgumentParser:
+    parser = ArgumentParser(
+        prog="sage_mypy_category_plugin.stubs",
+        description="Generate mypy-visible Sage category stubs from a manifest.",
+    )
+    parser.add_argument(
+        "manifest",
+        help="Path to read ProjectionManifest JSON.",
+    )
+    parser.add_argument(
+        "output_root",
+        help="Directory where generated .pyi files are written.",
+    )
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = _stub_argument_parser().parse_args(argv)
+    manifest = load_manifest(Path(args.manifest))
+    write_generated_stub_tree(Path(args.output_root), manifest)
+    return 0
 
 
 def _manifest_stub_fullnames(manifest: ProjectionManifest) -> tuple[str, ...]:
@@ -290,4 +319,12 @@ def _write_package_markers(output_root: Path, package_dir: Path) -> None:
         (package / "__init__.pyi").write_text("")
 
 
-__all__ = ["generated_stub_sources", "write_generated_stub_tree"]
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+
+__all__ = [
+    "generated_stub_sources",
+    "main",
+    "write_generated_stub_tree",
+]

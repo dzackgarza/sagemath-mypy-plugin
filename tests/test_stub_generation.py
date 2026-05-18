@@ -11,6 +11,7 @@ from sage_mypy_category_plugin.manifest import ProjectionManifest, SourceModuleR
 from sage_mypy_category_plugin.projection import ConcreteParentRecord
 from sage_mypy_category_plugin.projection import ProviderMethodRecord
 from sage_mypy_category_plugin.projection import ProviderProjection
+from sage_mypy_category_plugin import stubs as stubs_cli
 from sage_mypy_category_plugin.stubs import generated_stub_sources
 from sage_mypy_category_plugin.stubs import write_generated_stub_tree
 
@@ -163,6 +164,25 @@ def test_generated_stub_tree_records_written_source_metadata(tmp_path: Path) -> 
 
     assert sets_record.sha256 == sha256(sets_path.read_bytes()).hexdigest()
     assert sets_record.mtime_ns == sets_path.stat().st_mtime_ns
+
+
+def test_generated_stub_cli_writes_stub_tree(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "manifest.json"
+    output_root = tmp_path / "generated-stubs"
+    manifest_path.write_text(_self_return_provider_manifest().model_dump_json())
+
+    assert stubs_cli.main([str(manifest_path), str(output_root)]) == 0
+
+    assert (output_root / "fixtures" / "self_type.pyi").read_text() == (
+        "from typing import Self\n"
+        "\n"
+        "class BaseCategory:\n"
+        "    class ParentMethods:\n"
+        "        def normalized(self) -> Self: ...\n"
+        "class ChildCategory:\n"
+        "    class ParentMethods:\n"
+        "        ...\n"
+    )
 
 
 def test_generated_stubs_include_concrete_parent_runtime_aliases() -> None:
