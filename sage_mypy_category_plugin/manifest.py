@@ -140,6 +140,50 @@ class ProjectionManifest(BaseModel):
                 + ", ".join(duplicate_concrete_classes)
             )
 
+        for projection in self.projections:
+            if (
+                not projection.provider_mro
+                or projection.provider_mro[0] != projection.provider
+            ):
+                raise PydanticCustomError(
+                    "projection_graph_mismatch",
+                    "provider projection MRO must start with its provider",
+                    {"provider": projection.provider, "field": "provider_mro"},
+                )
+            if (
+                not projection.runtime_mro
+                or projection.runtime_mro[0] != projection.runtime_class
+            ):
+                raise PydanticCustomError(
+                    "projection_graph_mismatch",
+                    "runtime MRO must start with its runtime class",
+                    {"provider": projection.provider, "field": "runtime_mro"},
+                )
+
+            missing_provider_bases = tuple(
+                provider_base
+                for provider_base in projection.provider_bases
+                if provider_base not in projection.provider_mro[1:]
+            )
+            if missing_provider_bases:
+                raise PydanticCustomError(
+                    "projection_graph_mismatch",
+                    "provider bases must appear in provider MRO",
+                    {"provider": projection.provider, "field": "provider_bases"},
+                )
+
+            missing_runtime_bases = tuple(
+                runtime_base
+                for runtime_base in projection.runtime_bases
+                if runtime_base not in projection.runtime_mro[1:]
+            )
+            if missing_runtime_bases:
+                raise PydanticCustomError(
+                    "projection_graph_mismatch",
+                    "runtime bases must appear in runtime MRO",
+                    {"provider": projection.provider, "field": "runtime_bases"},
+                )
+
         declared_providers = frozenset(providers)
         referenced_providers = frozenset(
             provider

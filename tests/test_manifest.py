@@ -92,6 +92,14 @@ def _left_projection() -> ProviderProjection:
         update={
             "provider": "tests.fixtures.invariant_core.diamond_runtime.LeftCategory.ParentMethods",
             "runtime_class": "tests.fixtures.invariant_core.diamond_runtime.LeftCategory.parent_class",
+            "runtime_bases": (
+                "tests.fixtures.invariant_core.diamond_runtime.TopCategory.parent_class",
+            ),
+            "runtime_mro": (
+                "tests.fixtures.invariant_core.diamond_runtime.LeftCategory.parent_class",
+                "tests.fixtures.invariant_core.diamond_runtime.TopCategory.parent_class",
+                "builtins.object",
+            ),
             "provider_bases": (
                 "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ParentMethods",
             ),
@@ -108,6 +116,14 @@ def _right_projection() -> ProviderProjection:
         update={
             "provider": "tests.fixtures.invariant_core.diamond_runtime.RightCategory.ParentMethods",
             "runtime_class": "tests.fixtures.invariant_core.diamond_runtime.RightCategory.parent_class",
+            "runtime_bases": (
+                "tests.fixtures.invariant_core.diamond_runtime.TopCategory.parent_class",
+            ),
+            "runtime_mro": (
+                "tests.fixtures.invariant_core.diamond_runtime.RightCategory.parent_class",
+                "tests.fixtures.invariant_core.diamond_runtime.TopCategory.parent_class",
+                "builtins.object",
+            ),
             "provider_bases": (
                 "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ParentMethods",
             ),
@@ -339,6 +355,93 @@ def test_manifest_rejects_duplicate_provider_records() -> None:
         ProjectionManifest.model_validate(payload)
 
     assert "duplicate provider" in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    ("projection_index", "mutation", "expected_field"),
+    (
+        (
+            -1,
+            {
+                "provider_mro": (
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "RightCategory.ParentMethods",
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "BottomCategory.ParentMethods",
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "LeftCategory.ParentMethods",
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "TopCategory.ParentMethods",
+                )
+            },
+            "provider_mro",
+        ),
+        (
+            -1,
+            {
+                "runtime_mro": (
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "RightCategory.parent_class",
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "BottomCategory.parent_class",
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "LeftCategory.parent_class",
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "TopCategory.parent_class",
+                    "builtins.object",
+                )
+            },
+            "runtime_mro",
+        ),
+        (
+            -1,
+            {
+                "provider_mro": (
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "BottomCategory.ParentMethods",
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "LeftCategory.ParentMethods",
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "TopCategory.ParentMethods",
+                )
+            },
+            "provider_bases",
+        ),
+        (
+            -1,
+            {
+                "runtime_mro": (
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "BottomCategory.parent_class",
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "LeftCategory.parent_class",
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "TopCategory.parent_class",
+                    "builtins.object",
+                )
+            },
+            "runtime_bases",
+        ),
+    ),
+)
+def test_manifest_rejects_projection_mro_inconsistency(
+    projection_index: int,
+    mutation: dict[str, Any],
+    expected_field: str,
+) -> None:
+    payload = _manifest_payload()
+    payload["projections"] = [*payload["projections"]]
+    payload["projections"][projection_index] = {
+        **payload["projections"][projection_index],
+        **mutation,
+    }
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    errors = raised.value.errors()
+    assert {error["type"] for error in errors} == {"projection_graph_mismatch"}
+    assert errors[0]["ctx"]["field"] == expected_field
 
 
 def test_manifest_rejects_duplicate_source_module_records() -> None:

@@ -702,8 +702,11 @@ def test_plugin_fails_strict_projection_for_missing_provider_references(
                 provider=missing_provider,
                 role="parent",
                 runtime_class="strict_missing.MissingCategory.parent_class",
-                runtime_bases=(),
-                runtime_mro=(),
+                runtime_bases=("builtins.object",),
+                runtime_mro=(
+                    "strict_missing.MissingCategory.parent_class",
+                    "builtins.object",
+                ),
                 provider_bases=(),
                 provider_mro=(missing_provider,),
             ),
