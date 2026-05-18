@@ -276,3 +276,16 @@ def test_manifest_semantic_digest_tracks_projection_changes() -> None:
     mutated_manifest = ProjectionManifest.model_validate(mutated_payload)
 
     assert base_manifest.semantic_projection_digest != mutated_manifest.semantic_projection_digest
+
+
+def test_manifest_source_module_digest_tracks_source_hash_changes() -> None:
+    base_manifest = ProjectionManifest.model_validate(_manifest_payload())
+    mutated_payload = base_manifest.model_dump(mode="json")
+    source_record = mutated_payload["source_modules"][0]
+    source_record["sha256"] = (
+        "0f1f7a4a0d0b6dfd7f9d2d2c1d3b5e6a"
+        "8b1c0f7a6d5e4c3b2a19080706050403"
+    )
+    mutated_manifest = ProjectionManifest.model_validate(mutated_payload)
+
+    assert base_manifest.source_module_digest != mutated_manifest.source_module_digest
