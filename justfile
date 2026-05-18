@@ -7,15 +7,16 @@ set quiet := true
 @test *args:
     #!/usr/bin/env bash
     set -euo pipefail
+    read -r -a python_runner <<< "${TEST_PYTHON:-python}"
     if [ -n "{{ args }}" ]; then
-      sage -python -m pytest --ignore=tests/fixtures {{ args }}
+      "${python_runner[@]}" -m pytest --ignore=tests/fixtures {{ args }}
       exit 0
     fi
 
     pids=()
 
     run_group() {
-      sage -python -m pytest -q --ignore=tests/fixtures "$@" &
+      "${python_runner[@]}" -m pytest -q --ignore=tests/fixtures "$@" &
       pids+=("$!")
     }
 
