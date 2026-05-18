@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from functools import cache
-from hashlib import sha256
 from importlib import import_module
 from pathlib import Path
 
@@ -24,7 +23,7 @@ from sage_mypy_category_plugin.plugin import (
     SageCategoryProjectionPlugin,
 )
 from sage_mypy_category_plugin.projection import ProviderProjection
-from sage_mypy_category_plugin.stubs import generated_stub_sources
+from sage_mypy_category_plugin.stubs import write_generated_stub_tree
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_MODULE = "tests.fixtures.invariant_core.diamond_runtime"
@@ -1071,21 +1070,7 @@ def _write_projected_provider_stubs(
         projections=projections,
         source_modules=source_modules,
     )
-
-    written_source_modules: list[SourceModuleRecord] = []
-    for relative_path, source in generated_stub_sources(manifest).items():
-        path = stub_root / relative_path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        _write_package_markers(stub_root, path.parent)
-        path.write_text(source)
-        written_source_modules.append(
-            SourceModuleRecord(
-                module=".".join(relative_path.with_suffix("").parts),
-                path=str(path),
-                sha256=sha256(source.encode()).hexdigest(),
-            )
-        )
-    return tuple(written_source_modules)
+    return write_generated_stub_tree(stub_root, manifest)
 
 
 def _projected_provider_module_names(
@@ -1110,13 +1095,3 @@ def _importable_module_name(fullname: str) -> str:
             continue
         return module_name
     raise AssertionError(f"Could not find importable module for {fullname!r}")
-
-
-def _write_package_markers(stub_root: Path, package_dir: Path) -> None:
-    current = package_dir
-    packages: list[Path] = []
-    while current != stub_root:
-        packages.append(current)
-        current = current.parent
-    for package in reversed(packages):
-        (package / "__init__.pyi").write_text("")

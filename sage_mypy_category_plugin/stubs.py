@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from hashlib import sha256
 from pathlib import Path
 
-from sage_mypy_category_plugin.manifest import ProjectionManifest
+from sage_mypy_category_plugin.manifest import ProjectionManifest, SourceModuleRecord
 
 type StubTree = dict[str, "StubTree"]
 
@@ -24,6 +25,26 @@ def generated_stub_sources(manifest: ProjectionManifest) -> dict[Path, str]:
         Path(*module_name.split(".")).with_suffix(".pyi"): _stub_source(tree)
         for module_name, tree in sorted(module_trees.items())
     }
+
+
+def write_generated_stub_tree(
+    output_root: Path,
+    manifest: ProjectionManifest,
+) -> tuple[SourceModuleRecord, ...]:
+    source_modules: list[SourceModuleRecord] = []
+    for relative_path, source in generated_stub_sources(manifest).items():
+        path = output_root / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _write_package_markers(output_root, path.parent)
+        path.write_text(source)
+        source_modules.append(
+            SourceModuleRecord(
+                module=".".join(relative_path.with_suffix("").parts),
+                path=str(path),
+                sha256=sha256(source.encode()).hexdigest(),
+            )
+        )
+    return tuple(source_modules)
 
 
 def _manifest_provider_fullnames(manifest: ProjectionManifest) -> tuple[str, ...]:
@@ -78,4 +99,14 @@ def _stub_lines(tree: StubTree, indent: int = 0) -> tuple[str, ...]:
     return tuple(lines)
 
 
-__all__ = ["generated_stub_sources"]
+def _write_package_markers(output_root: Path, package_dir: Path) -> None:
+    current = package_dir
+    packages: list[Path] = []
+    while current != output_root:
+        packages.append(current)
+        current = current.parent
+    for package in reversed(packages):
+        (package / "__init__.pyi").write_text("")
+
+
+__all__ = ["generated_stub_sources", "write_generated_stub_tree"]
