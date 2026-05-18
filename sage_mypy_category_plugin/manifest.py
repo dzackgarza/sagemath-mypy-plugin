@@ -115,6 +115,22 @@ class ProjectionManifest(BaseModel):
         return {record.module: record for record in self.source_modules}
 
     @property
+    def source_module_digest(self) -> str:
+        source_modules = tuple(
+            (record.module, record.path, record.sha256)
+            for record in sorted(
+                self.source_modules,
+                key=lambda record: record.module,
+            )
+        )
+        digest_payload = json.dumps(
+            source_modules,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return sha256(digest_payload.encode()).hexdigest()
+
+    @property
     def semantic_projection_digest(self) -> str:
         projections = tuple(
             (

@@ -59,6 +59,7 @@ class SageCategoryProjectionPlugin(Plugin):
             "manifest_plugin_schema_version": self._manifest.plugin_schema_version,
             "manifest_mypy_min_version": self._manifest.mypy_min_version,
             "manifest_mypy_max_version": self._manifest.mypy_max_version,
+            "manifest_source_module_digest": self._manifest.source_module_digest,
         }
 
     def _customize_provider_mro(self, ctx: ClassDefContext) -> None:

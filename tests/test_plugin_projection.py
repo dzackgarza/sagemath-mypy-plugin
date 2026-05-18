@@ -8,10 +8,14 @@ from mypy.modulefinder import BuildSource
 from mypy.nodes import TypeInfo
 from mypy.options import Options
 
-from sage_mypy_category_plugin.manifest import ProjectionManifest, write_manifest
+from sage_mypy_category_plugin.manifest import (
+    ProjectionManifest,
+    SourceModuleRecord,
+    write_manifest,
+)
 from sage_mypy_category_plugin.oracle import provider_projections_for_categories
 from sage_mypy_category_plugin.plugin import SageCategoryProjectionPlugin
-from sage_mypy_category_plugin.projection import ProviderProjection
+from sage_mypy_category_plugin.projection import ProviderProjection, ProviderRole
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_MODULE = "tests.fixtures.invariant_core.diamond_runtime"
@@ -48,6 +52,22 @@ CATEGORY_SPECS_LIKE_ROOT_PROVIDER = (
 )
 CATEGORY_SPECS_LIKE_COMMUTATIVE_PROVIDER = (
     f"{CATEGORY_SPECS_LIKE_SUBCATEGORY_MODULE}._CommutativeRings.ParentMethods"
+)
+PROVIDER_ROLES_MODULE = "tests.fixtures.invariant_core.provider_roles.diamond"
+PROVIDER_ROLES_PATH = (
+    REPO_ROOT / "tests" / "fixtures" / "invariant_core" / "provider_roles" / "diamond.py"
+)
+PROVIDER_ROLES_FULLNAMES = (
+    f"{PROVIDER_ROLES_MODULE}.TopCategory",
+    f"{PROVIDER_ROLES_MODULE}.LeftCategory",
+    f"{PROVIDER_ROLES_MODULE}.RightCategory",
+    f"{PROVIDER_ROLES_MODULE}.BottomCategory",
+)
+DIAMOND_SOURCE_MODULE = SourceModuleRecord(
+    module=FIXTURE_MODULE,
+    path="tests/fixtures/invariant_core/diamond_runtime.py",
+    sha256="9f1f7a4a0d0b6dfd7f9d2d2c1d3b5e6a"
+    "8b1c0f7a6d5e4c3b2a19080706050403",
 )
 
 
@@ -187,6 +207,85 @@ def test_plugin_projects_category_specs_like_alias_typeinfo_mro(
     assert root_parent_info.fullname == CATEGORY_SPECS_LIKE_ROOT_PROVIDER
 
 
+@pytest.mark.parametrize(
+    ("role", "provider_name"),
+    (
+        ("element", "ElementMethods"),
+        ("subcategory", "SubcategoryMethods"),
+        ("morphism", "MorphismMethods"),
+    ),
+)
+def test_plugin_projects_non_parent_provider_role_typeinfo_mro(
+    tmp_path: Path,
+    role: ProviderRole,
+    provider_name: str,
+) -> None:
+    projections = provider_projections_for_categories(
+        PROVIDER_ROLES_FULLNAMES,
+        roles=(role,),
+    )
+    provider = f"{PROVIDER_ROLES_MODULE}.BottomCategory.{provider_name}"
+    expected_provider_mro = projections[provider].provider_mro
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=tuple(projections.values()),
+    )
+    manifest_path = tmp_path / f"sage-category-{role}-projections.json"
+    config_path = tmp_path / "mypy.ini"
+    write_manifest(manifest_path, manifest)
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "ignore_missing_imports = True",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+
+    result = _build_fixture(
+        config_path,
+        tmp_path,
+        fixture_path=PROVIDER_ROLES_PATH,
+        fixture_module=PROVIDER_ROLES_MODULE,
+    )
+    result_without_plugin = _build_fixture_without_plugin(
+        tmp_path,
+        fixture_path=PROVIDER_ROLES_PATH,
+        fixture_module=PROVIDER_ROLES_MODULE,
+    )
+    role_info = _nested_typeinfo(
+        result,
+        module=PROVIDER_ROLES_MODULE,
+        outer="BottomCategory",
+        inner=provider_name,
+    )
+    baseline_role_info = _nested_typeinfo(
+        result_without_plugin,
+        module=PROVIDER_ROLES_MODULE,
+        outer="BottomCategory",
+        inner=provider_name,
+    )
+
+    assert result.errors == []
+    assert result_without_plugin.errors == []
+    assert tuple(info.fullname for info in baseline_role_info.mro) == (
+        provider,
+        "builtins.object",
+    )
+    assert tuple(info.fullname for info in role_info.mro) == (
+        *expected_provider_mro,
+        "builtins.object",
+    )
+
+
 @pytest.mark.parametrize("field", ("provider_bases", "provider_mro"))
 def test_plugin_fails_strict_projection_for_mutated_field(
     tmp_path: Path, field: str
@@ -287,6 +386,7 @@ def test_plugin_reports_semantic_manifest_config_data(tmp_path: Path) -> None:
         sage_version="10.7",
         python_version="3.12.13",
         projections=tuple(projections.values()),
+        source_modules=(DIAMOND_SOURCE_MODULE,),
     )
     manifest_path = tmp_path / "sage-category-projections.json"
     config_path = tmp_path / "mypy.ini"
@@ -318,6 +418,10 @@ def test_plugin_reports_semantic_manifest_config_data(tmp_path: Path) -> None:
     )
     assert config_data["manifest_mypy_min_version"] == manifest.mypy_min_version
     assert config_data["manifest_mypy_max_version"] == manifest.mypy_max_version
+    assert config_data["manifest_source_module_digest"] == (
+        manifest.source_module_digest
+    )
+    assert manifest.source_module_by_module == {FIXTURE_MODULE: DIAMOND_SOURCE_MODULE}
 
 
 def _build_fixture(
