@@ -16,6 +16,11 @@ from tests.fixtures.invariant_core.functorial.cartesian_products import (
     CartesianProductsCategory,
 )
 from tests.fixtures.invariant_core.local_wrapper import LocalCategoryBase
+from tests.fixtures.invariant_core.parameterized import (
+    ModulesOverIntegers,
+    ModulesOverRationals,
+    VectorSpacesOverRationals,
+)
 
 
 def _class_fullname(cls: type[object]) -> str:
@@ -305,3 +310,38 @@ def test_cartesian_products_projection_matches_sage_runtime_mro() -> None:
         "sage.categories.sets_cat.Sets.CartesianProducts.ElementMethods",
         "sage.categories.sets_cat.Sets.ElementMethods",
     )
+
+
+def test_parameterized_projection_uses_sage_runtime_named_class_identity() -> None:
+    projections = provider_projections_for_categories(
+        (
+            "tests.fixtures.invariant_core.parameterized.ModulesOverIntegers",
+            "tests.fixtures.invariant_core.parameterized.ModulesOverRationals",
+            "tests.fixtures.invariant_core.parameterized.VectorSpacesOverRationals",
+        ),
+        roles=("parent",),
+    )
+
+    modules_provider = "sage.categories.modules.Modules.ParentMethods"
+    vector_spaces_provider = "sage.categories.vector_spaces.VectorSpaces.ParentMethods"
+    modules_projection = projections[modules_provider]
+    vector_spaces_projection = projections[vector_spaces_provider]
+
+    assert ModulesOverRationals.parent_class is VectorSpacesOverRationals.parent_class
+    assert ModulesOverIntegers.parent_class is not ModulesOverRationals.parent_class
+    assert modules_projection.runtime_class == _class_fullname(
+        ModulesOverIntegers.parent_class
+    )
+    assert vector_spaces_projection.runtime_class == _class_fullname(
+        VectorSpacesOverRationals.parent_class
+    )
+    assert vector_spaces_projection.runtime_class == _class_fullname(
+        ModulesOverRationals.parent_class
+    )
+    assert vector_spaces_projection.provider_bases == (modules_provider,)
+    assert vector_spaces_projection.provider_mro[:2] == (
+        vector_spaces_provider,
+        modules_provider,
+    )
+    assert modules_projection.provider_mro[0] == modules_provider
+    assert modules_projection.runtime_class != vector_spaces_projection.runtime_class

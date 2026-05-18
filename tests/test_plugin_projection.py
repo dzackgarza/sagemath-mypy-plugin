@@ -95,6 +95,15 @@ FUNCTORIAL_CARTESIAN_PARENT_PROVIDER = (
 FUNCTORIAL_CARTESIAN_ELEMENT_PROVIDER = (
     "sage.categories.sets_cat.Sets.CartesianProducts.ElementMethods"
 )
+PARAMETERIZED_CATEGORY_FULLNAMES = (
+    "tests.fixtures.invariant_core.parameterized.ModulesOverIntegers",
+    "tests.fixtures.invariant_core.parameterized.ModulesOverRationals",
+    "tests.fixtures.invariant_core.parameterized.VectorSpacesOverRationals",
+)
+PARAMETERIZED_MODULES_PROVIDER = "sage.categories.modules.Modules.ParentMethods"
+PARAMETERIZED_VECTOR_SPACES_PROVIDER = (
+    "sage.categories.vector_spaces.VectorSpaces.ParentMethods"
+)
 DIAMOND_SOURCE_MODULE = SourceModuleRecord(
     module=FIXTURE_MODULE,
     path="tests/fixtures/invariant_core/diamond_runtime.py",
@@ -468,9 +477,14 @@ def test_plugin_projects_sage_provider_typeinfo_mros_from_source_modules(
         (FUNCTORIAL_CARTESIAN_CATEGORY,),
         roles=("parent", "element"),
     )
+    parameterized_projections = _provider_projections(
+        PARAMETERIZED_CATEGORY_FULLNAMES,
+        roles=("parent",),
+    )
     projections = {
         **axiom_projections,
         **cartesian_projections,
+        **parameterized_projections,
     }
     manifest_path = tmp_path / "sage-provider-source-modules.json"
     config_path = tmp_path / "mypy.ini"
@@ -508,6 +522,18 @@ def test_plugin_projects_sage_provider_typeinfo_mros_from_source_modules(
             )
         )
     )
+    parameterized_fixture_path = tmp_path / "parameterized_consumer.py"
+    parameterized_fixture_path.write_text(
+        "\n".join(
+            (
+                "from sage.categories.modules import Modules",
+                "from sage.categories.vector_spaces import VectorSpaces",
+                "Modules.ParentMethods",
+                "VectorSpaces.ParentMethods",
+                "",
+            )
+        )
+    )
     write_manifest(manifest_path, manifest)
     config_path.write_text(
         "\n".join(
@@ -529,6 +555,7 @@ def test_plugin_projects_sage_provider_typeinfo_mros_from_source_modules(
         fixture_sources=(
             (axiom_fixture_path, "axiom_consumer"),
             (cartesian_fixture_path, "cartesian_products_consumer"),
+            (parameterized_fixture_path, "parameterized_consumer"),
         ),
         mypy_path_entries=(stub_root,),
     )
@@ -543,6 +570,17 @@ def test_plugin_projects_sage_provider_typeinfo_mros_from_source_modules(
     cartesian_products_info = _inner_typeinfo(sets_info, "CartesianProducts")
     parent_info = _inner_typeinfo(cartesian_products_info, "ParentMethods")
     element_info = _inner_typeinfo(cartesian_products_info, "ElementMethods")
+    modules_info = result.files["sage.categories.modules"].names["Modules"].node
+    vector_spaces_info = result.files["sage.categories.vector_spaces"].names[
+        "VectorSpaces"
+    ].node
+    assert isinstance(modules_info, TypeInfo)
+    assert isinstance(vector_spaces_info, TypeInfo)
+    modules_parent_info = _inner_typeinfo(modules_info, "ParentMethods")
+    vector_spaces_parent_info = _inner_typeinfo(
+        vector_spaces_info,
+        "ParentMethods",
+    )
 
     assert result.errors == []
     assert tuple(info.fullname for info in commutative_info.mro) == (
@@ -555,6 +593,14 @@ def test_plugin_projects_sage_provider_typeinfo_mros_from_source_modules(
     )
     assert tuple(info.fullname for info in element_info.mro) == (
         *cartesian_projections[FUNCTORIAL_CARTESIAN_ELEMENT_PROVIDER].provider_mro,
+        "builtins.object",
+    )
+    assert tuple(info.fullname for info in modules_parent_info.mro) == (
+        *parameterized_projections[PARAMETERIZED_MODULES_PROVIDER].provider_mro,
+        "builtins.object",
+    )
+    assert tuple(info.fullname for info in vector_spaces_parent_info.mro) == (
+        *parameterized_projections[PARAMETERIZED_VECTOR_SPACES_PROVIDER].provider_mro,
         "builtins.object",
     )
 
