@@ -143,6 +143,13 @@ FUNCTORIAL_CARTESIAN_PARENT_PROVIDER = (
 FUNCTORIAL_CARTESIAN_ELEMENT_PROVIDER = (
     "sage.categories.sets_cat.Sets.CartesianProducts.ElementMethods"
 )
+FUNCTORIAL_TENSOR_CATEGORY = (
+    "tests.fixtures.invariant_core.functorial.tensor_products."
+    "TensorProductsCategory"
+)
+FUNCTORIAL_TENSOR_PARENT_PROVIDER = (
+    "sage.categories.modules.Modules.TensorProducts.ParentMethods"
+)
 PARAMETERIZED_CATEGORY_FULLNAMES = (
     "tests.fixtures.invariant_core.parameterized.ModulesOverIntegers",
     "tests.fixtures.invariant_core.parameterized.ModulesOverRationals",
@@ -716,6 +723,10 @@ def test_plugin_projects_sage_provider_typeinfo_mros_from_source_modules(
         (FUNCTORIAL_CARTESIAN_CATEGORY,),
         roles=("parent", "element"),
     )
+    tensor_projections = _provider_projections(
+        (FUNCTORIAL_TENSOR_CATEGORY,),
+        roles=("parent",),
+    )
     parameterized_projections = _provider_projections(
         PARAMETERIZED_CATEGORY_FULLNAMES,
         roles=("parent",),
@@ -723,6 +734,7 @@ def test_plugin_projects_sage_provider_typeinfo_mros_from_source_modules(
     projections = {
         **axiom_projections,
         **cartesian_projections,
+        **tensor_projections,
         **parameterized_projections,
     }
     manifest_path = tmp_path / "sage-provider-source-modules.json"
@@ -761,6 +773,16 @@ def test_plugin_projects_sage_provider_typeinfo_mros_from_source_modules(
             )
         )
     )
+    tensor_fixture_path = tmp_path / "tensor_products_consumer.py"
+    tensor_fixture_path.write_text(
+        "\n".join(
+            (
+                "from sage.categories.modules import Modules",
+                "Modules.TensorProducts.ParentMethods",
+                "",
+            )
+        )
+    )
     parameterized_fixture_path = tmp_path / "parameterized_consumer.py"
     parameterized_fixture_path.write_text(
         "\n".join(
@@ -794,6 +816,7 @@ def test_plugin_projects_sage_provider_typeinfo_mros_from_source_modules(
         fixture_sources=(
             (axiom_fixture_path, "axiom_consumer"),
             (cartesian_fixture_path, "cartesian_products_consumer"),
+            (tensor_fixture_path, "tensor_products_consumer"),
             (parameterized_fixture_path, "parameterized_consumer"),
         ),
         mypy_path_entries=(stub_root,),
@@ -816,6 +839,8 @@ def test_plugin_projects_sage_provider_typeinfo_mros_from_source_modules(
     assert isinstance(modules_info, TypeInfo)
     assert isinstance(vector_spaces_info, TypeInfo)
     modules_parent_info = _inner_typeinfo(modules_info, "ParentMethods")
+    tensor_products_info = _inner_typeinfo(modules_info, "TensorProducts")
+    tensor_parent_info = _inner_typeinfo(tensor_products_info, "ParentMethods")
     vector_spaces_parent_info = _inner_typeinfo(
         vector_spaces_info,
         "ParentMethods",
@@ -832,6 +857,10 @@ def test_plugin_projects_sage_provider_typeinfo_mros_from_source_modules(
     )
     assert tuple(info.fullname for info in element_info.mro) == (
         *cartesian_projections[FUNCTORIAL_CARTESIAN_ELEMENT_PROVIDER].provider_mro,
+        "builtins.object",
+    )
+    assert tuple(info.fullname for info in tensor_parent_info.mro) == (
+        *tensor_projections[FUNCTORIAL_TENSOR_PARENT_PROVIDER].provider_mro,
         "builtins.object",
     )
     assert tuple(info.fullname for info in modules_parent_info.mro) == (

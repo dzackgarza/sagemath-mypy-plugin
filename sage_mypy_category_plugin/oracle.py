@@ -119,11 +119,11 @@ def provider_projections_for_categories(
     with _trace_make_named_class(roles=roles):
         projections: dict[str, ProviderProjection] = {}
         for category_fullname in category_fullnames:
-            category_factory = _import_category_factory(category_fullname)
-            category = category_factory.an_instance()
+            category = _import_category(category_fullname)
             for role in roles:
                 projection = _provider_projection(category, role)
-                projections[projection.provider] = projection
+                if projection is not None:
+                    projections[projection.provider] = projection
         for (role, provider), runtime_class in _RUNTIME_CLASS_BY_PROVIDER_ROLE.items():
             if provider not in projections:
                 projections[provider] = _provider_projection_from_runtime_class(
@@ -181,7 +181,10 @@ def provider_method_records_for_projections(
     return tuple(records)
 
 
-def _provider_projection(category: SageCategory, role: ProviderRole) -> ProviderProjection:
+def _provider_projection(
+    category: SageCategory,
+    role: ProviderRole,
+) -> ProviderProjection | None:
     role_projection = ROLE_PROJECTIONS[role]
     projected_category = _projected_category(category, role_projection)
     _invalidate_named_class_cache(projected_category, role_projection)
@@ -195,7 +198,11 @@ def _provider_projection(category: SageCategory, role: ProviderRole) -> Provider
         _ensure_runtime_class_projection(role, role_projection, runtime_mro_class)
 
     runtime_to_provider = _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role]
-    provider = _provider_fullname(projected_category, role_projection)
+    provider = _provider_fullname_or_none(projected_category, role_projection)
+    if provider is None:
+        _UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role].add(runtime_class)
+        return None
+
     provider_bases = _project_runtime_classes(
         runtime_class.__bases__,
         runtime_to_provider,
@@ -506,14 +513,6 @@ def _invalidate_named_class_cache(
             current_category.__dict__.pop(role_projection.runtime_attr, None)
 
 
-def _provider_fullname(category: SageCategory, role_projection: RoleProjection) -> str:
-    provider = _provider_fullname_or_none(category, role_projection)
-    assert provider is not None, (
-        f"{type(category)!r}.{role_projection.provider_attr} must be a class"
-    )
-    return provider
-
-
 def _provider_fullname_or_none(
     category: SageCategory,
     role_projection: RoleProjection,
@@ -526,13 +525,21 @@ def _provider_fullname_or_none(
     return provider_fullname
 
 
-def _import_category_factory(fullname: str) -> SageCategoryFactory:
-    category_factory = import_fullname(fullname)
+def _import_category(fullname: str) -> SageCategory:
+    candidate = import_fullname(fullname)
+    if not isinstance(candidate, type) and isinstance(candidate, SageCategory):
+        return candidate
+
+    category_factory = candidate
     assert isinstance(category_factory, SageCategoryFactory), (
         f"{fullname!r} must resolve to a Sage category factory; "
         f"got {category_factory!r}"
     )
-    return category_factory
+    category = category_factory.an_instance()
+    assert isinstance(category, SageCategory), (
+        f"{fullname!r}.an_instance() must return a Sage category; got {category!r}"
+    )
+    return category
 
 
 def _import_concrete_parent_factory(fullname: str) -> type[object]:

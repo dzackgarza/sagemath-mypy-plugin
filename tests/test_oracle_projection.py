@@ -25,6 +25,9 @@ from tests.fixtures.invariant_core.diamond_behavior_decorated_valid import (
 from tests.fixtures.invariant_core.functorial.cartesian_products import (
     CartesianProductsCategory,
 )
+from tests.fixtures.invariant_core.functorial.tensor_products import (
+    TensorProductsCategory,
+)
 from tests.fixtures.invariant_core.local_wrapper import LocalCategoryBase
 from tests.fixtures.invariant_core.parameterized import (
     ModulesOverIntegers,
@@ -392,6 +395,60 @@ def test_cartesian_products_projection_matches_sage_runtime_mro() -> None:
     ].provider_mro == (
         "sage.categories.sets_cat.Sets.CartesianProducts.ElementMethods",
         "sage.categories.sets_cat.Sets.ElementMethods",
+    )
+
+
+def test_tensor_products_projection_records_projectable_runtime_bases() -> None:
+    projections = provider_projections_for_categories(
+        (
+            "tests.fixtures.invariant_core.functorial.tensor_products."
+            "TensorProductsCategory",
+        ),
+        roles=("parent",),
+    )
+
+    projection = projections["sage.categories.modules.Modules.TensorProducts.ParentMethods"]
+    runtime_class = TensorProductsCategory.parent_class.__bases__[0]
+
+    assert _class_fullname(runtime_class) == (
+        "sage.categories.modules.Modules.TensorProducts.parent_class"
+    )
+    assert projection.provider == (
+        "sage.categories.modules.Modules.TensorProducts.ParentMethods"
+    )
+    assert projection.runtime_class == _class_fullname(runtime_class)
+    assert projection.runtime_bases == tuple(
+        _class_fullname(runtime_base)
+        for runtime_base in runtime_class.__bases__
+    )
+    assert projection.runtime_mro == tuple(
+        _class_fullname(runtime_mro_class)
+        for runtime_mro_class in runtime_class.__mro__
+    )
+    assert projection.provider_bases == (
+        "sage.categories.modules.Modules.ParentMethods",
+    )
+    assert projection.provider_mro == (
+        "sage.categories.modules.Modules.TensorProducts.ParentMethods",
+        "sage.categories.modules.Modules.ParentMethods",
+        "sage.categories.bimodules.Bimodules.ParentMethods",
+        "sage.categories.right_modules.RightModules.ParentMethods",
+        "sage.categories.left_modules.LeftModules.ParentMethods",
+        "sage.categories.additive_monoids.AdditiveMonoids.ParentMethods",
+        "sage.categories.additive_magmas.AdditiveMagmas.AdditiveUnital.ParentMethods",
+        "sage.categories.additive_semigroups.AdditiveSemigroups.ParentMethods",
+        "sage.categories.additive_magmas.AdditiveMagmas.ParentMethods",
+        "sage.categories.sets_cat.Sets.ParentMethods",
+        "sage.categories.objects.Objects.ParentMethods",
+    )
+    assert projection.unprojected_runtime_mro == (
+        "sage.categories.commutative_additive_groups.CommutativeAdditiveGroups.parent_class",
+        "sage.categories.additive_groups.AdditiveGroups.parent_class",
+        "sage.categories.additive_magmas.AdditiveMagmas.AdditiveUnital.AdditiveInverse.parent_class",
+        "sage.categories.commutative_additive_monoids.CommutativeAdditiveMonoids.parent_class",
+        "sage.categories.commutative_additive_semigroups.CommutativeAdditiveSemigroups.parent_class",
+        "sage.categories.additive_magmas.AdditiveMagmas.AdditiveCommutative.parent_class",
+        "sage.categories.sets_with_partial_maps.SetsWithPartialMaps.parent_class",
     )
 
 
