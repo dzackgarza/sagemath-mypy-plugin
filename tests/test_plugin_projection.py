@@ -84,6 +84,16 @@ COMMUTATIVE_RINGS_CATEGORY = "sage.categories.commutative_rings.CommutativeRings
 COMMUTATIVE_RINGS_PROVIDER = (
     "sage.categories.commutative_rings.CommutativeRings.ParentMethods"
 )
+FUNCTORIAL_CARTESIAN_CATEGORY = (
+    "tests.fixtures.invariant_core.functorial.cartesian_products."
+    "CartesianProductsCategory"
+)
+FUNCTORIAL_CARTESIAN_PARENT_PROVIDER = (
+    "sage.categories.sets_cat.Sets.CartesianProducts.ParentMethods"
+)
+FUNCTORIAL_CARTESIAN_ELEMENT_PROVIDER = (
+    "sage.categories.sets_cat.Sets.CartesianProducts.ElementMethods"
+)
 DIAMOND_SOURCE_MODULE = SourceModuleRecord(
     module=FIXTURE_MODULE,
     path="tests/fixtures/invariant_core/diamond_runtime.py",
@@ -531,6 +541,78 @@ def test_plugin_dependency_modules_use_manifest_source_modules_for_nested_axioms
     assert "sage.categories.additive_magmas" in dep_modules
     assert "sage.categories.magmas.Magmas" not in dep_modules
     assert "sage.categories.additive_magmas.AdditiveMagmas" not in dep_modules
+
+
+def test_plugin_projects_cartesian_products_typeinfo_mros_from_source_modules(
+    tmp_path: Path,
+) -> None:
+    projections = provider_projections_for_categories(
+        (FUNCTORIAL_CARTESIAN_CATEGORY,),
+        roles=("parent", "element"),
+    )
+    manifest_path = tmp_path / "sage-category-cartesian-products.json"
+    config_path = tmp_path / "mypy.ini"
+    stub_root = tmp_path / "visible-sage-stubs"
+    source_modules = _write_projected_provider_stubs(
+        stub_root,
+        projections=tuple(projections.values()),
+    )
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=tuple(projections.values()),
+        source_modules=source_modules,
+    )
+    fixture_path = tmp_path / "cartesian_products_consumer.py"
+    fixture_path.write_text(
+        "\n".join(
+            (
+                "from sage.categories.sets_cat import Sets",
+                "Sets.CartesianProducts.ParentMethods",
+                "Sets.CartesianProducts.ElementMethods",
+                "",
+            )
+        )
+    )
+    write_manifest(manifest_path, manifest)
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "ignore_missing_imports = True",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+
+    result = _build_fixture(
+        config_path,
+        tmp_path,
+        fixture_path=fixture_path,
+        fixture_module="cartesian_products_consumer",
+        mypy_path_entries=(stub_root,),
+    )
+    sets_info = result.files["sage.categories.sets_cat"].names["Sets"].node
+    assert isinstance(sets_info, TypeInfo)
+    cartesian_products_info = _inner_typeinfo(sets_info, "CartesianProducts")
+    parent_info = _inner_typeinfo(cartesian_products_info, "ParentMethods")
+    element_info = _inner_typeinfo(cartesian_products_info, "ElementMethods")
+
+    assert result.errors == []
+    assert tuple(info.fullname for info in parent_info.mro) == (
+        *projections[FUNCTORIAL_CARTESIAN_PARENT_PROVIDER].provider_mro,
+        "builtins.object",
+    )
+    assert tuple(info.fullname for info in element_info.mro) == (
+        *projections[FUNCTORIAL_CARTESIAN_ELEMENT_PROVIDER].provider_mro,
+        "builtins.object",
+    )
 
 
 @pytest.mark.parametrize("field", ("provider_bases", "provider_mro"))

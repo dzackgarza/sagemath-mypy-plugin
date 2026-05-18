@@ -12,6 +12,9 @@ from tests.fixtures.invariant_core.diamond_runtime import (
     RightCategory,
     TopCategory,
 )
+from tests.fixtures.invariant_core.functorial.cartesian_products import (
+    CartesianProductsCategory,
+)
 from tests.fixtures.invariant_core.local_wrapper import LocalCategoryBase
 
 
@@ -216,3 +219,89 @@ def test_category_specs_like_parent_projection_uses_local_wrapper_alias() -> Non
     assert projection.provider_mro == projected_runtime_mro
     assert projection.provider_bases == (root_provider,)
     assert projection.provider_mro == (commutative_provider, root_provider)
+
+
+def test_cartesian_products_projection_matches_sage_runtime_mro() -> None:
+    from sage.categories.objects import Objects  # type: ignore[import-untyped]
+    from sage.categories.sets_cat import Sets  # type: ignore[import-untyped]
+
+    projections = provider_projections_for_categories(
+        (
+            "tests.fixtures.invariant_core.functorial.cartesian_products."
+            "CartesianProductsCategory",
+        ),
+        roles=("parent", "element"),
+    )
+
+    category = CartesianProductsCategory
+    runtime_to_provider = {
+        "parent": {
+            category.parent_class: type(category).ParentMethods,
+            Sets().parent_class: Sets.ParentMethods,
+            Objects().parent_class: Objects.ParentMethods,
+        },
+        "element": {
+            category.element_class: type(category).ElementMethods,
+            Sets().element_class: Sets.ElementMethods,
+        },
+    }
+    expected = {
+        "parent": (
+            "sage.categories.sets_cat.Sets.CartesianProducts.ParentMethods",
+            category.parent_class,
+            runtime_to_provider["parent"],
+        ),
+        "element": (
+            "sage.categories.sets_cat.Sets.CartesianProducts.ElementMethods",
+            category.element_class,
+            runtime_to_provider["element"],
+        ),
+    }
+
+    for role, (provider, runtime_class, provider_map) in expected.items():
+        projection = projections[provider]
+        projected_runtime_bases = tuple(
+            _class_fullname(provider_map[runtime_base])
+            for runtime_base in runtime_class.__bases__
+            if runtime_base in provider_map
+        )
+        projected_runtime_mro = tuple(
+            _class_fullname(provider_map[runtime_mro_class])
+            for runtime_mro_class in runtime_class.__mro__
+            if runtime_mro_class in provider_map
+        )
+        unprojected_runtime_mro = tuple(
+            _class_fullname(runtime_mro_class)
+            for runtime_mro_class in runtime_class.__mro__
+            if runtime_mro_class not in provider_map
+            and runtime_mro_class is not object
+        )
+
+        assert projection.provider == provider
+        assert projection.role == role
+        assert projection.runtime_class == _class_fullname(runtime_class)
+        assert projection.runtime_bases == tuple(
+            _class_fullname(runtime_base)
+            for runtime_base in runtime_class.__bases__
+        )
+        assert projection.runtime_mro == tuple(
+            _class_fullname(runtime_mro_class)
+            for runtime_mro_class in runtime_class.__mro__
+        )
+        assert projection.provider_bases == projected_runtime_bases
+        assert projection.provider_mro == projected_runtime_mro
+        assert projection.unprojected_runtime_mro == unprojected_runtime_mro
+
+    assert projections[
+        "sage.categories.sets_cat.Sets.CartesianProducts.ParentMethods"
+    ].provider_mro == (
+        "sage.categories.sets_cat.Sets.CartesianProducts.ParentMethods",
+        "sage.categories.sets_cat.Sets.ParentMethods",
+        "sage.categories.objects.Objects.ParentMethods",
+    )
+    assert projections[
+        "sage.categories.sets_cat.Sets.CartesianProducts.ElementMethods"
+    ].provider_mro == (
+        "sage.categories.sets_cat.Sets.CartesianProducts.ElementMethods",
+        "sage.categories.sets_cat.Sets.ElementMethods",
+    )
