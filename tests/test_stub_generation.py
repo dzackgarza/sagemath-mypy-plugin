@@ -7,7 +7,11 @@ from mypy.build import BuildResult, build
 from mypy.modulefinder import BuildSource
 from mypy.options import Options
 
-from sage_mypy_category_plugin.manifest import ProjectionManifest, SourceModuleRecord
+from sage_mypy_category_plugin.manifest import (
+    ProjectionManifest,
+    SourceModuleRecord,
+    load_manifest,
+)
 from sage_mypy_category_plugin.projection import ConcreteParentRecord
 from sage_mypy_category_plugin.projection import ProviderMethodRecord
 from sage_mypy_category_plugin.projection import ProviderProjection
@@ -183,6 +187,35 @@ def test_generated_stub_cli_writes_stub_tree(tmp_path: Path) -> None:
         "    class ParentMethods:\n"
         "        ...\n"
     )
+
+
+def test_generated_stub_cli_writes_manifest_with_stub_source_metadata(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "manifest.json"
+    output_root = tmp_path / "generated-stubs"
+    manifest_output_path = tmp_path / "manifest.with-stubs.json"
+    manifest_path.write_text(_self_return_provider_manifest().model_dump_json())
+
+    assert (
+        stubs_cli.main(
+            [
+                str(manifest_path),
+                str(output_root),
+                "--manifest-output",
+                str(manifest_output_path),
+            ]
+        )
+        == 0
+    )
+
+    stub_manifest = load_manifest(manifest_output_path)
+    source_record = stub_manifest.source_module_by_module["fixtures.self_type"]
+    source_path = Path(source_record.path)
+
+    assert source_path == output_root / "fixtures" / "self_type.pyi"
+    assert source_record.sha256 == sha256(source_path.read_bytes()).hexdigest()
+    assert source_record.mtime_ns == source_path.stat().st_mtime_ns
 
 
 def test_generated_stubs_include_concrete_parent_runtime_aliases() -> None:

@@ -60,3 +60,4 @@ def test_generate_stubs_recipe_forwards_cli_arguments() -> None:
 
     assert "manifest" in result.stdout
     assert "output_root" in result.stdout
+    assert "--manifest-output MANIFEST_OUTPUT" in result.stdout

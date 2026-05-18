@@ -9,6 +9,7 @@ from sage_mypy_category_plugin.manifest import (
     ProjectionManifest,
     SourceModuleRecord,
     load_manifest,
+    write_manifest,
 )
 from sage_mypy_category_plugin.projection import ProviderMethodRecord
 
@@ -90,13 +91,25 @@ def _stub_argument_parser() -> ArgumentParser:
         "output_root",
         help="Directory where generated .pyi files are written.",
     )
+    parser.add_argument(
+        "--manifest-output",
+        help=(
+            "Optional path to write a manifest whose source metadata points at "
+            "the generated stub tree."
+        ),
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _stub_argument_parser().parse_args(argv)
     manifest = load_manifest(Path(args.manifest))
-    write_generated_stub_tree(Path(args.output_root), manifest)
+    source_modules = write_generated_stub_tree(Path(args.output_root), manifest)
+    if args.manifest_output is not None:
+        write_manifest(
+            Path(args.manifest_output),
+            manifest.model_copy(update={"source_modules": source_modules}),
+        )
     return 0
 
 
