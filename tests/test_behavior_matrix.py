@@ -86,35 +86,15 @@ def test_behavior_matrix_uses_standard_mypy_inheritance_rules(tmp_path: Path) ->
 def test_nested_axiom_behavior_matrix_uses_standard_mypy_rules(
     tmp_path: Path,
 ) -> None:
-    with_plugin_valid = _run_axiom_provider_mypy(
-        tmp_path,
-        variant="valid",
-        override_method="is_commutative",
-        with_plugin=True,
-    )
-    without_plugin_valid = _run_axiom_provider_mypy(
-        tmp_path,
-        variant="valid",
-        override_method="is_commutative",
-        with_plugin=False,
-    )
-    with_plugin_invalid = _run_axiom_provider_mypy(
-        tmp_path,
-        variant="invalid",
-        override_method="not_a_sage_axiom_method",
-        with_plugin=True,
-    )
-    without_plugin_invalid = _run_axiom_provider_mypy(
-        tmp_path,
-        variant="invalid",
-        override_method="not_a_sage_axiom_method",
-        with_plugin=False,
-    )
+    with_plugin = _run_axiom_provider_mypy(tmp_path, with_plugin=True)
+    without_plugin = _run_axiom_provider_mypy(tmp_path, with_plugin=False)
 
-    assert with_plugin_valid.errors == []
-    assert _contains_error(without_plugin_valid, "no base method was found")
-    assert _contains_error(with_plugin_invalid, "no base method was found")
-    assert _contains_error(without_plugin_invalid, "no base method was found")
+    assert not _contains_error(with_plugin, '"is_commutative"')
+    assert _contains_error(with_plugin, '"not_a_sage_axiom_method"')
+    assert _contains_error(with_plugin, "no base method was found")
+    assert _contains_error(without_plugin, '"is_commutative"')
+    assert _contains_error(without_plugin, '"not_a_sage_axiom_method"')
+    assert _contains_error(without_plugin, "no base method was found")
 
 
 def _write_plugin_config(tmp_path: Path) -> Path:
@@ -154,11 +134,9 @@ def _write_plugin_config(tmp_path: Path) -> Path:
 def _run_axiom_provider_mypy(
     tmp_path: Path,
     *,
-    variant: str,
-    override_method: str,
     with_plugin: bool,
 ) -> BuildResult:
-    source_root = tmp_path / f"axiom-{variant}"
+    source_root = tmp_path / "axiom"
     projections = provider_projections_for_categories(
         (COMMUTATIVE_RINGS_CATEGORY,),
         roles=("parent",),
@@ -166,10 +144,9 @@ def _run_axiom_provider_mypy(
     source_modules = _write_axiom_provider_sources(
         source_root,
         providers=projections[COMMUTATIVE_RINGS_PROVIDER].provider_mro,
-        override_method=override_method,
     )
-    config_path = tmp_path / f"{variant}-mypy.ini"
-    manifest_path = tmp_path / f"{variant}-manifest.json"
+    config_path = tmp_path / "axiom-mypy.ini"
+    manifest_path = tmp_path / "axiom-manifest.json"
     manifest = ProjectionManifest(
         schema_version=1,
         generated_by="tests",
@@ -195,7 +172,7 @@ def _run_axiom_provider_mypy(
 
     options = Options()
     options.incremental = False
-    options.cache_dir = str(tmp_path / f"{variant}-{with_plugin}-mypy-cache")
+    options.cache_dir = str(tmp_path / f"{with_plugin}-mypy-cache")
     options.mypy_path = [str(source_root)]
     options.ignore_missing_imports = True
     if with_plugin:
@@ -217,7 +194,6 @@ def _write_axiom_provider_sources(
     source_root: Path,
     *,
     providers: tuple[str, ...],
-    override_method: str,
 ) -> tuple[SourceModuleRecord, ...]:
     module_trees: dict[str, SourceTree] = defaultdict(dict)
     for provider in providers:
@@ -231,7 +207,11 @@ def _write_axiom_provider_sources(
         ),
         _importable_module_and_qualname(COMMUTATIVE_RINGS_PROVIDER): (
             "@override",
-            f"def {override_method}(self) -> bool:",
+            "def is_commutative(self) -> bool:",
+            "    return True",
+            "",
+            "@override",
+            "def not_a_sage_axiom_method(self) -> bool:",
             "    return True",
         ),
     }
