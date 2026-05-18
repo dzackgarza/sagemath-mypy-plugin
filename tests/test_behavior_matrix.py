@@ -31,6 +31,14 @@ COMMUTATIVE_RINGS_PROVIDER = (
     "sage.categories.commutative_rings.CommutativeRings.ParentMethods"
 )
 RINGS_PROVIDER = "sage.categories.rings.Rings.ParentMethods"
+FUNCTORIAL_CARTESIAN_CATEGORY = (
+    "tests.fixtures.invariant_core.functorial.cartesian_products."
+    "CartesianProductsCategory"
+)
+SETS_PROVIDER = "sage.categories.sets_cat.Sets.ParentMethods"
+FUNCTORIAL_CARTESIAN_PARENT_PROVIDER = (
+    "sage.categories.sets_cat.Sets.CartesianProducts.ParentMethods"
+)
 BEHAVIOR_CASES = {
     "valid": (
         "tests.fixtures.invariant_core.diamond_behavior_valid",
@@ -83,18 +91,44 @@ def test_behavior_matrix_uses_standard_mypy_inheritance_rules(tmp_path: Path) ->
     assert not _case_errors(without_plugin, "missing_explicit_override")
 
 
-def test_nested_axiom_behavior_matrix_uses_standard_mypy_rules(
+def test_nested_sage_provider_behavior_matrix_uses_standard_mypy_rules(
     tmp_path: Path,
 ) -> None:
-    with_plugin = _run_axiom_provider_mypy(tmp_path, with_plugin=True)
-    without_plugin = _run_axiom_provider_mypy(tmp_path, with_plugin=False)
+    with_plugin = _run_nested_provider_mypy(tmp_path, with_plugin=True)
+    without_plugin = _run_nested_provider_mypy(tmp_path, with_plugin=False)
 
     assert not _contains_error(with_plugin, '"is_commutative"')
-    assert _contains_error(with_plugin, '"not_a_sage_axiom_method"')
-    assert _contains_error(with_plugin, "no base method was found")
-    assert _contains_error(without_plugin, '"is_commutative"')
-    assert _contains_error(without_plugin, '"not_a_sage_axiom_method"')
-    assert _contains_error(without_plugin, "no base method was found")
+    assert not _contains_error(with_plugin, '"construction"')
+    assert _contains_error_fragments(
+        with_plugin,
+        '"not_a_sage_axiom_method"',
+        "no base method was found",
+    )
+    assert _contains_error_fragments(
+        with_plugin,
+        '"not_a_sage_functorial_method"',
+        "no base method was found",
+    )
+    assert _contains_error_fragments(
+        without_plugin,
+        '"is_commutative"',
+        "no base method was found",
+    )
+    assert _contains_error_fragments(
+        without_plugin,
+        '"construction"',
+        "no base method was found",
+    )
+    assert _contains_error_fragments(
+        without_plugin,
+        '"not_a_sage_axiom_method"',
+        "no base method was found",
+    )
+    assert _contains_error_fragments(
+        without_plugin,
+        '"not_a_sage_functorial_method"',
+        "no base method was found",
+    )
 
 
 def _write_plugin_config(tmp_path: Path) -> Path:
@@ -131,22 +165,40 @@ def _write_plugin_config(tmp_path: Path) -> Path:
     return config_path
 
 
-def _run_axiom_provider_mypy(
+def _run_nested_provider_mypy(
     tmp_path: Path,
     *,
     with_plugin: bool,
 ) -> BuildResult:
-    source_root = tmp_path / "axiom"
-    projections = provider_projections_for_categories(
+    source_root = tmp_path / "nested-providers"
+    axiom_projections = provider_projections_for_categories(
         (COMMUTATIVE_RINGS_CATEGORY,),
         roles=("parent",),
     )
-    source_modules = _write_axiom_provider_sources(
-        source_root,
-        providers=projections[COMMUTATIVE_RINGS_PROVIDER].provider_mro,
+    functorial_projections = provider_projections_for_categories(
+        (FUNCTORIAL_CARTESIAN_CATEGORY,),
+        roles=("parent",),
     )
-    config_path = tmp_path / "axiom-mypy.ini"
-    manifest_path = tmp_path / "axiom-manifest.json"
+    projections = {
+        **axiom_projections,
+        **functorial_projections,
+    }
+    provider_mro = tuple(
+        dict.fromkeys(
+            (
+                *axiom_projections[COMMUTATIVE_RINGS_PROVIDER].provider_mro,
+                *functorial_projections[
+                    FUNCTORIAL_CARTESIAN_PARENT_PROVIDER
+                ].provider_mro,
+            )
+        )
+    )
+    source_modules = _write_nested_provider_sources(
+        source_root,
+        providers=provider_mro,
+    )
+    config_path = tmp_path / "nested-provider-mypy.ini"
+    manifest_path = tmp_path / "nested-provider-manifest.json"
     manifest = ProjectionManifest(
         schema_version=1,
         generated_by="tests",
@@ -184,13 +236,18 @@ def _run_axiom_provider_mypy(
                 str(source_root / "sage" / "categories" / "commutative_rings.py"),
                 "sage.categories.commutative_rings",
                 None,
-            )
+            ),
+            BuildSource(
+                str(source_root / "sage" / "categories" / "sets_cat.py"),
+                "sage.categories.sets_cat",
+                None,
+            ),
         ],
         options=options,
     )
 
 
-def _write_axiom_provider_sources(
+def _write_nested_provider_sources(
     source_root: Path,
     *,
     providers: tuple[str, ...],
@@ -205,6 +262,10 @@ def _write_axiom_provider_sources(
             "def is_commutative(self) -> bool:",
             "    return False",
         ),
+        _importable_module_and_qualname(SETS_PROVIDER): (
+            "def construction(self) -> str:",
+            '    return "sets"',
+        ),
         _importable_module_and_qualname(COMMUTATIVE_RINGS_PROVIDER): (
             "@override",
             "def is_commutative(self) -> bool:",
@@ -213,6 +274,15 @@ def _write_axiom_provider_sources(
             "@override",
             "def not_a_sage_axiom_method(self) -> bool:",
             "    return True",
+        ),
+        _importable_module_and_qualname(FUNCTORIAL_CARTESIAN_PARENT_PROVIDER): (
+            "@override",
+            "def construction(self) -> str:",
+            '    return "cartesian products"',
+            "",
+            "@override",
+            "def not_a_sage_functorial_method(self) -> str:",
+            '    return "invalid"',
         ),
     }
     source_modules: list[SourceModuleRecord] = []
@@ -334,6 +404,13 @@ def _case_contains(result: BuildResult, case_name: str, fragment: str) -> bool:
 
 def _contains_error(result: BuildResult, fragment: str) -> bool:
     return any(fragment in error for error in result.errors)
+
+
+def _contains_error_fragments(result: BuildResult, *fragments: str) -> bool:
+    return any(
+        all(fragment in error for fragment in fragments)
+        for error in result.errors
+    )
 
 
 def _case_errors(result: BuildResult, case_name: str) -> tuple[str, ...]:
