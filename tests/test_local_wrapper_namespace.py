@@ -51,6 +51,7 @@ Surfaces covered:
     Covariant container assignment — test_plugin_covariant_assignment_correctness
     Relative-import axiom base categories — test_plugin_relative_import_axiom_base_correctness
     Base-category subcategory selectors — test_plugin_base_category_subcategory_selector_correctness
+    Inherited base-category subcategory selectors — test_plugin_inherited_base_category_subcategory_selector_correctness
     Static extra-super method containers — test_plugin_static_extra_super_method_container_correctness
     Static extra-super base-category selectors — test_plugin_static_extra_super_base_category_selector_correctness
 """
@@ -374,6 +375,14 @@ def test_plugin_base_category_subcategory_selector_correctness() -> None:
     """Axiom base_category() calls retain the declared base category selector methods."""
     _assert_clean_conjunction(
         "test_base_category_subcategory_selector",
+        "[attr-defined]",
+    )
+
+
+def test_plugin_inherited_base_category_subcategory_selector_correctness() -> None:
+    """base_category() exposes selectors inherited from its semantic base."""
+    _assert_clean_conjunction(
+        "test_inherited_base_category_subcategory_selector",
         "[attr-defined]",
     )
 

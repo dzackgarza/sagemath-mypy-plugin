@@ -1657,21 +1657,43 @@ def _materialize_subcategory_selector_methods(
     info: TypeInfo,
 ) -> None:
     """Expose SubcategoryMethods methods as methods on the category object."""
-    provider = _method_container_provider_typeinfo(ctx, info, "SubcategoryMethods")
-    if provider is None:
-        return
-    for name, symbol in provider.names.items():
-        if name.startswith("_"):
+    for provider in _subcategory_selector_providers(ctx, info):
+        for name, symbol in provider.names.items():
+            if name.startswith("_"):
+                continue
+            if name in info.names or _class_body_defines(ctx.cls, name):
+                continue
+            method_type = _callable_type_from_method_symbol(ctx, provider, symbol.node)
+            if method_type is None:
+                continue
+            var = Var(name, method_type.copy_modified(name=name))
+            var.info = info
+            var._fullname = f"{info.fullname}.{name}"
+            info.names[name] = SymbolTableNode(MDEF, var, plugin_generated=True)
+
+
+def _subcategory_selector_providers(
+    ctx: ClassDefContext,
+    info: TypeInfo,
+) -> tuple[TypeInfo, ...]:
+    providers: list[TypeInfo] = []
+    seen: set[str] = set()
+    for category in _receiver_self_typeinfo_candidates(ctx, info):
+        provider = _method_container_provider_typeinfo(
+            ctx,
+            category,
+            "SubcategoryMethods",
+        )
+        if provider is None:
             continue
-        if name in info.names or _class_body_defines(ctx.cls, name):
-            continue
-        method_type = _callable_type_from_method_symbol(ctx, provider, symbol.node)
-        if method_type is None:
-            continue
-        var = Var(name, method_type.copy_modified(name=name))
-        var.info = info
-        var._fullname = f"{info.fullname}.{name}"
-        info.names[name] = SymbolTableNode(MDEF, var, plugin_generated=True)
+        for candidate in (provider, *getattr(provider, "mro", ())[1:]):
+            if candidate.name != "SubcategoryMethods":
+                continue
+            if candidate.fullname in seen:
+                continue
+            seen.add(candidate.fullname)
+            providers.append(candidate)
+    return tuple(providers)
 
 
 def _materialize_construction_selector_methods(
