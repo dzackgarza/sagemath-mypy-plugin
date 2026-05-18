@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict
 
 import sage.all  # type: ignore[import-untyped] # noqa: F401
 
+from sage_mypy_category_plugin.imports import import_fullname
 from sage_mypy_category_plugin.projection import (
     ConcreteParentRecord,
     ProviderMethodRecord,
@@ -526,11 +527,7 @@ def _provider_fullname_or_none(
 
 
 def _import_category_factory(fullname: str) -> SageCategoryFactory:
-    module_name, separator, class_name = fullname.rpartition(".")
-    assert separator == ".", f"Expected fully-qualified class name, got {fullname!r}"
-
-    module = import_module(module_name)
-    category_factory = getattr(module, class_name)
+    category_factory = import_fullname(fullname)
     assert isinstance(category_factory, SageCategoryFactory), (
         f"{fullname!r} must resolve to a Sage category factory; "
         f"got {category_factory!r}"
@@ -539,11 +536,7 @@ def _import_category_factory(fullname: str) -> SageCategoryFactory:
 
 
 def _import_concrete_parent_factory(fullname: str) -> type[object]:
-    module_name, separator, class_name = fullname.rpartition(".")
-    assert separator == ".", f"Expected fully-qualified class name, got {fullname!r}"
-
-    module = import_module(module_name)
-    factory = getattr(module, class_name)
+    factory = import_fullname(fullname)
     assert isinstance(factory, type), (
         f"{fullname!r} must resolve to a concrete parent class; got {factory!r}"
     )

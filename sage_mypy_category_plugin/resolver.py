@@ -16,6 +16,7 @@ from sage_mypy_category_plugin.manifest import (
     SourceModuleRecord,
     write_manifest,
 )
+from sage_mypy_category_plugin.imports import importable_module_name_or_none
 from sage_mypy_category_plugin.oracle import (
     concrete_parent_records_for_factories,
     named_class_traces,
@@ -250,21 +251,13 @@ def _concrete_parent_module_names(
 
 
 def _importable_module_name_or_none(fullname: str) -> str | None:
-    parts = fullname.split(".")
-    for split_index in range(len(parts), 0, -1):
-        module_name = ".".join(parts[:split_index])
-        try:
-            import_module(module_name)
-        except ModuleNotFoundError:
-            continue
-        return module_name
-    return None
+    return importable_module_name_or_none(fullname)
 
 
 def _category_module_name(category_fullname: str) -> str:
-    module_name, separator, _ = category_fullname.rpartition(".")
-    if separator != ".":
-        raise ValueError(f"Expected fully-qualified category name: {category_fullname!r}")
+    module_name = _importable_module_name_or_none(category_fullname)
+    if module_name is None:
+        raise ValueError(f"Expected importable category name: {category_fullname!r}")
     return module_name
 
 

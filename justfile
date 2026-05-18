@@ -27,7 +27,7 @@ set shell := ["bash", "-uc"]
     behavior
   )
   commands=(
-    "tests/test_oracle_projection.py tests/test_homset_projection.py tests/test_provider_role_projection.py"
+    "tests/test_oracle_projection.py tests/test_homset_projection.py tests/test_provider_role_projection.py tests/test_axiom_projection.py"
     "tests/test_manifest.py"
     "tests/test_plugin_projection.py"
     "tests/test_resolver_cli.py"
@@ -59,7 +59,7 @@ set shell := ["bash", "-uc"]
 
 [group('test')]
 test-structural *args:
-  just test tests/test_oracle_projection.py tests/test_homset_projection.py tests/test_provider_role_projection.py {{args}}
+  just test tests/test_oracle_projection.py tests/test_homset_projection.py tests/test_provider_role_projection.py tests/test_axiom_projection.py {{args}}
 
 [group('test')]
 test-manifest *args:

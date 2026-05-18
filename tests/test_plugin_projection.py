@@ -107,6 +107,14 @@ HOMSET_ROLES_PATH = (
 HOMSET_ROLES_FULLNAMES = (
     f"{HOMSET_ROLES_MODULE}.BottomCategory",
 )
+AXIOM_FIXTURE_MODULE = "tests.fixtures.invariant_core.axioms"
+AXIOM_FIXTURE_PATH = (
+    REPO_ROOT / "tests" / "fixtures" / "invariant_core" / "axioms.py"
+)
+NESTED_AXIOM_FULLNAMES = (
+    f"{AXIOM_FIXTURE_MODULE}.AxiomRootCategory.Finite",
+)
+NESTED_AXIOM_PROVIDER = f"{NESTED_AXIOM_FULLNAMES[0]}.ParentMethods"
 COMMUTATIVE_RINGS_CATEGORY = "sage.categories.commutative_rings.CommutativeRings"
 COMMUTATIVE_RINGS_PROVIDER = (
     "sage.categories.commutative_rings.CommutativeRings.ParentMethods"
@@ -466,6 +474,88 @@ def test_plugin_projects_structural_typeinfo_mros_from_manifest(
     assert tuple(info.fullname for info in consumer_info.mro) == (
         consumer_provider,
         base_provider,
+        "builtins.object",
+    )
+
+
+def test_plugin_projects_nested_axiom_typeinfo_mro_from_manifest(
+    tmp_path: Path,
+) -> None:
+    projections = _provider_projections(
+        NESTED_AXIOM_FULLNAMES,
+        roles=("parent",),
+    )
+    stub_root = tmp_path / "visible-sage-stubs"
+    source_modules = _write_projected_provider_stubs(
+        stub_root,
+        projections=tuple(projections.values()),
+    )
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=tuple(projections.values()),
+        source_modules=source_modules,
+    )
+    manifest_path = tmp_path / "sage-category-nested-axiom-projections.json"
+    config_path = tmp_path / "mypy.ini"
+    write_manifest(manifest_path, manifest)
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "ignore_missing_imports = True",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+
+    result = _build_fixture(
+        config_path,
+        tmp_path,
+        fixture_path=AXIOM_FIXTURE_PATH,
+        fixture_module=AXIOM_FIXTURE_MODULE,
+        mypy_path_entries=(REPO_ROOT, stub_root),
+    )
+    result_without_plugin = _build_fixture_without_plugin(
+        tmp_path,
+        fixture_path=AXIOM_FIXTURE_PATH,
+        fixture_module=AXIOM_FIXTURE_MODULE,
+        mypy_path_entries=(REPO_ROOT,),
+    )
+
+    assert result.errors == []
+    assert result_without_plugin.errors == []
+    axiom_category_info = result.files[AXIOM_FIXTURE_MODULE].names[
+        "AxiomRootCategory"
+    ].node
+    baseline_axiom_category_info = result_without_plugin.files[
+        AXIOM_FIXTURE_MODULE
+    ].names["AxiomRootCategory"].node
+    assert isinstance(axiom_category_info, TypeInfo)
+    assert isinstance(baseline_axiom_category_info, TypeInfo)
+    axiom_finite_info = _inner_typeinfo(axiom_category_info, "Finite")
+    baseline_axiom_finite_info = _inner_typeinfo(
+        baseline_axiom_category_info,
+        "Finite",
+    )
+    axiom_parent_info = _inner_typeinfo(axiom_finite_info, "ParentMethods")
+    baseline_axiom_parent_info = _inner_typeinfo(
+        baseline_axiom_finite_info,
+        "ParentMethods",
+    )
+
+    assert tuple(info.fullname for info in baseline_axiom_parent_info.mro) == (
+        NESTED_AXIOM_PROVIDER,
+        "builtins.object",
+    )
+    assert tuple(info.fullname for info in axiom_parent_info.mro) == (
+        *projections[NESTED_AXIOM_PROVIDER].provider_mro,
         "builtins.object",
     )
 
@@ -1220,6 +1310,15 @@ def _write_visible_sage_provider_stubs(stub_root: Path) -> None:
                 "class Sets:",
                 "    class ParentMethods: ...",
                 "    class ElementMethods: ...",
+                "",
+            )
+        )
+    )
+    (categories / "finite_sets.pyi").write_text(
+        "\n".join(
+            (
+                "class FiniteSets:",
+                "    class ParentMethods: ...",
                 "",
             )
         )

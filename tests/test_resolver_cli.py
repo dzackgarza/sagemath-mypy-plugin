@@ -27,6 +27,10 @@ LEFT_ZERO_SEMIGROUP = "sage.categories.examples.semigroups.LeftZeroSemigroup"
 SELF_RETURN_MODULE = "tests.fixtures.invariant_core.provider_methods"
 SELF_RETURN_CATEGORY = f"{SELF_RETURN_MODULE}.SelfReturnCategory"
 SELF_RETURN_PROVIDER = f"{SELF_RETURN_CATEGORY}.ParentMethods"
+AXIOM_FIXTURE_MODULE = "tests.fixtures.invariant_core.axioms"
+NESTED_AXIOM_CATEGORY = f"{AXIOM_FIXTURE_MODULE}.AxiomRootCategory.Finite"
+NESTED_AXIOM_PROVIDER = f"{NESTED_AXIOM_CATEGORY}.ParentMethods"
+AXIOM_ROOT_PROVIDER = f"{AXIOM_FIXTURE_MODULE}.AxiomRootCategory.ParentMethods"
 
 
 def test_resolver_writes_parent_projection_manifest_for_diamond_fixture(
@@ -172,6 +176,34 @@ def test_resolver_records_projection_dependency_source_modules(tmp_path: Path) -
     assert "sage.categories.rings" in manifest.source_module_by_module
     assert "sage.categories.magmas" in manifest.source_module_by_module
     assert "sage.categories.magmas.Magmas" not in manifest.source_module_by_module
+
+
+def test_resolver_accepts_nested_axiom_category_fullname(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "sage-category-nested-axiom-projections.json"
+
+    resolver.main(
+        [
+            "--output",
+            str(manifest_path),
+            "--role",
+            "parent",
+            NESTED_AXIOM_CATEGORY,
+        ]
+    )
+
+    manifest = load_manifest(manifest_path)
+    projection = manifest.projection_by_provider[NESTED_AXIOM_PROVIDER]
+
+    assert projection.provider_mro[:3] == (
+        NESTED_AXIOM_PROVIDER,
+        "sage.categories.finite_sets.FiniteSets.ParentMethods",
+        AXIOM_ROOT_PROVIDER,
+    )
+    assert AXIOM_FIXTURE_MODULE in manifest.source_module_by_module
+    assert (
+        f"{AXIOM_FIXTURE_MODULE}.AxiomRootCategory"
+        not in manifest.source_module_by_module
+    )
 
 
 def test_resolver_records_source_module_mtime_ns(tmp_path: Path) -> None:
