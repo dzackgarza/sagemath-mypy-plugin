@@ -148,9 +148,11 @@ def test_generated_stubs_include_concrete_parent_runtime_aliases() -> None:
     manifest = _left_zero_semigroup_concrete_parent_manifest()
 
     assert generated_stub_sources(manifest)[Path("_sage_category_types.pyi")] == (
+        "from sage.categories.examples.semigroups import LeftZeroSemigroup\n"
         "from sage.categories.semigroups import Semigroups\n"
         "\n"
         "class sage_categories_examples_semigroups__LeftZeroSemigroup_with_category(\n"
+        "    LeftZeroSemigroup,\n"
         "    Semigroups.ParentMethods,\n"
         "):\n"
         "    ...\n"
@@ -170,6 +172,72 @@ def test_generated_stubs_include_concrete_parent_runtime_aliases() -> None:
         "):\n"
         "    ...\n"
     )
+
+
+def test_generated_stubs_bind_concrete_parent_runtime_alias_to_concrete_class(
+    tmp_path: Path,
+) -> None:
+    manifest = _left_zero_semigroup_concrete_parent_manifest()
+    stub_root = tmp_path / "generated-stubs"
+    source_modules = write_generated_stub_tree(stub_root, manifest)
+    plugin_manifest = manifest.model_copy(update={"source_modules": source_modules})
+    manifest_path = tmp_path / "manifest.json"
+    config_path = tmp_path / "mypy.ini"
+    consumer_path = tmp_path / "consumer.py"
+    manifest_path.write_text(plugin_manifest.model_dump_json())
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+    consumer_path.write_text(
+        "\n".join(
+            (
+                "from _sage_category_types import (",
+                "    sage_categories_examples_semigroups__LeftZeroSemigroup_with_category,",
+                ")",
+                "from sage.categories.examples.semigroups import LeftZeroSemigroup",
+                "from sage.categories.semigroups import Semigroups",
+                "",
+                "def concrete_parent(",
+                "    parent: sage_categories_examples_semigroups__LeftZeroSemigroup_with_category,",
+                ") -> LeftZeroSemigroup:",
+                "    return parent",
+                "",
+                "def category_parent_provider(",
+                "    parent: sage_categories_examples_semigroups__LeftZeroSemigroup_with_category,",
+                ") -> Semigroups.ParentMethods:",
+                "    return parent",
+                "",
+                "def invalid_element_provider(",
+                "    parent: sage_categories_examples_semigroups__LeftZeroSemigroup_with_category,",
+                ") -> Semigroups.ElementMethods:",
+                "    return parent",
+                "",
+            )
+        )
+    )
+
+    result = _run_mypy(
+        consumer_path,
+        mypy_path_entries=(stub_root,),
+        config_path=config_path,
+    )
+
+    assert result.errors == [
+        (
+            f"{consumer_path}:20: error: Incompatible return value type "
+            '(got "sage_categories_examples_semigroups__LeftZeroSemigroup_with_category", '
+            'expected "ElementMethods")  [return-value]'
+        ),
+    ]
 
 
 def test_generated_stubs_bind_inherited_provider_self_return(
