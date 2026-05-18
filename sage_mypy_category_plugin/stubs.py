@@ -21,10 +21,15 @@ def generated_stub_sources(manifest: ProjectionManifest) -> dict[Path, str]:
         module_tree = module_trees.setdefault(module_name, {})
         _add_qualname(module_tree, qualname)
 
-    return {
+    stub_sources = {
         Path(*module_name.split(".")).with_suffix(".pyi"): _stub_source(tree)
         for module_name, tree in sorted(module_trees.items())
     }
+    stub_sources[Path("_sage_category_types.pyi")] = _runtime_alias_stub_source(
+        manifest,
+        source_modules=source_modules,
+    )
+    return dict(sorted(stub_sources.items()))
 
 
 def write_generated_stub_tree(
@@ -58,6 +63,60 @@ def _manifest_provider_fullnames(manifest: ProjectionManifest) -> tuple[str, ...
             for provider in projection.provider_mro
         )
     )
+
+
+def _runtime_alias_stub_source(
+    manifest: ProjectionManifest,
+    *,
+    source_modules: tuple[str, ...],
+) -> str:
+    imported_names: dict[str, set[str]] = {}
+    alias_blocks: list[tuple[str, tuple[str, ...]]] = []
+    for projection in manifest.projections:
+        runtime_module, runtime_qualname = _source_module_and_qualname(
+            projection.runtime_class,
+            source_modules=source_modules,
+        )
+        alias_name = _runtime_alias_name(runtime_module, runtime_qualname)
+        provider_bases = tuple(
+            _provider_base_expression(
+                provider,
+                source_modules=source_modules,
+                imported_names=imported_names,
+            )
+            for provider in projection.provider_mro
+        )
+        alias_blocks.append((alias_name, provider_bases))
+
+    lines: list[str] = []
+    for module_name, names in sorted(imported_names.items()):
+        lines.append(f"from {module_name} import {', '.join(sorted(names))}")
+    lines.append("")
+    for alias_name, provider_bases in sorted(alias_blocks):
+        lines.append(f"class {alias_name}(")
+        lines.extend(f"    {provider_base}," for provider_base in provider_bases)
+        lines.append("):")
+        lines.append("    ...")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _runtime_alias_name(module_name: str, qualname: tuple[str, ...]) -> str:
+    return f"{module_name.replace('.', '_')}__{'__'.join(qualname)}"
+
+
+def _provider_base_expression(
+    provider: str,
+    *,
+    source_modules: tuple[str, ...],
+    imported_names: dict[str, set[str]],
+) -> str:
+    module_name, qualname = _source_module_and_qualname(
+        provider,
+        source_modules=source_modules,
+    )
+    imported_names.setdefault(module_name, set()).add(qualname[0])
+    return ".".join(qualname)
 
 
 def _source_module_and_qualname(
