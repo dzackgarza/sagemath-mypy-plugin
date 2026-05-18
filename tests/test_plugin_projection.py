@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Sequence
+from functools import cache
 from hashlib import sha256
 from importlib import import_module
 from pathlib import Path
@@ -102,8 +103,26 @@ DIAMOND_SOURCE_MODULE = SourceModuleRecord(
 )
 
 
+def _provider_projections(
+    category_fullnames: tuple[str, ...],
+    *,
+    roles: tuple[str, ...],
+) -> dict[str, ProviderProjection]:
+    return dict(_provider_projection_items(category_fullnames, roles))
+
+
+@cache
+def _provider_projection_items(
+    category_fullnames: tuple[str, ...],
+    roles: tuple[str, ...],
+) -> tuple[tuple[str, ProviderProjection], ...]:
+    return tuple(
+        provider_projections_for_categories(category_fullnames, roles=roles).items()
+    )
+
+
 def test_plugin_projects_typeinfo_mro_from_manifest(tmp_path: Path) -> None:
-    projections = provider_projections_for_categories(
+    projections = _provider_projections(
         CATEGORY_FULLNAMES,
         roles=("parent",),
     )
@@ -133,9 +152,16 @@ def test_plugin_projects_typeinfo_mro_from_manifest(tmp_path: Path) -> None:
     )
 
     result = _build_fixture(config_path, tmp_path)
+    repeated_result = _build_fixture(config_path, tmp_path)
     result_without_plugin = _build_fixture_without_plugin(tmp_path)
     bottom_parent_info = _nested_typeinfo(
         result,
+        module=FIXTURE_MODULE,
+        outer="BottomCategory",
+        inner="ParentMethods",
+    )
+    repeated_bottom_parent_info = _nested_typeinfo(
+        repeated_result,
         module=FIXTURE_MODULE,
         outer="BottomCategory",
         inner="ParentMethods",
@@ -148,6 +174,7 @@ def test_plugin_projects_typeinfo_mro_from_manifest(tmp_path: Path) -> None:
     )
 
     assert result.errors == []
+    assert repeated_result.errors == []
     assert result_without_plugin.errors == []
     assert tuple(info.fullname for info in baseline_bottom_parent_info.mro) == (
         BOTTOM_PROVIDER,
@@ -157,12 +184,16 @@ def test_plugin_projects_typeinfo_mro_from_manifest(tmp_path: Path) -> None:
         *expected_provider_mro,
         "builtins.object",
     )
+    assert tuple(info.fullname for info in repeated_bottom_parent_info.mro) == (
+        *expected_provider_mro,
+        "builtins.object",
+    )
 
 
 def test_plugin_projects_category_specs_like_alias_typeinfo_mro(
     tmp_path: Path,
 ) -> None:
-    projections = provider_projections_for_categories(
+    projections = _provider_projections(
         CATEGORY_SPECS_LIKE_FULLNAMES,
         roles=("parent",),
     )
@@ -241,7 +272,7 @@ def test_plugin_projects_category_specs_like_alias_typeinfo_mro(
 def test_plugin_projects_non_parent_provider_role_typeinfo_mros(
     tmp_path: Path,
 ) -> None:
-    projections = provider_projections_for_categories(
+    projections = _provider_projections(
         PROVIDER_ROLES_FULLNAMES,
         roles=("element", "subcategory", "morphism"),
     )
@@ -311,7 +342,7 @@ def test_plugin_projects_non_parent_provider_role_typeinfo_mros(
 def test_plugin_reports_homset_external_provider_boundary(
     tmp_path: Path,
 ) -> None:
-    projections = provider_projections_for_categories(
+    projections = _provider_projections(
         HOMSET_ROLES_FULLNAMES,
         roles=("homset_parent", "homset_element"),
     )
@@ -363,7 +394,7 @@ def test_plugin_reports_homset_external_provider_boundary(
 def test_plugin_projects_homset_typeinfo_mro_when_external_stubs_are_visible(
     tmp_path: Path,
 ) -> None:
-    projections = provider_projections_for_categories(
+    projections = _provider_projections(
         HOMSET_ROLES_FULLNAMES,
         roles=("homset_parent", "homset_element"),
     )
@@ -426,14 +457,22 @@ def test_plugin_projects_homset_typeinfo_mro_when_external_stubs_are_visible(
     )
 
 
-def test_plugin_projects_nested_axiom_provider_typeinfo_mro_from_source_modules(
+def test_plugin_projects_sage_provider_typeinfo_mros_from_source_modules(
     tmp_path: Path,
 ) -> None:
-    projections = provider_projections_for_categories(
+    axiom_projections = _provider_projections(
         (COMMUTATIVE_RINGS_CATEGORY,),
         roles=("parent",),
     )
-    manifest_path = tmp_path / "sage-category-axiom-projections.json"
+    cartesian_projections = _provider_projections(
+        (FUNCTORIAL_CARTESIAN_CATEGORY,),
+        roles=("parent", "element"),
+    )
+    projections = {
+        **axiom_projections,
+        **cartesian_projections,
+    }
+    manifest_path = tmp_path / "sage-provider-source-modules.json"
     config_path = tmp_path / "mypy.ini"
     stub_root = tmp_path / "visible-sage-stubs"
     source_modules = _write_projected_provider_stubs(
@@ -448,12 +487,23 @@ def test_plugin_projects_nested_axiom_provider_typeinfo_mro_from_source_modules(
         projections=tuple(projections.values()),
         source_modules=source_modules,
     )
-    fixture_path = tmp_path / "axiom_consumer.py"
-    fixture_path.write_text(
+    axiom_fixture_path = tmp_path / "axiom_consumer.py"
+    axiom_fixture_path.write_text(
         "\n".join(
             (
                 "from sage.categories.commutative_rings import CommutativeRings",
                 "CommutativeRings.ParentMethods",
+                "",
+            )
+        )
+    )
+    cartesian_fixture_path = tmp_path / "cartesian_products_consumer.py"
+    cartesian_fixture_path.write_text(
+        "\n".join(
+            (
+                "from sage.categories.sets_cat import Sets",
+                "Sets.CartesianProducts.ParentMethods",
+                "Sets.CartesianProducts.ElementMethods",
                 "",
             )
         )
@@ -476,8 +526,10 @@ def test_plugin_projects_nested_axiom_provider_typeinfo_mro_from_source_modules(
     result = _build_fixture(
         config_path,
         tmp_path,
-        fixture_path=fixture_path,
-        fixture_module="axiom_consumer",
+        fixture_sources=(
+            (axiom_fixture_path, "axiom_consumer"),
+            (cartesian_fixture_path, "cartesian_products_consumer"),
+        ),
         mypy_path_entries=(stub_root,),
     )
     commutative_info = _nested_typeinfo(
@@ -486,10 +538,23 @@ def test_plugin_projects_nested_axiom_provider_typeinfo_mro_from_source_modules(
         outer="CommutativeRings",
         inner="ParentMethods",
     )
+    sets_info = result.files["sage.categories.sets_cat"].names["Sets"].node
+    assert isinstance(sets_info, TypeInfo)
+    cartesian_products_info = _inner_typeinfo(sets_info, "CartesianProducts")
+    parent_info = _inner_typeinfo(cartesian_products_info, "ParentMethods")
+    element_info = _inner_typeinfo(cartesian_products_info, "ElementMethods")
 
     assert result.errors == []
     assert tuple(info.fullname for info in commutative_info.mro) == (
-        *projections[COMMUTATIVE_RINGS_PROVIDER].provider_mro,
+        *axiom_projections[COMMUTATIVE_RINGS_PROVIDER].provider_mro,
+        "builtins.object",
+    )
+    assert tuple(info.fullname for info in parent_info.mro) == (
+        *cartesian_projections[FUNCTORIAL_CARTESIAN_PARENT_PROVIDER].provider_mro,
+        "builtins.object",
+    )
+    assert tuple(info.fullname for info in element_info.mro) == (
+        *cartesian_projections[FUNCTORIAL_CARTESIAN_ELEMENT_PROVIDER].provider_mro,
         "builtins.object",
     )
 
@@ -497,7 +562,7 @@ def test_plugin_projects_nested_axiom_provider_typeinfo_mro_from_source_modules(
 def test_plugin_dependency_modules_use_manifest_source_modules_for_nested_axioms(
     tmp_path: Path,
 ) -> None:
-    projections = provider_projections_for_categories(
+    projections = _provider_projections(
         (COMMUTATIVE_RINGS_CATEGORY,),
         roles=("parent",),
     )
@@ -543,83 +608,11 @@ def test_plugin_dependency_modules_use_manifest_source_modules_for_nested_axioms
     assert "sage.categories.additive_magmas.AdditiveMagmas" not in dep_modules
 
 
-def test_plugin_projects_cartesian_products_typeinfo_mros_from_source_modules(
-    tmp_path: Path,
-) -> None:
-    projections = provider_projections_for_categories(
-        (FUNCTORIAL_CARTESIAN_CATEGORY,),
-        roles=("parent", "element"),
-    )
-    manifest_path = tmp_path / "sage-category-cartesian-products.json"
-    config_path = tmp_path / "mypy.ini"
-    stub_root = tmp_path / "visible-sage-stubs"
-    source_modules = _write_projected_provider_stubs(
-        stub_root,
-        projections=tuple(projections.values()),
-    )
-    manifest = ProjectionManifest(
-        schema_version=1,
-        generated_by="tests",
-        sage_version="10.7",
-        python_version="3.12.13",
-        projections=tuple(projections.values()),
-        source_modules=source_modules,
-    )
-    fixture_path = tmp_path / "cartesian_products_consumer.py"
-    fixture_path.write_text(
-        "\n".join(
-            (
-                "from sage.categories.sets_cat import Sets",
-                "Sets.CartesianProducts.ParentMethods",
-                "Sets.CartesianProducts.ElementMethods",
-                "",
-            )
-        )
-    )
-    write_manifest(manifest_path, manifest)
-    config_path.write_text(
-        "\n".join(
-            (
-                "[mypy]",
-                "plugins = sage_mypy_category_plugin.plugin",
-                "ignore_missing_imports = True",
-                "",
-                "[sage-mypy-category-plugin]",
-                f"manifest = {manifest_path}",
-                "",
-            )
-        )
-    )
-
-    result = _build_fixture(
-        config_path,
-        tmp_path,
-        fixture_path=fixture_path,
-        fixture_module="cartesian_products_consumer",
-        mypy_path_entries=(stub_root,),
-    )
-    sets_info = result.files["sage.categories.sets_cat"].names["Sets"].node
-    assert isinstance(sets_info, TypeInfo)
-    cartesian_products_info = _inner_typeinfo(sets_info, "CartesianProducts")
-    parent_info = _inner_typeinfo(cartesian_products_info, "ParentMethods")
-    element_info = _inner_typeinfo(cartesian_products_info, "ElementMethods")
-
-    assert result.errors == []
-    assert tuple(info.fullname for info in parent_info.mro) == (
-        *projections[FUNCTORIAL_CARTESIAN_PARENT_PROVIDER].provider_mro,
-        "builtins.object",
-    )
-    assert tuple(info.fullname for info in element_info.mro) == (
-        *projections[FUNCTORIAL_CARTESIAN_ELEMENT_PROVIDER].provider_mro,
-        "builtins.object",
-    )
-
-
 @pytest.mark.parametrize("field", ("provider_bases", "provider_mro"))
 def test_plugin_fails_strict_projection_for_mutated_field(
     tmp_path: Path, field: str
 ) -> None:
-    projections = provider_projections_for_categories(
+    projections = _provider_projections(
         CATEGORY_FULLNAMES,
         roles=("parent",),
     )
@@ -705,7 +698,7 @@ def test_plugin_fails_strict_projection_for_mutated_field(
 
 
 def test_plugin_reports_semantic_manifest_config_data(tmp_path: Path) -> None:
-    projections = provider_projections_for_categories(
+    projections = _provider_projections(
         CATEGORY_FULLNAMES,
         roles=("parent",),
     )
@@ -904,67 +897,10 @@ def test_plugin_resolves_cross_module_provider_bases_via_additional_deps(
     )
 
 
-def test_plugin_projection_is_stable_across_repeated_builds(tmp_path: Path) -> None:
-    projections = provider_projections_for_categories(
-        CATEGORY_FULLNAMES,
-        roles=("parent",),
-    )
-    expected_provider_mro = projections[BOTTOM_PROVIDER].provider_mro
-    manifest = ProjectionManifest(
-        schema_version=1,
-        generated_by="tests",
-        sage_version="10.7",
-        python_version="3.12.13",
-        projections=tuple(projections.values()),
-    )
-    manifest_path = tmp_path / "stable-projections.json"
-    config_path = tmp_path / "mypy.ini"
-    write_manifest(manifest_path, manifest)
-    config_path.write_text(
-        "\n".join(
-            (
-                "[mypy]",
-                "plugins = sage_mypy_category_plugin.plugin",
-                "ignore_missing_imports = True",
-                "",
-                "[sage-mypy-category-plugin]",
-                f"manifest = {manifest_path}",
-                "",
-            )
-        )
-    )
-
-    first_result = _build_fixture(config_path, tmp_path)
-    second_result = _build_fixture(config_path, tmp_path)
-    first_info = _nested_typeinfo(
-        first_result,
-        module=FIXTURE_MODULE,
-        outer="BottomCategory",
-        inner="ParentMethods",
-    )
-    second_info = _nested_typeinfo(
-        second_result,
-        module=FIXTURE_MODULE,
-        outer="BottomCategory",
-        inner="ParentMethods",
-    )
-
-    assert first_result.errors == []
-    assert second_result.errors == []
-    assert tuple(info.fullname for info in first_info.mro) == (
-        *expected_provider_mro,
-        "builtins.object",
-    )
-    assert tuple(info.fullname for info in second_info.mro) == (
-        *expected_provider_mro,
-        "builtins.object",
-    )
-
-
 def test_plugin_reports_manifest_drift_and_rebuilds_projection(
     tmp_path: Path,
 ) -> None:
-    projections = provider_projections_for_categories(
+    projections = _provider_projections(
         CATEGORY_FULLNAMES,
         roles=("parent",),
     )
@@ -1059,8 +995,10 @@ def _build_fixture(
     *,
     fixture_path: Path = FIXTURE_PATH,
     fixture_module: str = FIXTURE_MODULE,
+    fixture_sources: Sequence[tuple[Path, str]] | None = None,
     mypy_path_entries: Sequence[Path] = (REPO_ROOT,),
 ) -> BuildResult:
+    sources = fixture_sources or ((fixture_path, fixture_module),)
     options = Options()
     options.config_file = str(config_path)
     options.plugins = ["sage_mypy_category_plugin.plugin"]
@@ -1069,7 +1007,10 @@ def _build_fixture(
     options.mypy_path = [str(path) for path in mypy_path_entries]
     options.ignore_missing_imports = True
     return build(
-        sources=[BuildSource(str(fixture_path), fixture_module, None)],
+        sources=[
+            BuildSource(str(source_path), source_module, None)
+            for source_path, source_module in sources
+        ],
         options=options,
     )
 

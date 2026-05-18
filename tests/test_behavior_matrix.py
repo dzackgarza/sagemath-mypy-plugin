@@ -121,7 +121,10 @@ def _write_plugin_config(tmp_path: Path) -> Path:
     category_fullnames = list(BASE_CATEGORY_FULLNAMES)
     for case in BEHAVIOR_CASES.values():
         category_fullnames.extend(case[1:])
-    projections = provider_projections_for_categories(category_fullnames, roles=("parent",))
+    projections = provider_projections_for_categories(
+        tuple(category_fullnames),
+        roles=("parent",),
+    )
     manifest = ProjectionManifest(
         schema_version=1,
         generated_by="tests",
