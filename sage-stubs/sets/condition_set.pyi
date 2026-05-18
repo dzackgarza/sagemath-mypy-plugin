@@ -9,8 +9,8 @@ class ConditionSet(Parent):
         self,
         ambient: Any,
         predicate: Callable[[Any], bool],
-        *,
+        *predicates: Callable[[Any], bool],
+        names: str | tuple[str, ...] | None = ...,
         category: Any = ...,
     ) -> None: ...
     def ambient(self) -> Any: ...
-

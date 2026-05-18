@@ -1,4 +1,5 @@
 """Bundled Sage category interop stubs cover consumed category helpers."""
+from collections.abc import Callable
 from typing import final, override
 
 from sage.categories.category import Category, CategoryWithParameters, JoinCategory
@@ -9,6 +10,7 @@ from sage.categories.category_with_axiom import (
 )
 from sage.categories.cartesian_product import CartesianProductsCategory
 from sage.categories.homsets import HomsetsCategory, HomsetsOf
+from sage.sets.condition_set import ConditionSet
 from sage.structure.category_object import CategoryObject
 from sage.structure.parent import Parent
 
@@ -30,6 +32,13 @@ def category_object_helpers(obj: object, category: Category) -> None:
 
 def parent_init(obj: object) -> None:
     Parent.__init__(obj, category=None)
+
+
+def condition_set_helpers(
+    ambient: object,
+    predicate: Callable[[object], bool],
+) -> ConditionSet:
+    return ConditionSet(ambient, predicate, predicate, names="x", category=None)
 
 
 def category_classcall_helpers(category_type: type[Category], value: object) -> object:
