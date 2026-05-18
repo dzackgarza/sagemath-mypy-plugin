@@ -43,6 +43,10 @@ class _LocalEnumeratedSets(LocalCategoryBase):
             return True
 
         @_override
+        def __len__(self) -> int:
+            return 0
+
+        @_override
         def random_element(self) -> object:
             return object()
 
