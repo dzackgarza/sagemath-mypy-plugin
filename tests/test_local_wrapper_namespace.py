@@ -26,6 +26,7 @@ Surfaces covered:
     Value-dependent completion self return — test_plugin_value_dependent_completion_self_return_correctness
     _with_axiom attribute      — test_plugin_with_axiom_correctness
     Method-container receiver self surfaces — test_plugin_receiver_self_surface_correctness
+    Runtime receiver inherited methods — test_plugin_runtime_receiver_inherited_method_chain_correctness
     Method-container receiver runtime bases — test_plugin_receiver_runtime_base_correctness
     SubcategoryMethods base_category receiver — test_plugin_subcategory_base_category_receiver_correctness
     Aliased receiver self surfaces — test_plugin_alias_receiver_self_surface_correctness
@@ -315,6 +316,14 @@ def test_plugin_receiver_self_surface_correctness() -> None:
     """Method-container self may use receiver methods declared on its category."""
     _assert_clean_conjunction(
         "test_method_container_receiver_self_surface",
+        "[attr-defined]",
+    )
+
+
+def test_plugin_runtime_receiver_inherited_method_chain_correctness() -> None:
+    """Method-container self may use inherited receiver methods from runtime bases."""
+    _assert_clean_conjunction(
+        "test_runtime_receiver_inherited_method_chain",
         "[attr-defined]",
     )
 

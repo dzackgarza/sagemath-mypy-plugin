@@ -529,15 +529,23 @@ def _project_method_container_alias(
             unmapped_dynamic_bases.append(_fullname_of_class(B))
             continue
 
-        source_container = getattr(type(D), parsed.method_kind, None)
-        if source_container is None:
+        source_containers = (
+            _source_method_containers_for_dynamic_base(
+                B,
+                dynamic_to_category,
+                parsed.method_kind,
+            )
+            if parsed.method_kind == "ParentMethods"
+            else _source_method_container_for_category(D, parsed.method_kind)
+        )
+        if not source_containers:
             unmapped_dynamic_bases.append(_fullname_of_class(B))
             continue
 
-        fn = _fullname_of_class(source_container)
-        if fn not in seen:
-            seen.add(fn)
-            static_bases.append(fn)
+        for fn in source_containers:
+            if fn not in seen:
+                seen.add(fn)
+                static_bases.append(fn)
 
     return MethodContainerProjection(
         source_fullname=source_fullname,
@@ -546,6 +554,68 @@ def _project_method_container_alias(
         unmapped_dynamic_bases=tuple(unmapped_dynamic_bases),
         static_bases=tuple(static_bases),
     )
+
+
+def _source_method_containers_for_dynamic_base(
+    dynamic_base: type,
+    dynamic_to_category: dict[type, Any],
+    method_kind: str,
+) -> tuple[str, ...]:
+    """Return nearest source method containers represented by *dynamic_base*."""
+    return tuple(
+        _dedupe_strings(
+            _source_method_containers_for_dynamic_base_branch(
+                dynamic_base,
+                dynamic_to_category,
+                method_kind,
+                set(),
+            )
+        )
+    )
+
+
+def _source_method_container_for_category(
+    category: Any,
+    method_kind: str,
+) -> tuple[str, ...]:
+    source_container = getattr(type(category), method_kind, None)
+    if source_container is None:
+        return ()
+    return (_fullname_of_class(source_container),)
+
+
+def _source_method_containers_for_dynamic_base_branch(
+    dynamic_base: type,
+    dynamic_to_category: dict[type, Any],
+    method_kind: str,
+    seen: set[type],
+) -> tuple[str, ...]:
+    if dynamic_base in seen:
+        return ()
+    seen.add(dynamic_base)
+
+    category = dynamic_to_category.get(dynamic_base)
+    if category is not None:
+        source_containers = _source_method_container_for_category(
+            category,
+            method_kind,
+        )
+        if source_containers:
+            return source_containers
+
+    source_containers: list[str] = []
+    for base in dynamic_base.__bases__:
+        if base is object:
+            continue
+        source_containers.extend(
+            _source_method_containers_for_dynamic_base_branch(
+                base,
+                dynamic_to_category,
+                method_kind,
+                seen,
+            )
+        )
+    return tuple(source_containers)
 
 
 @lru_cache(maxsize=None)
