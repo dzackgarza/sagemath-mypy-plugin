@@ -104,6 +104,7 @@ def _manifest_payload() -> dict[str, Any]:
         generated_by="tests",
         plugin_schema_version=CURRENT_PLUGIN_SCHEMA_VERSION,
         sage_version="10.7",
+        sage_git_revision="abc123abc123abc123abc123abc123abc123abcd",
         python_version="3.12.13",
         mypy_min_version=MYPY_VERSION,
         mypy_max_version=MYPY_VERSION,
@@ -233,6 +234,16 @@ def test_manifest_rejects_malformed_source_module_hash() -> None:
         ProjectionManifest.model_validate(payload)
 
     assert "sha256" in str(raised.value)
+
+
+def test_manifest_rejects_invalid_sage_git_revision() -> None:
+    payload = _manifest_payload()
+    payload["sage_git_revision"] = "not-a-revision"
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    assert "sage_git_revision" in str(raised.value)
 
 
 def test_manifest_rejects_unresolved_provider_references() -> None:

@@ -15,6 +15,7 @@ from sage_mypy_category_plugin.projection import ProviderProjection
 
 CURRENT_PLUGIN_SCHEMA_VERSION = "1"
 SHA256_HEX_PATTERN = re.compile(r"[0-9a-f]{64}")
+GIT_REVISION_PATTERN = re.compile(r"[0-9a-f]{40}")
 
 
 class SourceModuleRecord(BaseModel):
@@ -41,11 +42,22 @@ class ProjectionManifest(BaseModel):
     generated_by: StrictStr
     plugin_schema_version: Literal["1"] = CURRENT_PLUGIN_SCHEMA_VERSION
     sage_version: StrictStr
+    sage_git_revision: StrictStr | None = None
     mypy_min_version: StrictStr = "0.0.0"
     mypy_max_version: StrictStr = "9999.9999.9999"
     python_version: StrictStr
     projections: tuple[ProviderProjection, ...]
     source_modules: tuple[SourceModuleRecord, ...] = ()
+
+    @model_validator(mode="after")
+    def _validate_git_revision(self) -> Self:
+        if self.sage_git_revision is not None:
+            if not GIT_REVISION_PATTERN.fullmatch(self.sage_git_revision):
+                raise ValueError(
+                    "sage_git_revision must be 40 lowercase hex characters: "
+                    f"{self.sage_git_revision!r}"
+                )
+        return self
 
     @model_validator(mode="after")
     def _validate_projection_graph(self) -> Self:
