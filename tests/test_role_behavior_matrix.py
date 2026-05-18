@@ -8,6 +8,7 @@ from mypy.options import Options
 
 from sage_mypy_category_plugin.manifest import ProjectionManifest, write_manifest
 from sage_mypy_category_plugin.oracle import provider_projections_for_categories
+from sage_mypy_category_plugin.projection import ProviderRole
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "invariant_core"
@@ -66,7 +67,7 @@ ROLE_BEHAVIOR_CASES = {
     ),
 }
 
-ROLE_GROUPS = {
+ROLE_GROUPS: dict[ProviderRole, tuple[str, ...]] = {
     "element": (
         "element_valid",
         "element_invalid",
@@ -193,7 +194,7 @@ def _write_plugin_config(tmp_path: Path) -> Path:
     return config_path
 
 
-def _base_category_fullnames_for_role(role: str) -> tuple[str, ...]:
+def _base_category_fullnames_for_role(role: ProviderRole) -> tuple[str, ...]:
     if role in {"homset_parent", "homset_element"}:
         return HOMSET_CATEGORY_FULLNAMES
     return BASE_CATEGORY_FULLNAMES

@@ -29,7 +29,7 @@ from sage_mypy_category_plugin.projection import (
     validate_module_name,
 )
 
-CURRENT_PLUGIN_SCHEMA_VERSION = "1"
+CURRENT_PLUGIN_SCHEMA_VERSION: Literal["1"] = "1"
 SHA256_HEX_PATTERN = re.compile(r"[0-9a-f]{64}")
 GIT_REVISION_PATTERN = re.compile(r"[0-9a-f]{40}")
 INTRINSIC_MODULES = frozenset(("builtins",))

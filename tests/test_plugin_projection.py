@@ -24,7 +24,7 @@ from sage_mypy_category_plugin.plugin import (
     CONFIG_SECTION,
     SageCategoryProjectionPlugin,
 )
-from sage_mypy_category_plugin.projection import ProviderProjection
+from sage_mypy_category_plugin.projection import ProviderProjection, ProviderRole
 from sage_mypy_category_plugin.stubs import write_generated_stub_tree
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -170,7 +170,7 @@ DIAMOND_SOURCE_MODULE = SourceModuleRecord(
 def _provider_projections(
     category_fullnames: tuple[str, ...],
     *,
-    roles: tuple[str, ...],
+    roles: tuple[ProviderRole, ...],
 ) -> dict[str, ProviderProjection]:
     return dict(_provider_projection_items(category_fullnames, roles))
 
@@ -178,7 +178,7 @@ def _provider_projections(
 @cache
 def _provider_projection_items(
     category_fullnames: tuple[str, ...],
-    roles: tuple[str, ...],
+    roles: tuple[ProviderRole, ...],
 ) -> tuple[tuple[str, ProviderProjection], ...]:
     return tuple(
         provider_projections_for_categories(category_fullnames, roles=roles).items()

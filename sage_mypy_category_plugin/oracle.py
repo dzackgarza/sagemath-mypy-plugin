@@ -253,7 +253,7 @@ def _provider_projection_from_runtime_class(
         )
 
     runtime_to_provider = _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role]
-    allow_unmapped = frozenset(
+    allow_unmapped: frozenset[type[object]] = frozenset(
         {object, *_UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role]}
     )
     provider_bases = _project_runtime_classes(
