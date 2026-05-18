@@ -1,13 +1,22 @@
 from __future__ import annotations
 
+from collections import defaultdict
+from hashlib import sha256
+from importlib import import_module
 from pathlib import Path
 
 from mypy.build import BuildResult, build
 from mypy.modulefinder import BuildSource
 from mypy.options import Options
 
-from sage_mypy_category_plugin.manifest import ProjectionManifest, write_manifest
+from sage_mypy_category_plugin.manifest import (
+    ProjectionManifest,
+    SourceModuleRecord,
+    write_manifest,
+)
 from sage_mypy_category_plugin.oracle import provider_projections_for_categories
+
+type SourceTree = dict[str, "SourceTree"]
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "invariant_core"
@@ -17,6 +26,11 @@ BASE_CATEGORY_FULLNAMES = (
     "tests.fixtures.invariant_core.diamond_runtime.RightCategory",
     "tests.fixtures.invariant_core.diamond_runtime.BottomCategory",
 )
+COMMUTATIVE_RINGS_CATEGORY = "sage.categories.commutative_rings.CommutativeRings"
+COMMUTATIVE_RINGS_PROVIDER = (
+    "sage.categories.commutative_rings.CommutativeRings.ParentMethods"
+)
+RINGS_PROVIDER = "sage.categories.rings.Rings.ParentMethods"
 BEHAVIOR_CASES = {
     "valid": (
         "tests.fixtures.invariant_core.diamond_behavior_valid",
@@ -69,6 +83,40 @@ def test_behavior_matrix_uses_standard_mypy_inheritance_rules(tmp_path: Path) ->
     assert not _case_errors(without_plugin, "missing_explicit_override")
 
 
+def test_nested_axiom_behavior_matrix_uses_standard_mypy_rules(
+    tmp_path: Path,
+) -> None:
+    with_plugin_valid = _run_axiom_provider_mypy(
+        tmp_path,
+        variant="valid",
+        override_method="is_commutative",
+        with_plugin=True,
+    )
+    without_plugin_valid = _run_axiom_provider_mypy(
+        tmp_path,
+        variant="valid",
+        override_method="is_commutative",
+        with_plugin=False,
+    )
+    with_plugin_invalid = _run_axiom_provider_mypy(
+        tmp_path,
+        variant="invalid",
+        override_method="not_a_sage_axiom_method",
+        with_plugin=True,
+    )
+    without_plugin_invalid = _run_axiom_provider_mypy(
+        tmp_path,
+        variant="invalid",
+        override_method="not_a_sage_axiom_method",
+        with_plugin=False,
+    )
+
+    assert with_plugin_valid.errors == []
+    assert _contains_error(without_plugin_valid, "no base method was found")
+    assert _contains_error(with_plugin_invalid, "no base method was found")
+    assert _contains_error(without_plugin_invalid, "no base method was found")
+
+
 def _write_plugin_config(tmp_path: Path) -> Path:
     category_fullnames = list(BASE_CATEGORY_FULLNAMES)
     for case in BEHAVIOR_CASES.values():
@@ -98,6 +146,169 @@ def _write_plugin_config(tmp_path: Path) -> Path:
         )
     )
     return config_path
+
+
+def _run_axiom_provider_mypy(
+    tmp_path: Path,
+    *,
+    variant: str,
+    override_method: str,
+    with_plugin: bool,
+) -> BuildResult:
+    source_root = tmp_path / f"axiom-{variant}"
+    projections = provider_projections_for_categories(
+        (COMMUTATIVE_RINGS_CATEGORY,),
+        roles=("parent",),
+    )
+    source_modules = _write_axiom_provider_sources(
+        source_root,
+        providers=projections[COMMUTATIVE_RINGS_PROVIDER].provider_mro,
+        override_method=override_method,
+    )
+    config_path = tmp_path / f"{variant}-mypy.ini"
+    manifest_path = tmp_path / f"{variant}-manifest.json"
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=tuple(projections.values()),
+        source_modules=source_modules,
+    )
+    write_manifest(manifest_path, manifest)
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "ignore_missing_imports = True",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+
+    options = Options()
+    options.incremental = False
+    options.cache_dir = str(tmp_path / f"{variant}-{with_plugin}-mypy-cache")
+    options.mypy_path = [str(source_root)]
+    options.ignore_missing_imports = True
+    if with_plugin:
+        options.config_file = str(config_path)
+        options.plugins = ["sage_mypy_category_plugin.plugin"]
+    return build(
+        sources=[
+            BuildSource(
+                str(source_root / "sage" / "categories" / "commutative_rings.py"),
+                "sage.categories.commutative_rings",
+                None,
+            )
+        ],
+        options=options,
+    )
+
+
+def _write_axiom_provider_sources(
+    source_root: Path,
+    *,
+    providers: tuple[str, ...],
+    override_method: str,
+) -> tuple[SourceModuleRecord, ...]:
+    module_trees: dict[str, SourceTree] = defaultdict(dict)
+    for provider in providers:
+        module_name, qualname = _importable_module_and_qualname(provider)
+        _add_qualname(module_trees[module_name], qualname)
+
+    method_bodies = {
+        _importable_module_and_qualname(RINGS_PROVIDER): (
+            "def is_commutative(self) -> bool:",
+            "    return False",
+        ),
+        _importable_module_and_qualname(COMMUTATIVE_RINGS_PROVIDER): (
+            "@override",
+            f"def {override_method}(self) -> bool:",
+            "    return True",
+        ),
+    }
+    source_modules: list[SourceModuleRecord] = []
+    for package_dir in (
+        source_root / "sage",
+        source_root / "sage" / "categories",
+    ):
+        package_dir.mkdir(parents=True, exist_ok=True)
+        (package_dir / "__init__.py").write_text("")
+
+    for module_name, tree in sorted(module_trees.items()):
+        path = source_root.joinpath(*module_name.split(".")).with_suffix(".py")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        source = "\n".join(
+            (
+                "from typing import override",
+                "",
+                *_source_lines(tree, method_bodies, module_name=module_name),
+            )
+        )
+        path.write_text(source + "\n")
+        source_modules.append(
+            SourceModuleRecord(
+                module=module_name,
+                path=str(path),
+                sha256=sha256((source + "\n").encode()).hexdigest(),
+            )
+        )
+    return tuple(source_modules)
+
+
+def _importable_module_and_qualname(fullname: str) -> tuple[str, tuple[str, ...]]:
+    parts = fullname.split(".")
+    for split_index in range(len(parts), 0, -1):
+        module_name = ".".join(parts[:split_index])
+        try:
+            import_module(module_name)
+        except ModuleNotFoundError:
+            continue
+        return module_name, tuple(parts[split_index:])
+    raise AssertionError(f"Could not find importable module for {fullname!r}")
+
+
+def _add_qualname(tree: SourceTree, qualname: tuple[str, ...]) -> None:
+    current = tree
+    for name in qualname:
+        current = current.setdefault(name, {})
+
+
+def _source_lines(
+    tree: SourceTree,
+    method_bodies: dict[tuple[str, tuple[str, ...]], tuple[str, ...]],
+    *,
+    module_name: str | None = None,
+    qualname: tuple[str, ...] = (),
+    indent: int = 0,
+) -> tuple[str, ...]:
+    lines: list[str] = []
+    for name, child in sorted(
+        tree.items(),
+        key=lambda item: (item[0] != "ParentMethods", item[0]),
+    ):
+        nested_qualname = (*qualname, name)
+        lines.append(f"{'    ' * indent}class {name}:")
+        if child:
+            lines.extend(
+                _source_lines(
+                    child,
+                    method_bodies,
+                    module_name=module_name,
+                    qualname=nested_qualname,
+                    indent=indent + 1,
+                )
+            )
+            continue
+
+        body = method_bodies.get((module_name or "", nested_qualname), ("pass",))
+        lines.extend(f"{'    ' * (indent + 1)}{line}" for line in body)
+    return tuple(lines)
 
 
 def _run_mypy(
@@ -136,6 +347,10 @@ def _module_path(module: str) -> Path:
 
 def _case_contains(result: BuildResult, case_name: str, fragment: str) -> bool:
     return any(fragment in error for error in _case_errors(result, case_name))
+
+
+def _contains_error(result: BuildResult, fragment: str) -> bool:
+    return any(fragment in error for error in result.errors)
 
 
 def _case_errors(result: BuildResult, case_name: str) -> tuple[str, ...]:
