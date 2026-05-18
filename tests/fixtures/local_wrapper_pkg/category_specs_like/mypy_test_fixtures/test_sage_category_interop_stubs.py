@@ -83,6 +83,12 @@ class CategoryExtraSuper(Category):
         return []
 
 
+class CategorySageSuper(Category):
+    @override
+    def _sage_super_categories(self) -> tuple[Category, ...]:
+        return ()
+
+
 class CategorySuperChild(Category): ...
 
 
