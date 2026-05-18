@@ -29,6 +29,8 @@ Surfaces covered:
     Method-container receiver body members — test_plugin_receiver_body_member_correctness
     Runtime receiver inherited methods — test_plugin_runtime_receiver_inherited_method_chain_correctness
     Method-container receiver runtime bases — test_plugin_receiver_runtime_base_correctness
+    Concrete receiver class override bases — test_plugin_receiver_runtime_class_override_correctness
+    Imported receiver class override bases — test_plugin_receiver_imported_runtime_class_override_correctness
     ParentMethods runtime parent methods — test_plugin_parent_runtime_change_ring_correctness
     SubcategoryMethods base_category receiver — test_plugin_subcategory_base_category_receiver_correctness
     Aliased receiver self surfaces — test_plugin_alias_receiver_self_surface_correctness
@@ -84,7 +86,9 @@ _FATAL_MYPY_MARKERS = (
 
 
 @cache
-def _run_local_wrapper_fixture_set(config: Path) -> str:
+def _run_local_wrapper_fixture_set(
+    config: Path,
+) -> str:
     from mypy import api
 
     stdout, _stderr, code = api.run([
@@ -106,7 +110,10 @@ def _diagnostics_for_fixture(stdout: str, path: Path) -> str:
     return "\n".join(lines)
 
 
-def _run(fixture_name: str, config: Path) -> tuple[int, str]:
+def _run(
+    fixture_name: str,
+    config: Path,
+) -> tuple[int, str]:
     path = _FIXTURE_BY_NAME[fixture_name]
     diagnostics = _diagnostics_for_fixture(
         _run_local_wrapper_fixture_set(config),
@@ -115,7 +122,10 @@ def _run(fixture_name: str, config: Path) -> tuple[int, str]:
     return (1 if diagnostics else 0), diagnostics
 
 
-def _assert_override_conjunction(valid_fixture: str, invalid_fixture: str) -> None:
+def _assert_override_conjunction(
+    valid_fixture: str,
+    invalid_fixture: str,
+) -> None:
     """Assert all four (plugin × validity) cases simultaneously for an override surface."""
     plugin_valid_code,      plugin_valid_out      = _run(valid_fixture,   _CONFIG_WITH_PLUGIN)
     plugin_invalid_code,    plugin_invalid_out    = _run(invalid_fixture, _CONFIG_WITH_PLUGIN)
@@ -345,6 +355,22 @@ def test_plugin_receiver_runtime_base_correctness() -> None:
     _assert_clean_conjunction(
         "test_method_container_receiver_runtime_bases",
         "[arg-type]",
+    )
+
+
+def test_plugin_receiver_runtime_class_override_correctness() -> None:
+    """ParentMethods may override methods from concrete receiver classes."""
+    _assert_override_conjunction(
+        "test_receiver_runtime_class_override",
+        "test_invalid_override",
+    )
+
+
+def test_plugin_receiver_imported_runtime_class_override_correctness() -> None:
+    """ParentMethods may override methods from imported Sage receiver classes."""
+    _assert_override_conjunction(
+        "test_receiver_imported_runtime_class_override",
+        "test_invalid_override",
     )
 
 

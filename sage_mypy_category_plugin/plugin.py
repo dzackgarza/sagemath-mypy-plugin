@@ -190,6 +190,7 @@ class SageCategoryPlugin(Plugin):
         _materialize_subcategory_helpers(ctx, info)
         _materialize_operator_helpers(ctx, info)
         runtime_base_ti = _receiver_runtime_base_typeinfo(ctx, info)
+        runtime_body_tis = _receiver_runtime_body_typeinfos(ctx, ctx.cls, info)
         if _has_explicit_non_object_base(info):
             return
 
@@ -299,6 +300,7 @@ class SageCategoryPlugin(Plugin):
                 deferred = True
             base_tis.append(ti)
 
+        base_tis.extend(runtime_body_tis)
         if runtime_base_ti is not None:
             base_tis.append(runtime_base_ti)
 
@@ -627,6 +629,166 @@ def _receiver_runtime_base_typeinfo(
     if fullname is None:
         return None
     return _lookup_typeinfo(ctx, fullname)
+
+
+def _receiver_runtime_body_typeinfos(
+    ctx: ClassDefContext,
+    cls: ClassDef,
+    info: TypeInfo,
+) -> tuple[TypeInfo, ...]:
+    if _method_container_kind_for_typeinfo(ctx, info) != "ParentMethods":
+        return ()
+    needed_names = _explicit_override_method_names(info) | _class_body_self_member_names(
+        cls
+    )
+    if not needed_names:
+        return ()
+    candidates: list[TypeInfo] = []
+    for statement in cls.defs.body:
+        func = statement.func if isinstance(statement, Decorator) else statement
+        if not isinstance(func, FuncDef):
+            continue
+        for candidate in _runtime_receiver_typeinfos_from_block(ctx, func.body):
+            if candidate.fullname == info.fullname:
+                continue
+            if not _typeinfo_defines_any_name(candidate, needed_names):
+                continue
+            candidates.append(_receiver_method_provider_typeinfo(candidate, needed_names))
+    return tuple(dict.fromkeys(candidates))
+
+
+def _receiver_method_provider_typeinfo(
+    candidate: TypeInfo,
+    needed_names: frozenset[str],
+) -> TypeInfo:
+    for base in getattr(candidate, "mro", ())[1:]:
+        if base.fullname == "builtins.object":
+            break
+        if needed_names.intersection(getattr(base, "names", {})):
+            return base
+    return candidate
+
+
+def _runtime_receiver_typeinfos_from_block(
+    ctx: ClassDefContext,
+    block: Block,
+) -> tuple[TypeInfo, ...]:
+    candidates: list[TypeInfo] = []
+    for statement in block.body:
+        candidates.extend(_runtime_receiver_typeinfos_from_statement(ctx, statement))
+    return tuple(dict.fromkeys(candidates))
+
+
+def _runtime_receiver_typeinfos_from_statement(
+    ctx: ClassDefContext,
+    statement: Any,
+) -> tuple[TypeInfo, ...]:
+    candidates: list[TypeInfo] = []
+    if isinstance(statement, IfStmt):
+        candidates.extend(_runtime_receiver_typeinfos_from_exprs(ctx, statement.expr))
+        for block in statement.body:
+            candidates.extend(_runtime_receiver_typeinfos_from_block(ctx, block))
+        if statement.else_body is not None:
+            candidates.extend(
+                _runtime_receiver_typeinfos_from_block(ctx, statement.else_body)
+            )
+        return tuple(dict.fromkeys(candidates))
+    if isinstance(statement, Block):
+        return _runtime_receiver_typeinfos_from_block(ctx, statement)
+    expr = getattr(statement, "expr", None)
+    if expr is not None:
+        candidates.extend(_runtime_receiver_typeinfos_from_expr(ctx, expr))
+    rvalue = getattr(statement, "rvalue", None)
+    if rvalue is not None:
+        candidates.extend(_runtime_receiver_typeinfos_from_expr(ctx, rvalue))
+    return tuple(dict.fromkeys(candidates))
+
+
+def _runtime_receiver_typeinfos_from_exprs(
+    ctx: ClassDefContext,
+    exprs: Any,
+) -> tuple[TypeInfo, ...]:
+    if isinstance(exprs, list | tuple):
+        candidates: list[TypeInfo] = []
+        for expr in exprs:
+            candidates.extend(_runtime_receiver_typeinfos_from_expr(ctx, expr))
+        return tuple(dict.fromkeys(candidates))
+    return _runtime_receiver_typeinfos_from_expr(ctx, exprs)
+
+
+def _runtime_receiver_typeinfos_from_expr(
+    ctx: ClassDefContext,
+    expr: Any,
+) -> tuple[TypeInfo, ...]:
+    candidates: list[TypeInfo] = []
+    if isinstance(expr, CallExpr):
+        candidates.extend(_runtime_receiver_typeinfos_from_call(ctx, expr))
+        candidates.extend(_runtime_receiver_typeinfos_from_expr(ctx, expr.callee))
+        for arg in expr.args:
+            candidates.extend(_runtime_receiver_typeinfos_from_expr(ctx, arg))
+        return tuple(dict.fromkeys(candidates))
+    if isinstance(expr, MemberExpr):
+        candidates.extend(_runtime_receiver_typeinfos_from_expr(ctx, expr.expr))
+        return tuple(dict.fromkeys(candidates))
+    if isinstance(expr, CastExpr):
+        return _runtime_receiver_typeinfos_from_expr(ctx, expr.expr)
+    if isinstance(expr, TupleExpr | ListExpr):
+        for item in expr.items:
+            candidates.extend(_runtime_receiver_typeinfos_from_expr(ctx, item))
+        return tuple(dict.fromkeys(candidates))
+    nested = getattr(expr, "expr", None)
+    if nested is not None:
+        candidates.extend(_runtime_receiver_typeinfos_from_expr(ctx, nested))
+    return tuple(dict.fromkeys(candidates))
+
+
+def _runtime_receiver_typeinfos_from_call(
+    ctx: ClassDefContext,
+    expr: CallExpr,
+) -> tuple[TypeInfo, ...]:
+    callee = expr.callee
+    if (
+        isinstance(callee, RefExpr)
+        and callee.name == "isinstance"
+        and len(expr.args) >= 2
+        and _is_self_expr(expr.args[0])
+    ):
+        return _runtime_typeinfos_from_isinstance_target(ctx, expr.args[1])
+    if (
+        isinstance(callee, MemberExpr)
+        and expr.args
+        and _is_self_expr(expr.args[0])
+    ):
+        candidate = _runtime_typeinfo_from_expr(ctx, callee.expr)
+        if candidate is not None:
+            return (candidate,)
+    return ()
+
+
+def _runtime_typeinfos_from_isinstance_target(
+    ctx: ClassDefContext,
+    expr: Expression,
+) -> tuple[TypeInfo, ...]:
+    if isinstance(expr, TupleExpr):
+        candidates = [
+            candidate
+            for item in expr.items
+            if (candidate := _runtime_typeinfo_from_expr(ctx, item)) is not None
+        ]
+        return tuple(dict.fromkeys(candidates))
+    candidate = _runtime_typeinfo_from_expr(ctx, expr)
+    return () if candidate is None else (candidate,)
+
+
+def _runtime_typeinfo_from_expr(
+    ctx: ClassDefContext,
+    expr: Expression,
+) -> TypeInfo | None:
+    if isinstance(expr, RefExpr):
+        return _typeinfo_from_symbol_node(expr.node) or (
+            _lookup_typeinfo(ctx, expr.fullname) if expr.fullname else None
+        ) or _local_typeinfo_named(ctx, expr.name)
+    return None
 
 
 def _method_container_kind_for_typeinfo(

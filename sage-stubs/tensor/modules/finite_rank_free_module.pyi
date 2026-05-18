@@ -1,0 +1,23 @@
+from typing import Any
+
+from sage.modules.free_module import FreeModule_generic, _FreeModuleReceiverMethods
+
+
+class _FiniteRankFreeModuleReceiverMethods(_FreeModuleReceiverMethods):
+    def bases(self) -> list[Any]: ...
+    def default_basis(self) -> Any: ...
+    def set_default_basis(self, basis: Any) -> None: ...
+    def dual(self) -> Any: ...
+    def exterior_power(self, degree: Any) -> Any: ...
+    def alternating_form(
+        self,
+        degree: Any,
+        name: str | None = ...,
+        latex_name: str | None = ...,
+    ) -> Any: ...
+
+
+class FiniteRankFreeModule(
+    _FiniteRankFreeModuleReceiverMethods,
+    FreeModule_generic,
+): ...
