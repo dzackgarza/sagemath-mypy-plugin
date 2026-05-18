@@ -582,6 +582,63 @@ def test_manifest_rejects_unresolved_concrete_parent_provider_references() -> No
 
 
 @pytest.mark.parametrize(
+    ("mutation", "expected_field"),
+    (
+        (
+            {
+                "runtime_mro": (
+                    "sage.categories.examples.semigroups.LeftZeroSemigroup",
+                    "sage.categories.examples.semigroups."
+                    "LeftZeroSemigroup_with_category",
+                    "sage.structure.parent.Parent",
+                )
+            },
+            "runtime_mro",
+        ),
+        ({"parent_provider_mro": ()}, "parent_provider_mro"),
+        (
+            {
+                "element_runtime_class": (
+                    "sage.categories.examples.semigroups."
+                    "LeftZeroSemigroup_with_category.element_class"
+                ),
+                "element_provider_mro": (),
+            },
+            "element_provider_mro",
+        ),
+        (
+            {
+                "element_runtime_class": None,
+                "element_provider_mro": (
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "TopCategory.ElementMethods",
+                ),
+            },
+            "element_runtime_class",
+        ),
+    ),
+)
+def test_manifest_rejects_incoherent_concrete_parent_records(
+    mutation: dict[str, Any],
+    expected_field: str,
+) -> None:
+    payload = _manifest_payload()
+    payload["concrete_parents"] = [
+        {
+            **payload["concrete_parents"][0],
+            **mutation,
+        }
+    ]
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    errors = raised.value.errors()
+    assert {error["type"] for error in errors} == {"concrete_parent_graph_mismatch"}
+    assert errors[0]["ctx"]["field"] == expected_field
+
+
+@pytest.mark.parametrize(
     "missing_module",
     (
         "tests.fixtures.invariant_core.diamond_runtime",

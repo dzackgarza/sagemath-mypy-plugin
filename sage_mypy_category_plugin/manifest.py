@@ -140,6 +140,53 @@ class ProjectionManifest(BaseModel):
                 + ", ".join(duplicate_concrete_classes)
             )
 
+        for concrete_parent in self.concrete_parents:
+            if (
+                not concrete_parent.runtime_mro
+                or concrete_parent.runtime_mro[0] != concrete_parent.runtime_class
+            ):
+                raise PydanticCustomError(
+                    "concrete_parent_graph_mismatch",
+                    "concrete parent runtime MRO must start with its runtime class",
+                    {
+                        "concrete_class": concrete_parent.concrete_class,
+                        "field": "runtime_mro",
+                    },
+                )
+            if not concrete_parent.parent_provider_mro:
+                raise PydanticCustomError(
+                    "concrete_parent_graph_mismatch",
+                    "concrete parent record must include a parent provider MRO",
+                    {
+                        "concrete_class": concrete_parent.concrete_class,
+                        "field": "parent_provider_mro",
+                    },
+                )
+            if (
+                concrete_parent.element_runtime_class is None
+                and concrete_parent.element_provider_mro
+            ):
+                raise PydanticCustomError(
+                    "concrete_parent_graph_mismatch",
+                    "element provider MRO requires an element runtime class",
+                    {
+                        "concrete_class": concrete_parent.concrete_class,
+                        "field": "element_runtime_class",
+                    },
+                )
+            if (
+                concrete_parent.element_runtime_class is not None
+                and not concrete_parent.element_provider_mro
+            ):
+                raise PydanticCustomError(
+                    "concrete_parent_graph_mismatch",
+                    "element runtime class requires an element provider MRO",
+                    {
+                        "concrete_class": concrete_parent.concrete_class,
+                        "field": "element_provider_mro",
+                    },
+                )
+
         for projection in self.projections:
             if (
                 not projection.provider_mro
