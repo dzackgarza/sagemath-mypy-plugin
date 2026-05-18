@@ -38,6 +38,7 @@ from mypy.nodes import (
     RefExpr,
     ReturnStmt,
     SymbolTableNode,
+    StrExpr,
     TypeAlias,
     TypeInfo,
     TupleExpr,
@@ -976,7 +977,7 @@ def _static_extra_super_category_typeinfos(
     for method in _class_methods_named(category, "extra_super_categories"):
         for expr in _return_expressions(method.body):
             for item in _category_items_from_return_expr(expr):
-                ti = _typeinfo_from_static_category_expr(ctx, item)
+                ti = _typeinfo_from_static_category_expr(ctx, category, item)
                 if ti is not None:
                     extras.append(ti)
     return tuple(dict.fromkeys(extras))
@@ -1016,6 +1017,7 @@ def _category_items_from_return_expr(expr: Expression) -> tuple[Expression, ...]
 
 def _typeinfo_from_static_category_expr(
     ctx: ClassDefContext,
+    owner: TypeInfo,
     expr: Expression,
 ) -> TypeInfo | None:
     direct = _typeinfo_from_expr(expr)
@@ -1030,24 +1032,78 @@ def _typeinfo_from_static_category_expr(
         if local is not None:
             return local
     if isinstance(expr, CallExpr):
-        return _typeinfo_from_static_category_call(ctx, expr)
+        return _typeinfo_from_static_category_call(ctx, owner, expr)
     return None
 
 
 def _typeinfo_from_static_category_call(
     ctx: ClassDefContext,
+    owner: TypeInfo,
     expr: CallExpr,
 ) -> TypeInfo | None:
     callee = expr.callee
     if isinstance(callee, MemberExpr):
+        if callee.name == "base_category" and _is_self_expr(callee.expr):
+            return _axiom_base_category_typeinfo(ctx, owner)
         if callee.name == "an_instance":
             returned = _typeinfo_from_symbol_node(callee.node)
             if returned is not None:
                 return returned
-            return _typeinfo_from_static_category_expr(ctx, callee.expr)
+            return _typeinfo_from_static_category_expr(ctx, owner, callee.expr)
+        receiver = _typeinfo_from_static_category_expr(ctx, owner, callee.expr)
+        if receiver is not None:
+            return _typeinfo_for_axiom_selector(ctx, receiver, callee.name)
         return None
     if isinstance(callee, RefExpr):
         return _typeinfo_from_symbol_node(callee.node)
+    return None
+
+
+def _is_self_expr(expr: Expression) -> bool:
+    return isinstance(expr, NameExpr) and expr.name == "self"
+
+
+def _typeinfo_for_axiom_selector(
+    ctx: ClassDefContext,
+    receiver: TypeInfo,
+    axiom_name: str,
+) -> TypeInfo | None:
+    receiver_base_names = {
+        candidate.fullname
+        for candidate in _receiver_self_typeinfo_candidates(ctx, receiver)
+    }
+    for module in ctx.api.modules.values():
+        names = getattr(module, "names", None)
+        if names is None:
+            continue
+        for symbol in names.values():
+            candidate = _typeinfo_from_symbol_node(symbol.node)
+            if candidate is None:
+                continue
+            if _category_axiom_name(candidate) != axiom_name:
+                continue
+            axiom_base = _axiom_base_category_typeinfo(ctx, candidate)
+            if axiom_base is not None and axiom_base.fullname in receiver_base_names:
+                return candidate
+    return None
+
+
+def _category_axiom_name(info: TypeInfo) -> str | None:
+    for statement in getattr(info.defn.defs, "body", ()):
+        if not isinstance(statement, AssignmentStmt) or len(statement.lvalues) != 1:
+            continue
+        target = statement.lvalues[0]
+        if not (
+            isinstance(target, NameExpr)
+            and target.name == "_base_category_class_and_axiom"
+        ):
+            continue
+        rvalue = statement.rvalue
+        if not isinstance(rvalue, TupleExpr) or len(rvalue.items) < 2:
+            continue
+        axiom = rvalue.items[1]
+        if isinstance(axiom, StrExpr):
+            return axiom.value
     return None
 
 

@@ -52,6 +52,7 @@ Surfaces covered:
     Relative-import axiom base categories — test_plugin_relative_import_axiom_base_correctness
     Base-category subcategory selectors — test_plugin_base_category_subcategory_selector_correctness
     Static extra-super method containers — test_plugin_static_extra_super_method_container_correctness
+    Static extra-super base-category selectors — test_plugin_static_extra_super_base_category_selector_correctness
 """
 from __future__ import annotations
 
@@ -381,6 +382,14 @@ def test_plugin_static_extra_super_method_container_correctness() -> None:
     """Static fallback reads extra_super_categories() when runtime projection fails."""
     _assert_override_conjunction(
         "test_static_extra_super_method_container",
+        "test_invalid_override",
+    )
+
+
+def test_plugin_static_extra_super_base_category_selector_correctness() -> None:
+    """Static fallback resolves self.base_category().Axiom() extra-super calls."""
+    _assert_override_conjunction(
+        "test_static_extra_super_base_category_selector",
         "test_invalid_override",
     )
 
