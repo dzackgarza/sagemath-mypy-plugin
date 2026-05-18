@@ -4,10 +4,13 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from mypy.version import __version__ as MYPY_VERSION
+from packaging.version import Version
 import pytest
 from pydantic import ValidationError
 
 from sage_mypy_category_plugin.manifest import (
+    CURRENT_PLUGIN_SCHEMA_VERSION,
     ProjectionManifest,
     load_manifest,
     write_manifest,
@@ -98,8 +101,11 @@ def _manifest_payload() -> dict[str, Any]:
     manifest = ProjectionManifest(
         schema_version=1,
         generated_by="tests",
+        plugin_schema_version=CURRENT_PLUGIN_SCHEMA_VERSION,
         sage_version="10.7",
         python_version="3.12.13",
+        mypy_min_version=MYPY_VERSION,
+        mypy_max_version=MYPY_VERSION,
         projections=(
             _base_projection(),
             _left_projection(),
@@ -118,6 +124,9 @@ def test_manifest_round_trips_projection_records(tmp_path: Path) -> None:
     loaded = load_manifest(manifest_path)
 
     assert loaded == manifest
+    assert loaded.plugin_schema_version == CURRENT_PLUGIN_SCHEMA_VERSION
+    assert loaded.mypy_min_version == MYPY_VERSION
+    assert loaded.mypy_max_version == MYPY_VERSION
     assert loaded.projection_by_provider == {
         projection.provider: projection
         for projection in (
@@ -133,6 +142,14 @@ def test_manifest_round_trips_projection_records(tmp_path: Path) -> None:
     ("mutation", "expected_field"),
     (
         ({"schema_version": 2}, "schema_version"),
+        ({"plugin_schema_version": "2"}, "plugin_schema_version"),
+        (
+            {
+                "mypy_min_version": str(Version(MYPY_VERSION).release[0] + 1),
+                "mypy_max_version": str(Version(MYPY_VERSION).release[0] + 1),
+            },
+            "mypy",
+        ),
         ({"projections": None}, "projections"),
         ({"projections": [{"provider": 17}]}, "provider"),
         ({"projections": [{"provider_mro": "not-a-list"}]}, "provider_mro"),
@@ -186,3 +203,36 @@ def test_manifest_rejects_unresolved_provider_references() -> None:
         ProjectionManifest.model_validate(payload)
 
     assert "unresolved provider reference" in str(raised.value)
+
+
+def test_manifest_semantic_digest_is_deterministic_for_equivalent_content() -> None:
+    manifest_payload = _manifest_payload()
+    shuffled_payload = {
+        key: manifest_payload[key]
+        for key in reversed(tuple(manifest_payload))
+    }
+    manifest_a = ProjectionManifest.model_validate(manifest_payload)
+    manifest_b = ProjectionManifest.model_validate(shuffled_payload)
+
+    assert manifest_a.semantic_projection_digest == manifest_b.semantic_projection_digest
+
+
+def test_manifest_semantic_digest_tracks_projection_changes() -> None:
+    base_manifest = ProjectionManifest.model_validate(_manifest_payload())
+    mutated_payload = base_manifest.model_dump(mode="json")
+    mutated_payload["projections"] = [*mutated_payload["projections"]]
+
+    projection_to_mutate = next(
+        projection
+        for projection in mutated_payload["projections"]
+        if len(projection["provider_mro"]) >= 3
+    )
+    first_projection_mro = list(projection_to_mutate["provider_mro"])
+    first_projection_mro[1], first_projection_mro[2] = (
+        first_projection_mro[2],
+        first_projection_mro[1],
+    )
+    projection_to_mutate["provider_mro"] = tuple(first_projection_mro)
+    mutated_manifest = ProjectionManifest.model_validate(mutated_payload)
+
+    assert base_manifest.semantic_projection_digest != mutated_manifest.semantic_projection_digest

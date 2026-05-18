@@ -9,6 +9,7 @@ description = "Invariant-core rewrite for Sage category provider MRO projection 
 requires-python = ">=3.12"
 dependencies = [
     "mypy==2.0.0",
+    "packaging>=24,<27",
     "pydantic>=2.12,<3",
 ]
 
