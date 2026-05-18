@@ -10,6 +10,7 @@ from mypy.nodes import MypyFile, TypeInfo
 from mypy.options import Options
 from mypy.plugin import ClassDefContext, Plugin, ReportConfigContext
 from mypy.types import Instance
+from pydantic import ValidationError
 
 from sage_mypy_category_plugin.manifest import (
     ProjectionManifest,
@@ -27,7 +28,7 @@ class SageCategoryProjectionPlugin(Plugin):
     def __init__(self, options: Options) -> None:
         super().__init__(options)
         self._manifest_path = _manifest_path_from_config(options)
-        self._manifest = load_manifest(self._manifest_path)
+        self._manifest = _load_manifest_for_plugin(self._manifest_path)
         _validate_source_module_metadata(self._manifest.source_modules)
         self._manifest_digest = sha256(self._manifest_path.read_bytes()).hexdigest()
         self._projection_by_provider = self._manifest.projection_by_provider
@@ -201,6 +202,28 @@ def _manifest_path_from_config(options: Options) -> Path:
     if not manifest_path.is_absolute():
         manifest_path = config_path.parent / manifest_path
     return manifest_path
+
+
+def _load_manifest_for_plugin(path: Path) -> ProjectionManifest:
+    try:
+        return load_manifest(path)
+    except ValidationError as error:
+        raise CompileError(
+            [
+                f"Invalid Sage category projection manifest {path}: "
+                f"{_format_validation_error(error)}"
+            ]
+        ) from error
+
+
+def _format_validation_error(error: ValidationError) -> str:
+    messages: list[str] = []
+    for issue in error.errors():
+        location = ".".join(str(part) for part in issue["loc"])
+        if not location:
+            location = "<manifest>"
+        messages.append(f"{location}: {issue['msg']}")
+    return "; ".join(messages)
 
 
 def _validate_source_module_metadata(
