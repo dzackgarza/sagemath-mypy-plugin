@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, StrictStr
 
-from sage_mypy_category_plugin.oracle import ProviderProjection
+from sage_mypy_category_plugin.projection import ProviderProjection
 
 
 class ProjectionManifest(BaseModel):

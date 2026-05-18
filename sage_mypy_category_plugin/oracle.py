@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from importlib import import_module
-from typing import Literal, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, StrictStr
+from pydantic import BaseModel, ConfigDict
 
 import sage.all  # type: ignore[import-untyped] # noqa: F401
 
-ProviderRole = Literal["parent", "element", "subcategory", "morphism"]
+from sage_mypy_category_plugin.projection import ProviderProjection, ProviderRole
 
 
 class SageCategory(Protocol):
@@ -20,18 +20,6 @@ class SageCategory(Protocol):
 class SageCategoryFactory(Protocol):
     def an_instance(self) -> SageCategory:
         pass
-
-
-class ProviderProjection(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    provider: StrictStr
-    role: ProviderRole
-    runtime_class: StrictStr
-    runtime_bases: tuple[StrictStr, ...]
-    runtime_mro: tuple[StrictStr, ...]
-    provider_bases: tuple[StrictStr, ...]
-    provider_mro: tuple[StrictStr, ...]
 
 
 class RoleProjection(BaseModel):

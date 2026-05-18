@@ -12,7 +12,7 @@ from sage_mypy_category_plugin.manifest import (
     load_manifest,
     write_manifest,
 )
-from sage_mypy_category_plugin.oracle import ProviderProjection
+from sage_mypy_category_plugin.projection import ProviderProjection
 
 
 def _projection() -> ProviderProjection:
