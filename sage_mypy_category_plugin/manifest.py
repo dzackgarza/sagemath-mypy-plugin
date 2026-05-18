@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from hashlib import sha256
+import re
 
 from pathlib import Path
 from typing import Literal, Self
@@ -13,6 +14,24 @@ from pydantic import BaseModel, ConfigDict, StrictStr, model_validator
 from sage_mypy_category_plugin.projection import ProviderProjection
 
 CURRENT_PLUGIN_SCHEMA_VERSION = "1"
+SHA256_HEX_PATTERN = re.compile(r"[0-9a-f]{64}")
+
+
+class SourceModuleRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    module: StrictStr
+    path: StrictStr
+    sha256: StrictStr
+
+    @model_validator(mode="after")
+    def _validate_sha256(self) -> Self:
+        if SHA256_HEX_PATTERN.fullmatch(self.sha256) is None:
+            raise ValueError(
+                "sha256 must be 64 lowercase hex characters: "
+                f"{self.sha256!r}"
+            )
+        return self
 
 
 class ProjectionManifest(BaseModel):
@@ -26,6 +45,7 @@ class ProjectionManifest(BaseModel):
     mypy_max_version: StrictStr = "9999.9999.9999"
     python_version: StrictStr
     projections: tuple[ProviderProjection, ...]
+    source_modules: tuple[SourceModuleRecord, ...] = ()
 
     @model_validator(mode="after")
     def _validate_projection_graph(self) -> Self:
@@ -38,6 +58,18 @@ class ProjectionManifest(BaseModel):
         if duplicate_providers:
             raise ValueError(
                 "duplicate provider records: " + ", ".join(duplicate_providers)
+            )
+
+        source_modules = tuple(record.module for record in self.source_modules)
+        duplicate_source_modules = tuple(
+            module
+            for module in dict.fromkeys(source_modules)
+            if source_modules.count(module) > 1
+        )
+        if duplicate_source_modules:
+            raise ValueError(
+                "duplicate source module records: "
+                + ", ".join(duplicate_source_modules)
             )
 
         declared_providers = frozenset(providers)
@@ -79,6 +111,10 @@ class ProjectionManifest(BaseModel):
         return {projection.provider: projection for projection in self.projections}
 
     @property
+    def source_module_by_module(self) -> dict[str, SourceModuleRecord]:
+        return {record.module: record for record in self.source_modules}
+
+    @property
     def semantic_projection_digest(self) -> str:
         projections = tuple(
             (
@@ -115,6 +151,7 @@ def write_manifest(path: Path, manifest: ProjectionManifest) -> None:
 
 
 __all__ = [
+    "SourceModuleRecord",
     "ProjectionManifest",
     "load_manifest",
     "write_manifest",

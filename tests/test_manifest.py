@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from sage_mypy_category_plugin.manifest import (
     CURRENT_PLUGIN_SCHEMA_VERSION,
     ProjectionManifest,
+    SourceModuleRecord,
     load_manifest,
     write_manifest,
 )
@@ -112,6 +113,14 @@ def _manifest_payload() -> dict[str, Any]:
             _right_projection(),
             _projection(),
         ),
+        source_modules=(
+            SourceModuleRecord(
+                module="tests.fixtures.invariant_core.diamond_runtime",
+                path="tests/fixtures/invariant_core/diamond_runtime.py",
+                sha256="9f1f7a4a0d0b6dfd7f9d2d2c1d3b5e6a"
+                "8b1c0f7a6d5e4c3b2a19080706050403",
+            ),
+        ),
     )
     return manifest.model_dump(mode="json")
 
@@ -134,6 +143,14 @@ def test_manifest_round_trips_projection_records(tmp_path: Path) -> None:
             _left_projection(),
             _right_projection(),
             _projection(),
+        )
+    }
+    assert loaded.source_module_by_module == {
+        "tests.fixtures.invariant_core.diamond_runtime": SourceModuleRecord(
+            module="tests.fixtures.invariant_core.diamond_runtime",
+            path="tests/fixtures/invariant_core/diamond_runtime.py",
+            sha256="9f1f7a4a0d0b6dfd7f9d2d2c1d3b5e6a"
+            "8b1c0f7a6d5e4c3b2a19080706050403",
         )
     }
 
@@ -193,6 +210,29 @@ def test_manifest_rejects_duplicate_provider_records() -> None:
         ProjectionManifest.model_validate(payload)
 
     assert "duplicate provider" in str(raised.value)
+
+
+def test_manifest_rejects_duplicate_source_module_records() -> None:
+    payload = _manifest_payload()
+    payload["source_modules"] = [
+        payload["source_modules"][0],
+        deepcopy(payload["source_modules"][0]),
+    ]
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    assert "duplicate source module" in str(raised.value)
+
+
+def test_manifest_rejects_malformed_source_module_hash() -> None:
+    payload = _manifest_payload()
+    payload["source_modules"][0]["sha256"] = "not-a-sha256"
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    assert "sha256" in str(raised.value)
 
 
 def test_manifest_rejects_unresolved_provider_references() -> None:
