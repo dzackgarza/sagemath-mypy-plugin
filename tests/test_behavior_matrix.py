@@ -47,6 +47,17 @@ PARAMETERIZED_CATEGORY_FULLNAMES = (
 )
 MODULES_PROVIDER = "sage.categories.modules.Modules.ParentMethods"
 VECTOR_SPACES_PROVIDER = "sage.categories.vector_spaces.VectorSpaces.ParentMethods"
+AXIOM_ROOT_CATEGORY = "tests.fixtures.invariant_core.axioms.AxiomRootCategory.Finite"
+AXIOM_BEHAVIOR_CASES = {
+    "axiom_valid": (
+        "tests.fixtures.invariant_core.axiom_behavior_valid",
+        "tests.fixtures.invariant_core.axiom_behavior_valid.ValidAxiomOverrideCategory.Finite",
+    ),
+    "axiom_invalid": (
+        "tests.fixtures.invariant_core.axiom_behavior_invalid",
+        "tests.fixtures.invariant_core.axiom_behavior_invalid.InvalidAxiomOverrideCategory.Finite",
+    ),
+}
 BEHAVIOR_CASES = {
     "valid": (
         "tests.fixtures.invariant_core.diamond_behavior_valid",
@@ -202,6 +213,34 @@ def test_nested_sage_provider_behavior_matrix_uses_standard_mypy_rules(
     )
 
 
+def test_local_axiom_behavior_matrix_uses_standard_mypy_rules(
+    tmp_path: Path,
+) -> None:
+    visible_sage_stubs = _write_visible_sage_axiom_stubs(tmp_path)
+    config_path = _write_axiom_plugin_config(
+        tmp_path,
+        visible_sage_stubs=visible_sage_stubs,
+    )
+    modules = tuple(case[0] for case in AXIOM_BEHAVIOR_CASES.values())
+
+    with_plugin = _run_mypy(
+        modules,
+        config_path,
+        tmp_path,
+        mypy_path_entries=(REPO_ROOT, visible_sage_stubs),
+    )
+    without_plugin = _run_mypy_without_plugin(
+        modules,
+        tmp_path,
+        mypy_path_entries=(REPO_ROOT, visible_sage_stubs),
+    )
+
+    assert not _case_errors(with_plugin, "axiom_valid")
+    assert _case_contains(without_plugin, "axiom_valid", "no base method was found")
+    assert _case_contains(with_plugin, "axiom_invalid", "no base method was found")
+    assert _case_contains(without_plugin, "axiom_invalid", "no base method was found")
+
+
 def _write_plugin_config(tmp_path: Path) -> Path:
     category_fullnames = list(BASE_CATEGORY_FULLNAMES)
     for case in BEHAVIOR_CASES.values():
@@ -219,6 +258,74 @@ def _write_plugin_config(tmp_path: Path) -> Path:
     )
     manifest_path = tmp_path / "sage-category-projections.json"
     config_path = tmp_path / "mypy.ini"
+    write_manifest(manifest_path, manifest)
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "ignore_missing_imports = True",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+    return config_path
+
+
+def _write_axiom_plugin_config(
+    tmp_path: Path,
+    *,
+    visible_sage_stubs: Path,
+) -> Path:
+    category_fullnames = [
+        AXIOM_ROOT_CATEGORY,
+        *(case[1] for case in AXIOM_BEHAVIOR_CASES.values()),
+    ]
+    projections = provider_projections_for_categories(
+        tuple(category_fullnames),
+        roles=("parent",),
+    )
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=tuple(projections.values()),
+        source_modules=(
+            _source_module_record(
+                "tests.fixtures.invariant_core.axioms",
+                FIXTURE_ROOT / "axioms.py",
+            ),
+            *(
+                _source_module_record(case[0], _module_path(case[0]))
+                for case in AXIOM_BEHAVIOR_CASES.values()
+            ),
+            _source_module_record(
+                "sage.categories.finite_sets",
+                visible_sage_stubs / "sage" / "categories" / "finite_sets.pyi",
+            ),
+            _source_module_record(
+                "sage.categories.sets_cat",
+                visible_sage_stubs / "sage" / "categories" / "sets_cat.pyi",
+            ),
+            _source_module_record(
+                "sage.categories.sets_with_partial_maps",
+                visible_sage_stubs
+                / "sage"
+                / "categories"
+                / "sets_with_partial_maps.pyi",
+            ),
+            _source_module_record(
+                "sage.categories.objects",
+                visible_sage_stubs / "sage" / "categories" / "objects.pyi",
+            ),
+        ),
+    )
+    manifest_path = tmp_path / "sage-category-axiom-behavior-projections.json"
+    config_path = tmp_path / "axiom-behavior-mypy.ini"
     write_manifest(manifest_path, manifest)
     config_path.write_text(
         "\n".join(
@@ -477,15 +584,25 @@ def _run_mypy(
     modules: tuple[str, ...],
     config_path: Path,
     tmp_path: Path,
+    *,
+    mypy_path_entries: tuple[Path, ...] = (REPO_ROOT,),
 ) -> BuildResult:
     options = _options(tmp_path)
     options.config_file = str(config_path)
     options.plugins = ["sage_mypy_category_plugin.plugin"]
+    options.mypy_path = [str(path) for path in mypy_path_entries]
     return build(sources=[_source(module) for module in modules], options=options)
 
 
-def _run_mypy_without_plugin(modules: tuple[str, ...], tmp_path: Path) -> BuildResult:
-    return build(sources=[_source(module) for module in modules], options=_options(tmp_path))
+def _run_mypy_without_plugin(
+    modules: tuple[str, ...],
+    tmp_path: Path,
+    *,
+    mypy_path_entries: tuple[Path, ...] = (REPO_ROOT,),
+) -> BuildResult:
+    options = _options(tmp_path)
+    options.mypy_path = [str(path) for path in mypy_path_entries]
+    return build(sources=[_source(module) for module in modules], options=options)
 
 
 def _options(tmp_path: Path) -> Options:
@@ -505,6 +622,62 @@ def _source(module: str) -> BuildSource:
 def _module_path(module: str) -> Path:
     filename = module.rsplit(".", maxsplit=1)[-1] + ".py"
     return FIXTURE_ROOT / filename
+
+
+def _write_visible_sage_axiom_stubs(tmp_path: Path) -> Path:
+    stub_root = tmp_path / "visible-sage-axiom-stubs"
+    categories = stub_root / "sage" / "categories"
+    categories.mkdir(parents=True)
+    (stub_root / "sage" / "__init__.pyi").write_text("")
+    (categories / "__init__.pyi").write_text("")
+    (categories / "finite_sets.pyi").write_text(
+        "\n".join(
+            (
+                "class FiniteSets:",
+                "    class ParentMethods: ...",
+                "",
+            )
+        )
+    )
+    (categories / "sets_cat.pyi").write_text(
+        "\n".join(
+            (
+                "class Sets:",
+                "    class ParentMethods: ...",
+                "",
+            )
+        )
+    )
+    (categories / "sets_with_partial_maps.pyi").write_text(
+        "\n".join(
+            (
+                "class SetsWithPartialMaps:",
+                "    class ParentMethods: ...",
+                "",
+            )
+        )
+    )
+    (categories / "objects.pyi").write_text(
+        "\n".join(
+            (
+                "class Objects:",
+                "    class ParentMethods: ...",
+                "",
+            )
+        )
+    )
+    return stub_root
+
+
+def _source_module_record(module_name: str, path: Path) -> SourceModuleRecord:
+    source_bytes = path.read_bytes()
+    source_stat = path.stat()
+    return SourceModuleRecord(
+        module=module_name,
+        path=str(path),
+        sha256=sha256(source_bytes).hexdigest(),
+        mtime_ns=source_stat.st_mtime_ns,
+    )
 
 
 def _case_contains(result: BuildResult, case_name: str, fragment: str) -> bool:
@@ -534,5 +707,12 @@ def _contains_error_fragments(result: BuildResult, *fragments: str) -> bool:
 
 
 def _case_errors(result: BuildResult, case_name: str) -> tuple[str, ...]:
-    filename = _module_path(BEHAVIOR_CASES[case_name][0]).name
+    filename = _module_path(_behavior_case_module(case_name)).name
     return tuple(error for error in result.errors if filename in error)
+
+
+def _behavior_case_module(case_name: str) -> str:
+    if case_name in BEHAVIOR_CASES:
+        return BEHAVIOR_CASES[case_name][0]
+    assert case_name in AXIOM_BEHAVIOR_CASES, f"Unknown behavior case {case_name!r}"
+    return AXIOM_BEHAVIOR_CASES[case_name][0]
