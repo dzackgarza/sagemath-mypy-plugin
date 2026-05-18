@@ -323,8 +323,20 @@ class SageCategoryPlugin(Plugin):
         original_retained_bases = list(retained_bases)
         base_tis = _prune_redundant_projected_bases(base_tis, retained_bases)
         existing_bases = {base.type.fullname for base in retained_bases}
+        required_override_names = _explicit_override_method_names(info)
         for ti in base_tis:
             if any(ti in getattr(base.type, "mro", [])[1:] for base in retained_bases):
+                continue
+            if (
+                _projected_base_has_final_name_conflict(ti, retained_bases)
+                and not _typeinfo_defines_any_name(ti, required_override_names)
+            ):
+                _materialize_non_conflicting_projected_methods(
+                    ctx,
+                    info,
+                    ti,
+                    retained_bases,
+                )
                 continue
             retained_bases = [
                 base
@@ -847,54 +859,65 @@ def _method_container_needs_semantic_mro(cls: ClassDef, info: TypeInfo) -> bool:
 
 
 def _class_body_has_self_member_access(cls: ClassDef) -> bool:
+    return bool(_class_body_self_member_names(cls))
+
+
+def _class_body_self_member_names(cls: ClassDef) -> frozenset[str]:
+    names: set[str] = set()
     for statement in cls.defs.body:
         func = statement.func if isinstance(statement, Decorator) else statement
-        if isinstance(func, FuncDef) and _block_has_self_member_access(func.body):
-            return True
-    return False
+        if isinstance(func, FuncDef):
+            names.update(_block_self_member_names(func.body))
+    return frozenset(names)
 
 
-def _block_has_self_member_access(block: Block) -> bool:
+def _block_self_member_names(block: Block) -> frozenset[str]:
+    names: set[str] = set()
     for statement in block.body:
-        if _statement_has_self_member_access(statement):
-            return True
-    return False
+        names.update(_statement_self_member_names(statement))
+    return frozenset(names)
 
 
-def _statement_has_self_member_access(statement: Any) -> bool:
+def _statement_self_member_names(statement: Any) -> frozenset[str]:
+    names: set[str] = set()
     if isinstance(statement, IfStmt):
-        if _expression_has_self_member_access(statement.expr):
-            return True
-        if any(_block_has_self_member_access(block) for block in statement.body):
-            return True
-        return (
-            statement.else_body is not None
-            and _block_has_self_member_access(statement.else_body)
-        )
+        names.update(_expression_self_member_names(statement.expr))
+        for block in statement.body:
+            names.update(_block_self_member_names(block))
+        if statement.else_body is not None:
+            names.update(_block_self_member_names(statement.else_body))
+        return frozenset(names)
     if isinstance(statement, Block):
-        return _block_has_self_member_access(statement)
+        return _block_self_member_names(statement)
     expr = getattr(statement, "expr", None)
-    if expr is not None and _expression_has_self_member_access(expr):
-        return True
+    if expr is not None:
+        names.update(_expression_self_member_names(expr))
     rvalue = getattr(statement, "rvalue", None)
-    return rvalue is not None and _expression_has_self_member_access(rvalue)
+    if rvalue is not None:
+        names.update(_expression_self_member_names(rvalue))
+    return frozenset(names)
 
 
-def _expression_has_self_member_access(expr: Any) -> bool:
+def _expression_self_member_names(expr: Any) -> frozenset[str]:
+    names: set[str] = set()
     if isinstance(expr, MemberExpr):
-        return (
-            isinstance(expr.expr, NameExpr)
-            and expr.expr.name == "self"
-        ) or _expression_has_self_member_access(expr.expr)
+        if isinstance(expr.expr, NameExpr) and expr.expr.name == "self":
+            names.add(expr.name)
+        names.update(_expression_self_member_names(expr.expr))
+        return frozenset(names)
     if isinstance(expr, CallExpr):
-        return (
-            _expression_has_self_member_access(expr.callee)
-            or any(_expression_has_self_member_access(arg) for arg in expr.args)
-        )
+        names.update(_expression_self_member_names(expr.callee))
+        for arg in expr.args:
+            names.update(_expression_self_member_names(arg))
+        return frozenset(names)
     if isinstance(expr, TupleExpr):
-        return any(_expression_has_self_member_access(item) for item in expr.items)
+        for item in expr.items:
+            names.update(_expression_self_member_names(item))
+        return frozenset(names)
     nested = getattr(expr, "expr", None)
-    return nested is not None and _expression_has_self_member_access(nested)
+    if nested is not None:
+        names.update(_expression_self_member_names(nested))
+    return frozenset(names)
 
 
 def _explicit_override_method_names(info: TypeInfo) -> frozenset[str]:
@@ -921,6 +944,84 @@ def _typeinfo_defines_name(info: TypeInfo, name: str) -> bool:
     return any(
         name in getattr(base, "names", {})
         for base in getattr(info, "mro", [info])
+    )
+
+
+def _typeinfo_defines_any_name(info: TypeInfo, names: frozenset[str]) -> bool:
+    return any(_typeinfo_defines_name(info, name) for name in names)
+
+
+def _projected_base_has_final_name_conflict(
+    candidate: TypeInfo,
+    retained_bases: list[Instance],
+) -> bool:
+    candidate_names = _public_typeinfo_names(candidate)
+    candidate_final_names = _final_typeinfo_names(candidate)
+    retained_names: set[str] = set()
+    retained_final_names: set[str] = set()
+    for base in retained_bases:
+        retained_names.update(_public_typeinfo_names(base.type))
+        retained_final_names.update(_final_typeinfo_names(base.type))
+    return bool(
+        candidate_names & retained_final_names
+        or candidate_final_names & retained_names
+    )
+
+
+def _materialize_non_conflicting_projected_methods(
+    ctx: ClassDefContext,
+    info: TypeInfo,
+    source: TypeInfo,
+    retained_bases: list[Instance],
+) -> None:
+    blocked_names = _conflicting_final_names(source, retained_bases)
+    needed_names = _class_body_self_member_names(ctx.cls)
+    for name, symbol in source.names.items():
+        if name not in needed_names or name in blocked_names or name.startswith("_"):
+            continue
+        if name in info.names or _class_body_defines(ctx.cls, name):
+            continue
+        method_type = _callable_type_from_method_symbol(ctx, source, symbol.node)
+        if method_type is None:
+            continue
+        var = Var(name, method_type.copy_modified(name=name))
+        var.info = info
+        var._fullname = f"{info.fullname}.{name}"
+        info.names[name] = SymbolTableNode(MDEF, var, plugin_generated=True)
+
+
+def _conflicting_final_names(
+    candidate: TypeInfo,
+    retained_bases: list[Instance],
+) -> frozenset[str]:
+    candidate_names = _public_typeinfo_names(candidate)
+    candidate_final_names = _final_typeinfo_names(candidate)
+    retained_names: set[str] = set()
+    retained_final_names: set[str] = set()
+    for base in retained_bases:
+        retained_names.update(_public_typeinfo_names(base.type))
+        retained_final_names.update(_final_typeinfo_names(base.type))
+    return frozenset(
+        (candidate_names & retained_final_names)
+        | (candidate_final_names & retained_names)
+    )
+
+
+def _public_typeinfo_names(info: TypeInfo) -> frozenset[str]:
+    return frozenset(
+        name
+        for base in getattr(info, "mro", [info])
+        for name in getattr(base, "names", {})
+        if not name.startswith("_")
+    )
+
+
+def _final_typeinfo_names(info: TypeInfo) -> frozenset[str]:
+    return frozenset(
+        name
+        for base in getattr(info, "mro", [info])
+        for name, symbol in getattr(base, "names", {}).items()
+        if not name.startswith("_") and _helper_node_is_final(symbol)
     )
 
 

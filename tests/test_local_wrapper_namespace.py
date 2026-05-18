@@ -44,6 +44,7 @@ Surfaces covered:
     Runtime Sage facade supercategory containers — test_plugin_runtime_facade_super_category_correctness
     Runtime Sage metric supercategory containers — test_plugin_runtime_metric_super_category_correctness
     Runtime Sage supercategory assigned providers — test_plugin_runtime_super_category_alias_provider_correctness
+    Projected duplicate final provider conflicts — test_plugin_projected_duplicate_final_provider_conflict_correctness
     Sage category interop stubs — test_sage_category_interop_stub_correctness
     Parent.Hom category keyword — test_plugin_parent_hom_category_keyword_correctness
     Aliased provider type aliases — test_plugin_alias_provider_type_alias_correctness
@@ -496,6 +497,14 @@ def test_plugin_runtime_super_category_alias_provider_correctness() -> None:
     _assert_override_conjunction(
         "test_runtime_super_category_alias_provider",
         "test_invalid_override",
+    )
+
+
+def test_plugin_projected_duplicate_final_provider_conflict_correctness() -> None:
+    """Projected duplicate final provider names do not hide usable inherited methods."""
+    _assert_clean_conjunction(
+        "test_projected_duplicate_final_provider_conflict",
+        "[attr-defined]",
     )
 
 
