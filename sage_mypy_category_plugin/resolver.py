@@ -15,14 +15,22 @@ from sage_mypy_category_plugin.manifest import (
     SourceModuleRecord,
     write_manifest,
 )
-from sage_mypy_category_plugin.oracle import provider_projections_for_categories
-from sage_mypy_category_plugin.projection import ProviderProjection, ProviderRole
+from sage_mypy_category_plugin.oracle import (
+    concrete_parent_records_for_factories,
+    provider_projections_for_categories,
+)
+from sage_mypy_category_plugin.projection import (
+    ConcreteParentRecord,
+    ProviderProjection,
+    ProviderRole,
+)
 
 
 def resolve_projection_manifest(
     *,
     category_fullnames: Sequence[str],
     roles: Sequence[ProviderRole],
+    concrete_parent_fullnames: Sequence[str] = (),
     generated_by: str = "sage-mypy-category-plugin",
     sage_version: str | None = None,
     sage_git_revision: str | None = None,
@@ -38,6 +46,9 @@ def resolve_projection_manifest(
         category_fullnames,
         roles=roles,
     )
+    concrete_parents = tuple(
+        concrete_parent_records_for_factories(concrete_parent_fullnames).values()
+    )
 
     return ProjectionManifest(
         schema_version=1,
@@ -48,9 +59,11 @@ def resolve_projection_manifest(
         mypy_min_version=mypy_min_version,
         mypy_max_version=mypy_max_version,
         projections=tuple(projections.values()),
+        concrete_parents=concrete_parents,
         source_modules=_source_module_records(
             category_fullnames,
             projections=projections.values(),
+            concrete_parents=concrete_parents,
         ),
     )
 
@@ -60,6 +73,7 @@ def write_projection_manifest(
     output: Path,
     category_fullnames: Sequence[str],
     roles: Sequence[ProviderRole],
+    concrete_parent_fullnames: Sequence[str] = (),
     generated_by: str = "sage-mypy-category-plugin",
     sage_version: str | None = None,
     sage_git_revision: str | None = None,
@@ -69,6 +83,7 @@ def write_projection_manifest(
     manifest = resolve_projection_manifest(
         category_fullnames=category_fullnames,
         roles=roles,
+        concrete_parent_fullnames=concrete_parent_fullnames,
         generated_by=generated_by,
         sage_version=sage_version,
         sage_git_revision=sage_git_revision,
@@ -100,6 +115,15 @@ def _resolver_argument_parser() -> ArgumentParser:
         help=(
             "Provider role to resolve. Pass multiple times for multiple roles. "
             "Defaults to parent."
+        ),
+    )
+    parser.add_argument(
+        "--concrete-parent",
+        action="append",
+        default=[],
+        help=(
+            "Fully-qualified concrete Sage parent class to instantiate and record. "
+            "Pass multiple times for multiple concrete parents."
         ),
     )
     parser.add_argument(
@@ -137,6 +161,7 @@ def _source_module_records(
     category_fullnames: Sequence[str],
     *,
     projections: Iterable[ProviderProjection] = (),
+    concrete_parents: Iterable[ConcreteParentRecord] = (),
 ) -> tuple[SourceModuleRecord, ...]:
     module_names = tuple(
         dict.fromkeys(
@@ -146,6 +171,7 @@ def _source_module_records(
                     for fullname in category_fullnames
                 ),
                 *_projection_module_names(projections),
+                *_concrete_parent_module_names(concrete_parents),
             )
         )
     )
@@ -171,6 +197,31 @@ def _projection_module_names(
             *projection.unprojected_runtime_mro,
         ):
             module_name = _importable_module_name_or_none(fullname)
+            if module_name is not None:
+                module_names.append(module_name)
+    return tuple(dict.fromkeys(module_names))
+
+
+def _concrete_parent_module_names(
+    concrete_parents: Iterable[ConcreteParentRecord],
+) -> tuple[str, ...]:
+    module_names: list[str] = []
+    for concrete_parent in concrete_parents:
+        for fullname in (
+            concrete_parent.concrete_class,
+            concrete_parent.runtime_class,
+            *concrete_parent.runtime_mro,
+            concrete_parent.category_class,
+            *concrete_parent.parent_provider_mro,
+            *concrete_parent.element_provider_mro,
+        ):
+            module_name = _importable_module_name_or_none(fullname)
+            if module_name is not None:
+                module_names.append(module_name)
+        if concrete_parent.element_runtime_class is not None:
+            module_name = _importable_module_name_or_none(
+                concrete_parent.element_runtime_class
+            )
             if module_name is not None:
                 module_names.append(module_name)
     return tuple(dict.fromkeys(module_names))
@@ -229,6 +280,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         output=Path(args.output),
         category_fullnames=list(args.category_fullnames),
         roles=roles,
+        concrete_parent_fullnames=list(args.concrete_parent),
         generated_by=args.generated_by,
         sage_version=args.sage_version,
         sage_git_revision=args.sage_git_revision,
