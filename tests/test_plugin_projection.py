@@ -115,6 +115,20 @@ NESTED_AXIOM_FULLNAMES = (
     f"{AXIOM_FIXTURE_MODULE}.AxiomRootCategory.Finite",
 )
 NESTED_AXIOM_PROVIDER = f"{NESTED_AXIOM_FULLNAMES[0]}.ParentMethods"
+LINKED_AXIOM_ROOT_MODULE = "tests.fixtures.invariant_core.linked_axiom_root"
+LINKED_AXIOM_ROOT_PATH = (
+    REPO_ROOT / "tests" / "fixtures" / "invariant_core" / "linked_axiom_root.py"
+)
+LINKED_AXIOM_FINITE_MODULE = "tests.fixtures.invariant_core.linked_axiom_finite"
+LINKED_AXIOM_FINITE_PATH = (
+    REPO_ROOT / "tests" / "fixtures" / "invariant_core" / "linked_axiom_finite.py"
+)
+LINKED_AXIOM_FULLNAMES = (
+    f"{LINKED_AXIOM_ROOT_MODULE}.LinkedAxiomRootCategory.Finite",
+)
+LINKED_AXIOM_PROVIDER = (
+    f"{LINKED_AXIOM_FINITE_MODULE}.LinkedFiniteAxiomCategory.ParentMethods"
+)
 COMMUTATIVE_RINGS_CATEGORY = "sage.categories.commutative_rings.CommutativeRings"
 COMMUTATIVE_RINGS_PROVIDER = (
     "sage.categories.commutative_rings.CommutativeRings.ParentMethods"
@@ -556,6 +570,85 @@ def test_plugin_projects_nested_axiom_typeinfo_mro_from_manifest(
     )
     assert tuple(info.fullname for info in axiom_parent_info.mro) == (
         *projections[NESTED_AXIOM_PROVIDER].provider_mro,
+        "builtins.object",
+    )
+
+
+def test_plugin_projects_linked_axiom_typeinfo_mro_from_manifest(
+    tmp_path: Path,
+) -> None:
+    projections = _provider_projections(
+        LINKED_AXIOM_FULLNAMES,
+        roles=("parent",),
+    )
+    stub_root = tmp_path / "visible-sage-stubs"
+    source_modules = _write_projected_provider_stubs(
+        stub_root,
+        projections=tuple(projections.values()),
+    )
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=tuple(projections.values()),
+        source_modules=source_modules,
+    )
+    manifest_path = tmp_path / "sage-category-linked-axiom-projections.json"
+    config_path = tmp_path / "mypy.ini"
+    write_manifest(manifest_path, manifest)
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "ignore_missing_imports = True",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+
+    fixture_sources = (
+        (LINKED_AXIOM_ROOT_PATH, LINKED_AXIOM_ROOT_MODULE),
+        (LINKED_AXIOM_FINITE_PATH, LINKED_AXIOM_FINITE_MODULE),
+    )
+    result = _build_fixture(
+        config_path,
+        tmp_path,
+        fixture_sources=fixture_sources,
+        mypy_path_entries=(REPO_ROOT, stub_root),
+    )
+    result_without_plugin = _build_fixture_without_plugin(
+        tmp_path,
+        fixture_sources=fixture_sources,
+        mypy_path_entries=(REPO_ROOT,),
+    )
+
+    assert result.errors == []
+    assert result_without_plugin.errors == []
+    linked_info = result.files[LINKED_AXIOM_FINITE_MODULE].names[
+        "LinkedFiniteAxiomCategory"
+    ].node
+    baseline_linked_info = result_without_plugin.files[
+        LINKED_AXIOM_FINITE_MODULE
+    ].names["LinkedFiniteAxiomCategory"].node
+    assert isinstance(linked_info, TypeInfo)
+    assert isinstance(baseline_linked_info, TypeInfo)
+    linked_parent_info = _inner_typeinfo(linked_info, "ParentMethods")
+    baseline_linked_parent_info = _inner_typeinfo(
+        baseline_linked_info,
+        "ParentMethods",
+    )
+
+    assert tuple(info.fullname for info in baseline_linked_parent_info.mro) == (
+        LINKED_AXIOM_PROVIDER,
+        "builtins.object",
+    )
+    assert tuple(info.fullname for info in linked_parent_info.mro) == (
+        *projections[LINKED_AXIOM_PROVIDER].provider_mro,
         "builtins.object",
     )
 

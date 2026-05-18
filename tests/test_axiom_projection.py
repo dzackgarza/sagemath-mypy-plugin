@@ -7,11 +7,24 @@ from sage.categories.sets_cat import Sets  # type: ignore[import-untyped]
 
 from sage_mypy_category_plugin.oracle import provider_projections_for_categories
 from tests.fixtures.invariant_core.axioms import AxiomRootCategory
+from tests.fixtures.invariant_core.linked_axiom_finite import LinkedFiniteAxiomCategory
+from tests.fixtures.invariant_core.linked_axiom_root import LinkedAxiomRootCategory
 
 AXIOM_MODULE = "tests.fixtures.invariant_core.axioms"
 NESTED_AXIOM_CATEGORY = f"{AXIOM_MODULE}.AxiomRootCategory.Finite"
 NESTED_AXIOM_PROVIDER = f"{NESTED_AXIOM_CATEGORY}.ParentMethods"
 ROOT_PROVIDER = f"{AXIOM_MODULE}.AxiomRootCategory.ParentMethods"
+LINKED_AXIOM_ROOT_MODULE = "tests.fixtures.invariant_core.linked_axiom_root"
+LINKED_AXIOM_FINITE_MODULE = "tests.fixtures.invariant_core.linked_axiom_finite"
+LINKED_AXIOM_CATEGORY = (
+    f"{LINKED_AXIOM_ROOT_MODULE}.LinkedAxiomRootCategory.Finite"
+)
+LINKED_AXIOM_PROVIDER = (
+    f"{LINKED_AXIOM_FINITE_MODULE}.LinkedFiniteAxiomCategory.ParentMethods"
+)
+LINKED_ROOT_PROVIDER = (
+    f"{LINKED_AXIOM_ROOT_MODULE}.LinkedAxiomRootCategory.ParentMethods"
+)
 
 
 def _class_fullname(cls: type[object]) -> str:
@@ -68,6 +81,64 @@ def test_nested_axiom_projection_matches_sage_runtime_mro() -> None:
         NESTED_AXIOM_PROVIDER,
         "sage.categories.finite_sets.FiniteSets.ParentMethods",
         ROOT_PROVIDER,
+        "sage.categories.sets_cat.Sets.ParentMethods",
+        "sage.categories.objects.Objects.ParentMethods",
+    )
+
+
+def test_linked_axiom_projection_matches_sage_runtime_mro() -> None:
+    projections = provider_projections_for_categories(
+        (LINKED_AXIOM_CATEGORY,),
+        roles=("parent",),
+    )
+
+    category = LinkedAxiomRootCategory.an_instance().Finite()
+    projection = projections[LINKED_AXIOM_PROVIDER]
+    runtime_to_provider = {
+        category.parent_class: LinkedFiniteAxiomCategory.ParentMethods,
+        FiniteSets().parent_class: FiniteSets.ParentMethods,
+        LinkedAxiomRootCategory.an_instance().parent_class: (
+            LinkedAxiomRootCategory.ParentMethods
+        ),
+        Sets().parent_class: Sets.ParentMethods,
+        Objects().parent_class: Objects.ParentMethods,
+    }
+    projected_runtime_bases = tuple(
+        _class_fullname(runtime_to_provider[runtime_class])
+        for runtime_class in category.parent_class.__bases__
+        if runtime_class in runtime_to_provider
+    )
+    projected_runtime_mro = tuple(
+        _class_fullname(runtime_to_provider[runtime_class])
+        for runtime_class in category.parent_class.__mro__
+        if runtime_class in runtime_to_provider
+    )
+    unprojected_runtime_mro = tuple(
+        _class_fullname(runtime_class)
+        for runtime_class in category.parent_class.__mro__
+        if runtime_class not in runtime_to_provider and runtime_class is not object
+    )
+
+    assert LinkedAxiomRootCategory.Finite is LinkedFiniteAxiomCategory
+    assert projection.provider == LINKED_AXIOM_PROVIDER
+    assert projection.role == "parent"
+    assert projection.runtime_bases == tuple(
+        _class_fullname(runtime_class) for runtime_class in category.parent_class.__bases__
+    )
+    assert projection.runtime_mro == tuple(
+        _class_fullname(runtime_class) for runtime_class in category.parent_class.__mro__
+    )
+    assert projection.provider_bases == projected_runtime_bases
+    assert projection.provider_mro == projected_runtime_mro
+    assert projection.unprojected_runtime_mro == unprojected_runtime_mro
+    assert projection.provider_bases == (
+        "sage.categories.finite_sets.FiniteSets.ParentMethods",
+        LINKED_ROOT_PROVIDER,
+    )
+    assert projection.provider_mro == (
+        LINKED_AXIOM_PROVIDER,
+        "sage.categories.finite_sets.FiniteSets.ParentMethods",
+        LINKED_ROOT_PROVIDER,
         "sage.categories.sets_cat.Sets.ParentMethods",
         "sage.categories.objects.Objects.ParentMethods",
     )
