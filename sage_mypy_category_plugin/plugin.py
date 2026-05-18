@@ -41,7 +41,10 @@ class SageCategoryProjectionPlugin(Plugin):
             _provider_module(base_fullname)
             for projection in self._manifest.projections
             if _provider_module(projection.provider) == provider_module
-            for base_fullname in projection.provider_bases
+            for base_fullname in (
+                *projection.provider_bases,
+                *projection.provider_mro,
+            )
             if _provider_module(base_fullname) != provider_module
         }
         return [

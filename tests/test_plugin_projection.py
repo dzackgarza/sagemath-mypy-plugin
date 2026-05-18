@@ -350,6 +350,72 @@ def test_plugin_reports_homset_external_provider_boundary(
     )
 
 
+def test_plugin_projects_homset_typeinfo_mro_when_external_stubs_are_visible(
+    tmp_path: Path,
+) -> None:
+    projections = provider_projections_for_categories(
+        HOMSET_ROLES_FULLNAMES,
+        roles=("homset_parent", "homset_element"),
+    )
+    parent_provider = (
+        f"{HOMSET_ROLES_MODULE}.BottomCategory.Homsets.ParentMethods"
+    )
+    element_provider = (
+        f"{HOMSET_ROLES_MODULE}.BottomCategory.Homsets.ElementMethods"
+    )
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=tuple(projections.values()),
+    )
+    manifest_path = tmp_path / "sage-category-homset-projections.json"
+    config_path = tmp_path / "mypy.ini"
+    stub_root = tmp_path / "visible-sage-stubs"
+    _write_visible_sage_provider_stubs(stub_root)
+    write_manifest(manifest_path, manifest)
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "ignore_missing_imports = True",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+
+    result = _build_fixture(
+        config_path,
+        tmp_path,
+        fixture_path=HOMSET_ROLES_PATH,
+        fixture_module=HOMSET_ROLES_MODULE,
+        mypy_path_entries=(REPO_ROOT, stub_root),
+    )
+    homsets_info = _nested_typeinfo(
+        result,
+        module=HOMSET_ROLES_MODULE,
+        outer="BottomCategory",
+        inner="Homsets",
+    )
+    parent_info = _inner_typeinfo(homsets_info, "ParentMethods")
+    element_info = _inner_typeinfo(homsets_info, "ElementMethods")
+
+    assert result.errors == []
+    assert tuple(info.fullname for info in parent_info.mro) == (
+        *projections[parent_provider].provider_mro,
+        "builtins.object",
+    )
+    assert tuple(info.fullname for info in element_info.mro) == (
+        *projections[element_provider].provider_mro,
+        "builtins.object",
+    )
+
+
 @pytest.mark.parametrize("field", ("provider_bases", "provider_mro"))
 def test_plugin_fails_strict_projection_for_mutated_field(
     tmp_path: Path, field: str
@@ -847,5 +913,47 @@ def _nested_typeinfo(
     return inner_node
 
 
+def _inner_typeinfo(outer_info: TypeInfo, inner: str) -> TypeInfo:
+    inner_node = outer_info.names[inner].node
+    assert isinstance(inner_node, TypeInfo)
+    return inner_node
+
+
 def _contains_error_fragment(result: BuildResult, fragment: str) -> bool:
     return any(fragment in error for error in result.errors)
+
+
+def _write_visible_sage_provider_stubs(stub_root: Path) -> None:
+    categories = stub_root / "sage" / "categories"
+    categories.mkdir(parents=True)
+    (stub_root / "sage" / "__init__.pyi").write_text("")
+    (categories / "__init__.pyi").write_text("")
+    (categories / "homsets.pyi").write_text(
+        "\n".join(
+            (
+                "class HomsetsCategory: ...",
+                "class Homsets:",
+                "    class ParentMethods: ...",
+                "",
+            )
+        )
+    )
+    (categories / "sets_cat.pyi").write_text(
+        "\n".join(
+            (
+                "class Sets:",
+                "    class ParentMethods: ...",
+                "    class ElementMethods: ...",
+                "",
+            )
+        )
+    )
+    (categories / "objects.pyi").write_text(
+        "\n".join(
+            (
+                "class Objects:",
+                "    class ParentMethods: ...",
+                "",
+            )
+        )
+    )
