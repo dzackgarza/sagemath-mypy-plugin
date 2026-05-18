@@ -92,3 +92,24 @@ def test_resolver_accepts_homset_provider_roles(tmp_path: Path) -> None:
         manifest.projection_by_provider[BOTTOM_HOMSET_PARENT_PROVIDER].role
         == "homset_parent"
     )
+
+
+def test_resolver_records_sage_git_revision_override(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "sage-category-projections.json"
+    sage_git_revision = "abc123abc123abc123abc123abc123abc123abcd"
+
+    resolver.main(
+        [
+            "--output",
+            str(manifest_path),
+            "--role",
+            "parent",
+            "--sage-git-revision",
+            sage_git_revision,
+            *FIXTURE_CATEGORIES,
+        ]
+    )
+
+    manifest = load_manifest(manifest_path)
+
+    assert manifest.sage_git_revision == sage_git_revision

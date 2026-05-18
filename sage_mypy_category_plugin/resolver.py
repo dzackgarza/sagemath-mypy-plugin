@@ -24,6 +24,7 @@ def resolve_projection_manifest(
     roles: Sequence[ProviderRole],
     generated_by: str = "sage-mypy-category-plugin",
     sage_version: str | None = None,
+    sage_git_revision: str | None = None,
     mypy_min_version: str = MYPY_VERSION,
     mypy_max_version: str = MYPY_VERSION,
 ) -> ProjectionManifest:
@@ -41,6 +42,7 @@ def resolve_projection_manifest(
         schema_version=1,
         generated_by=generated_by,
         sage_version=sage_version,
+        sage_git_revision=sage_git_revision,
         python_version=f"{version_info.major}.{version_info.minor}.{version_info.micro}",
         mypy_min_version=mypy_min_version,
         mypy_max_version=mypy_max_version,
@@ -56,6 +58,7 @@ def write_projection_manifest(
     roles: Sequence[ProviderRole],
     generated_by: str = "sage-mypy-category-plugin",
     sage_version: str | None = None,
+    sage_git_revision: str | None = None,
     mypy_min_version: str = MYPY_VERSION,
     mypy_max_version: str = MYPY_VERSION,
 ) -> ProjectionManifest:
@@ -64,6 +67,7 @@ def write_projection_manifest(
         roles=roles,
         generated_by=generated_by,
         sage_version=sage_version,
+        sage_git_revision=sage_git_revision,
         mypy_min_version=mypy_min_version,
         mypy_max_version=mypy_max_version,
     )
@@ -107,6 +111,10 @@ def _resolver_argument_parser() -> ArgumentParser:
     parser.add_argument(
         "--sage-version",
         help="Override Sage version reported in the manifest.",
+    )
+    parser.add_argument(
+        "--sage-git-revision",
+        help="Override Sage git revision reported in the manifest.",
     )
     parser.add_argument(
         "--mypy-min-version",
@@ -173,6 +181,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         roles=roles,
         generated_by=args.generated_by,
         sage_version=args.sage_version,
+        sage_git_revision=args.sage_git_revision,
         mypy_min_version=args.mypy_min_version,
         mypy_max_version=args.mypy_max_version,
     )
