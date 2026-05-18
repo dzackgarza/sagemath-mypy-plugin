@@ -12,6 +12,7 @@ ProviderRole = Literal[
     "homset_parent",
     "homset_element",
 ]
+ProviderMethodReturnType = Literal["Self", "object"]
 
 
 def validate_dotted_name(
@@ -106,7 +107,7 @@ class ProviderMethodRecord(BaseModel):
 
     provider: StrictStr
     name: StrictStr
-    return_type: Literal["Self"]
+    return_type: ProviderMethodReturnType
 
     @field_validator("provider")
     @classmethod
@@ -122,6 +123,7 @@ class ProviderMethodRecord(BaseModel):
 
 __all__ = [
     "ConcreteParentRecord",
+    "ProviderMethodReturnType",
     "ProviderMethodRecord",
     "ProviderProjection",
     "ProviderRole",

@@ -64,7 +64,10 @@ def resolve_projection_manifest(
         mypy_max_version=mypy_max_version,
         named_classes=_named_class_records(),
         projections=tuple(projections.values()),
-        provider_methods=provider_method_records_for_projections(projections.values()),
+        provider_methods=provider_method_records_for_projections(
+            projections.values(),
+            concrete_parents=concrete_parents,
+        ),
         concrete_parents=concrete_parents,
         source_modules=_source_module_records(
             category_fullnames,

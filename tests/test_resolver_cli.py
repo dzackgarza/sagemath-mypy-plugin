@@ -23,6 +23,7 @@ BOTTOM_HOMSET_PARENT_PROVIDER = (
 )
 COMMUTATIVE_RINGS_CATEGORY = "sage.categories.commutative_rings.CommutativeRings"
 SEMIGROUPS_CATEGORY = "sage.categories.semigroups.Semigroups"
+OBJECTS_PARENT_PROVIDER = "sage.categories.objects.Objects.ParentMethods"
 LEFT_ZERO_SEMIGROUP = "sage.categories.examples.semigroups.LeftZeroSemigroup"
 SELF_RETURN_MODULE = "tests.fixtures.invariant_core.provider_methods"
 SELF_RETURN_CATEGORY = f"{SELF_RETURN_MODULE}.SelfReturnCategory"
@@ -261,6 +262,35 @@ def test_resolver_records_concrete_parent_initialization(tmp_path: Path) -> None
     assert record.parent_provider_mro[0] in manifest.projection_by_provider
     assert record.element_provider_mro[0] in manifest.projection_by_provider
     assert "sage.categories.examples.semigroups" in manifest.source_module_by_module
+
+
+def test_resolver_records_parent_runtime_receiver_method(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "sage-category-receiver-methods.json"
+
+    resolver.main(
+        [
+            "--output",
+            str(manifest_path),
+            "--role",
+            "parent",
+            "--role",
+            "element",
+            "--concrete-parent",
+            LEFT_ZERO_SEMIGROUP,
+            SEMIGROUPS_CATEGORY,
+        ]
+    )
+
+    manifest = load_manifest(manifest_path)
+
+    assert (
+        OBJECTS_PARENT_PROVIDER,
+        "_an_element_",
+        "object",
+    ) in tuple(
+        (record.provider, record.name, record.return_type)
+        for record in manifest.provider_methods
+    )
 
 
 def test_resolver_records_self_return_provider_methods(tmp_path: Path) -> None:

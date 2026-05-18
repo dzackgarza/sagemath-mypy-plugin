@@ -9,6 +9,7 @@ from mypy.options import Options
 
 from sage_mypy_category_plugin.manifest import ProjectionManifest, SourceModuleRecord
 from sage_mypy_category_plugin.projection import ConcreteParentRecord
+from sage_mypy_category_plugin.projection import ProviderMethodRecord
 from sage_mypy_category_plugin.projection import ProviderProjection
 from sage_mypy_category_plugin.stubs import generated_stub_sources
 from sage_mypy_category_plugin.stubs import write_generated_stub_tree
@@ -127,6 +128,26 @@ def test_generated_stubs_reproduce_provider_tree_from_manifest() -> None:
             "            ...\n"
         ),
     }
+
+
+def test_generated_stubs_materialize_receiver_method_records() -> None:
+    manifest = _sets_cartesian_products_manifest().model_copy(
+        update={
+            "provider_methods": (
+                ProviderMethodRecord(
+                    provider="sage.categories.objects.Objects.ParentMethods",
+                    name="_an_element_",
+                    return_type="object",
+                ),
+            )
+        }
+    )
+
+    assert generated_stub_sources(manifest)[Path("sage/categories/objects.pyi")] == (
+        "class Objects:\n"
+        "    class ParentMethods:\n"
+        "        def _an_element_(self) -> object: ...\n"
+    )
 
 
 def test_generated_stub_tree_records_written_source_metadata(tmp_path: Path) -> None:

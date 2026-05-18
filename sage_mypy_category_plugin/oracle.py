@@ -12,7 +12,10 @@ from pydantic import BaseModel, ConfigDict
 
 import sage.all  # type: ignore[import-untyped] # noqa: F401
 
-from sage_mypy_category_plugin.imports import import_fullname
+from sage_mypy_category_plugin.imports import (
+    import_fullname,
+    importable_module_name_or_none as _importable_module_name_or_none,
+)
 from sage_mypy_category_plugin.projection import (
     ConcreteParentRecord,
     ProviderMethodRecord,
@@ -76,6 +79,9 @@ ROLE_PROJECTIONS: Mapping[ProviderRole, RoleProjection] = {
 
 _TRACE_SOURCE = "Category._make_named_class"
 _CONCRETE_PARENT_ROLES: tuple[ProviderRole, ...] = ("parent", "element")
+_PARENT_RUNTIME_RECEIVER_METHODS: Mapping[str, str] = {
+    "_an_element_": "sage.structure.parent.Parent",
+}
 
 
 @dataclass(frozen=True)
@@ -162,6 +168,8 @@ def named_class_traces() -> tuple[NamedClassTrace, ...]:
 
 def provider_method_records_for_projections(
     projections: Iterable[ProviderProjection],
+    *,
+    concrete_parents: Iterable[ConcreteParentRecord] = (),
 ) -> tuple[ProviderMethodRecord, ...]:
     records: list[ProviderMethodRecord] = []
     for projection in projections:
@@ -178,7 +186,77 @@ def provider_method_records_for_projections(
                         return_type="Self",
                     )
                 )
+    records.extend(_receiver_method_records_for_concrete_parents(concrete_parents))
+    return _deduplicate_provider_method_records(records)
+
+
+def _receiver_method_records_for_concrete_parents(
+    concrete_parents: Iterable[ConcreteParentRecord],
+) -> tuple[ProviderMethodRecord, ...]:
+    records: list[ProviderMethodRecord] = []
+    for concrete_parent in concrete_parents:
+        root_parent_provider = concrete_parent.parent_provider_mro[-1]
+        for method_name, owner_fullname in _PARENT_RUNTIME_RECEIVER_METHODS.items():
+            if _runtime_mro_defines_method(
+                concrete_parent.runtime_mro,
+                method_name,
+                owner_fullname=owner_fullname,
+            ):
+                records.append(
+                    ProviderMethodRecord(
+                        provider=root_parent_provider,
+                        name=method_name,
+                        return_type="object",
+                    )
+                )
     return tuple(records)
+
+
+def _runtime_mro_defines_method(
+    runtime_mro: tuple[str, ...],
+    method_name: str,
+    *,
+    owner_fullname: str,
+) -> bool:
+    for runtime_class_fullname in runtime_mro:
+        runtime_class = _importable_runtime_class_or_none(runtime_class_fullname)
+        if (
+            runtime_class is not None
+            and _class_fullname(runtime_class) == owner_fullname
+            and method_name in vars(runtime_class)
+        ):
+            return True
+    return False
+
+
+def _importable_runtime_class_or_none(fullname: str) -> type[object] | None:
+    module_name = _importable_module_name_or_none(fullname)
+    if module_name is None:
+        return None
+    qualname = fullname.removeprefix(f"{module_name}.")
+    runtime_class = _resolve_module_qualname(
+        module_name=module_name,
+        qualname=qualname,
+    )
+    if not isinstance(runtime_class, type):
+        return None
+    return runtime_class
+
+
+def _deduplicate_provider_method_records(
+    records: Iterable[ProviderMethodRecord],
+) -> tuple[ProviderMethodRecord, ...]:
+    record_by_key: dict[tuple[str, str], ProviderMethodRecord] = {}
+    for record in records:
+        key = (record.provider, record.name)
+        existing_record = record_by_key.get(key)
+        assert existing_record is None or existing_record.return_type == record.return_type, (
+            "conflicting provider method records for "
+            f"{record.provider}.{record.name}: "
+            f"{existing_record.return_type!r} vs {record.return_type!r}"
+        )
+        record_by_key[key] = record
+    return tuple(record_by_key[key] for key in sorted(record_by_key))
 
 
 def _provider_projection(
