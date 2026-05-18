@@ -54,6 +54,10 @@ set quiet := true
 
     if [ -n "{{ args }}" ]; then
       read -r -a pytest_args <<< "{{ args }}"
+      if [[ "${pytest_args[0]}" == -* ]]; then
+        run_default_suite "${pytest_args[@]}"
+        exit "$?"
+      fi
       if [ "${pytest_args[0]}" = "tests" ] || [ "${pytest_args[0]}" = "tests/" ]; then
         run_default_suite "${pytest_args[@]:1}"
         exit "$?"
