@@ -52,6 +52,7 @@ set quiet := true
     cd /home/dzack/research
     sage -python -m mypy \
       --config-file /home/dzack/ai/quality-control/mypy-global.ini \
+      --no-incremental \
       --ignore-missing-imports \
       --explicit-package-bases \
       category_specs/homsets/homsets.py \

@@ -336,9 +336,12 @@ def instantiate_category_from_source_path(
     else:
         owner = _find_category_owner(module, top_cls)
         if owner is not None:
-            owner_cls, _attr_name = owner
+            owner_cls, attr_name = owner
             owner_instance = _instantiate_category_class(owner_cls)
-            cat = top_cls(owner_instance)
+            if _is_functorial_construction_category(top_cls):
+                cat = getattr(owner_instance, attr_name)()
+            else:
+                cat = top_cls(owner_instance)
         else:
             cat = _instantiate_category_class(top_cls)
 
@@ -348,6 +351,14 @@ def instantiate_category_from_source_path(
         cat = meth()
 
     return cat
+
+
+def _is_functorial_construction_category(cls: type) -> bool:
+    from sage.categories.covariant_functorial_construction import (
+        FunctorialConstructionCategory,
+    )
+
+    return issubclass(cls, FunctorialConstructionCategory)
 
 
 # ---------------------------------------------------------------------------
