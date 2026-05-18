@@ -42,6 +42,7 @@ Surfaces covered:
     Recursive axiom bases under runtime projection — test_plugin_recursive_axiom_quotient_projection_correctness
     Runtime Sage enumerated supercategory containers — test_plugin_runtime_enumerated_super_category_correctness
     Runtime Sage facade supercategory containers — test_plugin_runtime_facade_super_category_correctness
+    Runtime Sage metric supercategory containers — test_plugin_runtime_metric_super_category_correctness
     Runtime Sage supercategory assigned providers — test_plugin_runtime_super_category_alias_provider_correctness
     Sage category interop stubs — test_sage_category_interop_stub_correctness
     Parent.Hom category keyword — test_plugin_parent_hom_category_keyword_correctness
@@ -442,6 +443,14 @@ def test_plugin_runtime_facade_super_category_correctness() -> None:
     """Nested ParentMethods containers inherit runtime Sage facade methods."""
     _assert_override_conjunction(
         "test_runtime_facade_super_category",
+        "test_invalid_override",
+    )
+
+
+def test_plugin_runtime_metric_super_category_correctness() -> None:
+    """Nested ParentMethods containers inherit runtime Sage metric methods."""
+    _assert_override_conjunction(
+        "test_runtime_metric_super_category",
         "test_invalid_override",
     )
 
