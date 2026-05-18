@@ -334,6 +334,37 @@ def test_manifest_rejects_malformed_projection_data(
     assert expected_field in str(raised.value)
 
 
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    (
+        ("provider", "not a fullname"),
+        ("runtime_class", "not a fullname"),
+        ("runtime_bases", ("not a fullname",)),
+        ("runtime_mro", ("not a fullname",)),
+        ("provider_bases", ("not a fullname",)),
+        ("provider_mro", ("not a fullname",)),
+    ),
+)
+def test_manifest_rejects_malformed_projection_fullnames(
+    field_name: str,
+    value: str | tuple[str, ...],
+) -> None:
+    payload = _manifest_payload()
+    payload["projections"] = [*payload["projections"]]
+    payload["projections"][0] = {
+        **payload["projections"][0],
+        field_name: value,
+    }
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    assert any(
+        error["loc"][:3] == ("projections", 0, field_name)
+        for error in raised.value.errors()
+    )
+
+
 def test_manifest_rejects_missing_required_fields() -> None:
     payload = _manifest_payload()
     del payload["generated_by"]
@@ -469,6 +500,34 @@ def test_manifest_rejects_duplicate_named_class_records() -> None:
 
 
 @pytest.mark.parametrize(
+    ("field_name", "value"),
+    (
+        ("category", "not a fullname"),
+        ("provider", "not a fullname"),
+        ("runtime_class", "not a fullname"),
+        ("runtime_bases", ("not a fullname",)),
+        ("runtime_mro", ("not a fullname",)),
+    ),
+)
+def test_manifest_rejects_malformed_named_class_fullnames(
+    field_name: str,
+    value: str | tuple[str, ...],
+) -> None:
+    payload = _manifest_payload()
+    named_class_record = _named_class_record().model_dump(mode="json")
+    named_class_record[field_name] = value
+    payload["named_classes"] = [named_class_record]
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    assert any(
+        error["loc"][:3] == ("named_classes", 0, field_name)
+        for error in raised.value.errors()
+    )
+
+
+@pytest.mark.parametrize(
     ("mutation", "expected_field"),
     (
         ({"role": "element"}, "role"),
@@ -582,6 +641,38 @@ def test_manifest_rejects_unresolved_concrete_parent_provider_references() -> No
 
 
 @pytest.mark.parametrize(
+    ("field_name", "value"),
+    (
+        ("concrete_class", "not a fullname"),
+        ("runtime_class", "not a fullname"),
+        ("runtime_mro", ("not a fullname",)),
+        ("category_class", "not a fullname"),
+        ("parent_provider_mro", ("not a fullname",)),
+        ("element_runtime_class", "not a fullname"),
+        ("element_provider_mro", ("not a fullname",)),
+    ),
+)
+def test_manifest_rejects_malformed_concrete_parent_fullnames(
+    field_name: str,
+    value: str | tuple[str, ...],
+) -> None:
+    payload = _manifest_payload()
+    payload["concrete_parents"] = [*payload["concrete_parents"]]
+    payload["concrete_parents"][0] = {
+        **payload["concrete_parents"][0],
+        field_name: value,
+    }
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    assert any(
+        error["loc"][:3] == ("concrete_parents", 0, field_name)
+        for error in raised.value.errors()
+    )
+
+
+@pytest.mark.parametrize(
     ("mutation", "expected_field"),
     (
         (
@@ -662,6 +753,38 @@ def test_manifest_rejects_source_backed_symbols_without_module_coverage(
     assert {error["type"] for error in raised.value.errors()} == {
         "source_module_coverage"
     }
+
+
+def test_manifest_rejects_malformed_source_module_name() -> None:
+    payload = _manifest_payload()
+    payload["source_modules"][0]["module"] = "not a module"
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    assert any(
+        error["loc"] == ("source_modules", 0, "module")
+        for error in raised.value.errors()
+    )
+
+
+def test_manifest_rejects_malformed_provider_method_provider_fullname() -> None:
+    payload = _manifest_payload()
+    payload["provider_methods"] = [
+        {
+            "provider": "not a fullname",
+            "name": "normalized",
+            "return_type": "Self",
+        }
+    ]
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    assert any(
+        error["loc"] == ("provider_methods", 0, "provider")
+        for error in raised.value.errors()
+    )
 
 
 def test_manifest_semantic_digest_is_deterministic_for_equivalent_content() -> None:

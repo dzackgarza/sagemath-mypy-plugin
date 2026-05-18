@@ -9,7 +9,14 @@ from typing import Literal, Self
 
 from mypy.version import __version__ as MYPY_VERSION
 from packaging.version import Version
-from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    StrictInt,
+    StrictStr,
+    field_validator,
+    model_validator,
+)
 from pydantic_core import PydanticCustomError
 
 from sage_mypy_category_plugin.projection import (
@@ -17,6 +24,9 @@ from sage_mypy_category_plugin.projection import (
     ProviderMethodRecord,
     ProviderProjection,
     ProviderRole,
+    validate_dotted_fullname,
+    validate_dotted_fullnames,
+    validate_module_name,
 )
 
 CURRENT_PLUGIN_SCHEMA_VERSION = "1"
@@ -32,6 +42,11 @@ class SourceModuleRecord(BaseModel):
     path: StrictStr
     sha256: StrictStr
     mtime_ns: StrictInt
+
+    @field_validator("module")
+    @classmethod
+    def _validate_module_name(cls, value: str) -> str:
+        return validate_module_name(value)
 
     @model_validator(mode="after")
     def _validate_source_metadata(self) -> Self:
@@ -57,6 +72,16 @@ class NamedClassRecord(BaseModel):
     runtime_mro: tuple[StrictStr, ...]
     runtime_attr: StrictStr
     provider_attr: StrictStr
+
+    @field_validator("category", "provider", "runtime_class")
+    @classmethod
+    def _validate_fullname(cls, value: str) -> str:
+        return validate_dotted_fullname(value)
+
+    @field_validator("runtime_bases", "runtime_mro")
+    @classmethod
+    def _validate_fullname_tuple(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        return validate_dotted_fullnames(value)
 
 
 class ProjectionManifest(BaseModel):
