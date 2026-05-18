@@ -13,6 +13,15 @@ from tests.fixtures.invariant_core.diamond_runtime import (
     RightCategory,
     TopCategory,
 )
+from tests.fixtures.invariant_core.diamond_behavior_decorated_base import (
+    DecoratedBaseCategory,
+)
+from tests.fixtures.invariant_core.diamond_behavior_decorated_invalid import (
+    InvalidDecoratedOverrideCategory,
+)
+from tests.fixtures.invariant_core.diamond_behavior_decorated_valid import (
+    ValidDecoratedOverrideCategory,
+)
 from tests.fixtures.invariant_core.functorial.cartesian_products import (
     CartesianProductsCategory,
 )
@@ -170,6 +179,79 @@ def test_tracing_observes_make_named_class() -> None:
         "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ParentMethods",
     )
     assert trace.trace_source == "Category._make_named_class"
+
+
+def test_decorated_behavior_projection_matches_sage_runtime_mro() -> None:
+    projections = provider_projections_for_categories(
+        (
+            "tests.fixtures.invariant_core.diamond_behavior_decorated_base.DecoratedBaseCategory",
+            "tests.fixtures.invariant_core.diamond_behavior_decorated_valid.ValidDecoratedOverrideCategory",
+            "tests.fixtures.invariant_core.diamond_behavior_decorated_invalid.InvalidDecoratedOverrideCategory",
+        ),
+        roles=("parent",),
+    )
+    expected_chains = {
+        DecoratedBaseCategory: (
+            "tests.fixtures.invariant_core.diamond_behavior_decorated_base.DecoratedBaseCategory.ParentMethods",
+            (
+                "tests.fixtures.invariant_core.diamond_runtime.BottomCategory.ParentMethods",
+            ),
+            (
+                "tests.fixtures.invariant_core.diamond_behavior_decorated_base.DecoratedBaseCategory.ParentMethods",
+                "tests.fixtures.invariant_core.diamond_runtime.BottomCategory.ParentMethods",
+                "tests.fixtures.invariant_core.diamond_runtime.RightCategory.ParentMethods",
+                "tests.fixtures.invariant_core.diamond_runtime.LeftCategory.ParentMethods",
+                "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ParentMethods",
+            ),
+        ),
+        ValidDecoratedOverrideCategory: (
+            "tests.fixtures.invariant_core.diamond_behavior_decorated_valid.ValidDecoratedOverrideCategory.ParentMethods",
+            (
+                "tests.fixtures.invariant_core.diamond_behavior_decorated_base.DecoratedBaseCategory.ParentMethods",
+            ),
+            (
+                "tests.fixtures.invariant_core.diamond_behavior_decorated_valid.ValidDecoratedOverrideCategory.ParentMethods",
+                "tests.fixtures.invariant_core.diamond_behavior_decorated_base.DecoratedBaseCategory.ParentMethods",
+                "tests.fixtures.invariant_core.diamond_runtime.BottomCategory.ParentMethods",
+                "tests.fixtures.invariant_core.diamond_runtime.RightCategory.ParentMethods",
+                "tests.fixtures.invariant_core.diamond_runtime.LeftCategory.ParentMethods",
+                "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ParentMethods",
+            ),
+        ),
+        InvalidDecoratedOverrideCategory: (
+            "tests.fixtures.invariant_core.diamond_behavior_decorated_invalid.InvalidDecoratedOverrideCategory.ParentMethods",
+            (
+                "tests.fixtures.invariant_core.diamond_behavior_decorated_base.DecoratedBaseCategory.ParentMethods",
+            ),
+            (
+                "tests.fixtures.invariant_core.diamond_behavior_decorated_invalid.InvalidDecoratedOverrideCategory.ParentMethods",
+                "tests.fixtures.invariant_core.diamond_behavior_decorated_base.DecoratedBaseCategory.ParentMethods",
+                "tests.fixtures.invariant_core.diamond_runtime.BottomCategory.ParentMethods",
+                "tests.fixtures.invariant_core.diamond_runtime.RightCategory.ParentMethods",
+                "tests.fixtures.invariant_core.diamond_runtime.LeftCategory.ParentMethods",
+                "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ParentMethods",
+            ),
+        ),
+    }
+
+    for category_type, (
+        provider,
+        expected_bases,
+        expected_mro,
+    ) in expected_chains.items():
+        category = category_type.an_instance()
+        projection = projections[provider]
+
+        assert projection.runtime_bases == tuple(
+            _class_fullname(runtime_class)
+            for runtime_class in category.parent_class.__bases__
+        )
+        assert projection.runtime_mro == tuple(
+            _class_fullname(runtime_class)
+            for runtime_class in category.parent_class.__mro__
+        )
+        assert projection.provider_bases == expected_bases
+        assert projection.provider_mro == expected_mro
 
 
 def test_category_specs_like_parent_projection_uses_local_wrapper_alias() -> None:

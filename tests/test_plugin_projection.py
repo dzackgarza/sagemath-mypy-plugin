@@ -37,6 +37,33 @@ CATEGORY_FULLNAMES = (
     f"{FIXTURE_MODULE}.BottomCategory",
 )
 BOTTOM_PROVIDER = f"{FIXTURE_MODULE}.BottomCategory.ParentMethods"
+CATEGORY_BEHAVIOR_BASE_MODULE = (
+    "tests.fixtures.invariant_core.diamond_behavior_decorated_base"
+)
+CATEGORY_BEHAVIOR_PROJECTION_MODULE = (
+    "tests.fixtures.invariant_core.diamond_behavior_decorated_projection"
+)
+CATEGORY_BEHAVIOR_BASE_PATH = (
+    REPO_ROOT
+    / "tests"
+    / "fixtures"
+    / "invariant_core"
+    / "diamond_behavior_decorated_base.py"
+)
+CATEGORY_BEHAVIOR_PROJECTION_PATH = (
+    REPO_ROOT
+    / "tests"
+    / "fixtures"
+    / "invariant_core"
+    / "diamond_behavior_decorated_projection.py"
+)
+CATEGORY_BEHAVIOR_FULLNAMES = (
+    f"{CATEGORY_BEHAVIOR_BASE_MODULE}.DecoratedBaseCategory",
+    f"{CATEGORY_BEHAVIOR_PROJECTION_MODULE}.DecoratedProjectionCategory",
+)
+CATEGORY_BEHAVIOR_PROVIDERS = tuple(
+    f"{fullname}.ParentMethods" for fullname in CATEGORY_BEHAVIOR_FULLNAMES
+)
 CATEGORY_SPECS_LIKE_ROOT_MODULE = (
     "tests.fixtures.invariant_core.category_specs_like.rings"
 )
@@ -140,6 +167,10 @@ def test_plugin_projects_structural_typeinfo_mros_from_manifest(
         CATEGORY_SPECS_LIKE_FULLNAMES,
         roles=("parent",),
     )
+    decorated_behavior_projections = _provider_projections(
+        CATEGORY_BEHAVIOR_FULLNAMES,
+        roles=("parent",),
+    )
     provider_role_projections = _provider_projections(
         PROVIDER_ROLES_FULLNAMES,
         roles=("element", "subcategory", "morphism"),
@@ -209,6 +240,7 @@ def test_plugin_projects_structural_typeinfo_mros_from_manifest(
     projections = {
         **diamond_projections,
         **category_specs_projections,
+        **decorated_behavior_projections,
         **provider_role_projections,
         **homset_projections,
         **cross_module_projections,
@@ -229,6 +261,8 @@ def test_plugin_projects_structural_typeinfo_mros_from_manifest(
             CATEGORY_SPECS_LIKE_SUBCATEGORY_PATH,
             CATEGORY_SPECS_LIKE_SUBCATEGORY_MODULE,
         ),
+        (CATEGORY_BEHAVIOR_BASE_PATH, CATEGORY_BEHAVIOR_BASE_MODULE),
+        (CATEGORY_BEHAVIOR_PROJECTION_PATH, CATEGORY_BEHAVIOR_PROJECTION_MODULE),
         (PROVIDER_ROLES_PATH, PROVIDER_ROLES_MODULE),
         (HOMSET_ROLES_PATH, HOMSET_ROLES_MODULE),
         (consumer_path, "consumer"),
@@ -333,6 +367,40 @@ def test_plugin_projects_structural_typeinfo_mros_from_manifest(
         CATEGORY_SPECS_LIKE_ROOT_PROVIDER,
     )
     assert root_parent_info.fullname == CATEGORY_SPECS_LIKE_ROOT_PROVIDER
+
+    for provider, module, outer in zip(
+        CATEGORY_BEHAVIOR_PROVIDERS,
+        (
+            CATEGORY_BEHAVIOR_BASE_MODULE,
+            CATEGORY_BEHAVIOR_PROJECTION_MODULE,
+        ),
+        (
+            "DecoratedBaseCategory",
+            "DecoratedProjectionCategory",
+        ),
+        strict=True,
+    ):
+        decorated_info = _nested_typeinfo(
+            result,
+            module=module,
+            outer=outer,
+            inner="ParentMethods",
+        )
+        baseline_decorated_info = _nested_typeinfo(
+            result_without_plugin,
+            module=module,
+            outer=outer,
+            inner="ParentMethods",
+        )
+
+        assert tuple(info.fullname for info in baseline_decorated_info.mro) == (
+            provider,
+            "builtins.object",
+        )
+        assert tuple(info.fullname for info in decorated_info.mro) == (
+            *decorated_behavior_projections[provider].provider_mro,
+            "builtins.object",
+        )
 
     for provider_name in ("ElementMethods", "SubcategoryMethods", "MorphismMethods"):
         provider = f"{PROVIDER_ROLES_MODULE}.BottomCategory.{provider_name}"

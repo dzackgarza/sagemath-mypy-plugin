@@ -70,6 +70,16 @@ BEHAVIOR_CASES = {
         "tests.fixtures.invariant_core.diamond_behavior_missing_explicit_override",
         "tests.fixtures.invariant_core.diamond_behavior_missing_explicit_override.MissingExplicitOverrideCategory",
     ),
+    "decorated_valid": (
+        "tests.fixtures.invariant_core.diamond_behavior_decorated_valid",
+        "tests.fixtures.invariant_core.diamond_behavior_decorated_base.DecoratedBaseCategory",
+        "tests.fixtures.invariant_core.diamond_behavior_decorated_valid.ValidDecoratedOverrideCategory",
+    ),
+    "decorated_invalid": (
+        "tests.fixtures.invariant_core.diamond_behavior_decorated_invalid",
+        "tests.fixtures.invariant_core.diamond_behavior_decorated_base.DecoratedBaseCategory",
+        "tests.fixtures.invariant_core.diamond_behavior_decorated_invalid.InvalidDecoratedOverrideCategory",
+    ),
 }
 
 
@@ -97,6 +107,43 @@ def test_behavior_matrix_uses_standard_mypy_inheritance_rules(tmp_path: Path) ->
     assert _case_contains(without_plugin, "signature", "no base method was found")
     assert _case_contains(with_plugin, "missing_explicit_override", "[explicit-override]")
     assert not _case_errors(without_plugin, "missing_explicit_override")
+    assert not _case_errors(with_plugin, "decorated_valid")
+    assert _case_contains(without_plugin, "decorated_valid", "no base method was found")
+    assert _case_contains_fragments(
+        with_plugin,
+        "decorated_invalid",
+        "decorated_property",
+        "[override]",
+    )
+    assert _case_contains_fragments(
+        with_plugin,
+        "decorated_invalid",
+        "decorated_classmethod",
+        "[override]",
+    )
+    assert _case_contains_fragments(
+        with_plugin,
+        "decorated_invalid",
+        "decorated_staticmethod",
+        "[override]",
+    )
+    assert _case_contains_fragments(
+        with_plugin,
+        "decorated_invalid",
+        "decorated_abstract",
+        "[override]",
+    )
+    assert _case_contains_fragments(
+        with_plugin,
+        "decorated_invalid",
+        "decorated_overload",
+        "[override]",
+    )
+    assert _case_contains(
+        without_plugin,
+        "decorated_invalid",
+        "no base method was found",
+    )
 
 
 def test_nested_sage_provider_behavior_matrix_uses_standard_mypy_rules(
@@ -462,6 +509,17 @@ def _module_path(module: str) -> Path:
 
 def _case_contains(result: BuildResult, case_name: str, fragment: str) -> bool:
     return any(fragment in error for error in _case_errors(result, case_name))
+
+
+def _case_contains_fragments(
+    result: BuildResult,
+    case_name: str,
+    *fragments: str,
+) -> bool:
+    return any(
+        all(fragment in error for fragment in fragments)
+        for error in _case_errors(result, case_name)
+    )
 
 
 def _contains_error(result: BuildResult, fragment: str) -> bool:
