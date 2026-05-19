@@ -52,6 +52,20 @@ CATEGORY_SPECS_LIKE_BASE_DEPENDENT_PROVIDER = (
     f"{CATEGORY_SPECS_LIKE_PACKAGE}.namespace_subcategories."
     "commutative._BaseDependentConstruction.ParentMethods"
 )
+PACKAGE_DISCOVERY_FIXTURE = "tests.fixtures.invariant_core.package_discovery"
+PACKAGE_DISCOVERY_CONCRETE_PROVIDER = (
+    f"{PACKAGE_DISCOVERY_FIXTURE}.ConcretePackageCategory.ParentMethods"
+)
+PACKAGE_DISCOVERY_ABSTRACT_PROVIDER = (
+    f"{PACKAGE_DISCOVERY_FIXTURE}.AbstractPackageCategory.ParentMethods"
+)
+PACKAGE_DISCOVERY_UNBOUND_AXIOM_PROVIDER = (
+    f"{PACKAGE_DISCOVERY_FIXTURE}.UnboundAxiomPackageCategory.ParentMethods"
+)
+PACKAGE_DISCOVERY_UNBOUND_SINGLETON_AXIOM_PROVIDER = (
+    f"{PACKAGE_DISCOVERY_FIXTURE}."
+    "UnboundSingletonAxiomPackageCategory.ParentMethods"
+)
 
 
 def test_resolver_writes_parent_projection_manifest_for_diamond_fixture(
@@ -338,6 +352,36 @@ def test_resolver_package_discovery_excludes_non_nullary_category_classes(
     assert CATEGORY_SPECS_LIKE_NAMESPACE_PROVIDER in manifest.projection_by_provider
     assert (
         CATEGORY_SPECS_LIKE_BASE_DEPENDENT_PROVIDER
+        not in manifest.projection_by_provider
+    )
+
+
+def test_resolver_package_discovery_excludes_uninstantiable_category_bases(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "sage-category-package-discovery-projections.json"
+
+    resolver.main(
+        [
+            "--output",
+            str(manifest_path),
+            "--role",
+            "parent",
+            "--package",
+            PACKAGE_DISCOVERY_FIXTURE,
+        ]
+    )
+
+    manifest = load_manifest(manifest_path)
+
+    assert PACKAGE_DISCOVERY_CONCRETE_PROVIDER in manifest.projection_by_provider
+    assert PACKAGE_DISCOVERY_ABSTRACT_PROVIDER not in manifest.projection_by_provider
+    assert (
+        PACKAGE_DISCOVERY_UNBOUND_AXIOM_PROVIDER
+        not in manifest.projection_by_provider
+    )
+    assert (
+        PACKAGE_DISCOVERY_UNBOUND_SINGLETON_AXIOM_PROVIDER
         not in manifest.projection_by_provider
     )
 

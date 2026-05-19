@@ -215,6 +215,8 @@ def _filesystem_package_module_names(
 
 def _category_fullnames_defined_in_module(module: ModuleType) -> tuple[str, ...]:
     from sage.categories.category import Category  # type: ignore[import-untyped]
+    from sage.categories.category_with_axiom import CategoryWithAxiom  # type: ignore[import-untyped]
+    from sage.misc.abstract_method import AbstractMethod  # type: ignore[import-untyped]
 
     return tuple(
         f"{candidate.__module__}.{candidate.__qualname__}"
@@ -224,8 +226,19 @@ def _category_fullnames_defined_in_module(module: ModuleType) -> tuple[str, ...]
             and candidate.__module__ == module.__name__
             and issubclass(candidate, Category)
             and _is_nullary_category_factory(candidate)
+            and not isinstance(getattr(candidate, "super_categories"), AbstractMethod)
+            and _has_bound_axiom_metadata(candidate, CategoryWithAxiom)
         )
     )
+
+
+def _has_bound_axiom_metadata(
+    candidate: type[object],
+    axiom_base: type[object],
+) -> bool:
+    if not issubclass(candidate, axiom_base):
+        return True
+    return "_base_category_class_and_axiom" in candidate.__dict__
 
 
 def _is_nullary_category_factory(candidate: type[object]) -> bool:
