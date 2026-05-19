@@ -9,6 +9,7 @@ from sage_mypy_category_plugin.oracle import provider_projections_for_categories
 from sage_mypy_category_plugin.oracle import unsupported_provider_traces
 from tests.fixtures.invariant_core.provider_roles.homsets import (
     BottomCategory,
+    RefinedSharedHomsetProviderCategory,
     SharedHomsetProviderCategory,
     SharedHomsetParentMethods,
     SharedStandaloneHomCategory,
@@ -186,4 +187,39 @@ def test_homset_projection_classifies_shared_provider_with_distinct_runtime_mros
             _class_fullname(runtime_class)
             for runtime_class in homset_runtime_class.__mro__
         ),
+    )
+
+
+def test_dependent_homset_projection_keeps_unsupported_shared_provider_base() -> None:
+    projections = provider_projections_for_categories(
+        (
+            "tests.fixtures.invariant_core.provider_roles.homsets."
+            "RefinedSharedHomsetProviderCategory",
+        ),
+        roles=("homset_parent",),
+    )
+
+    refined_provider = (
+        "tests.fixtures.invariant_core.provider_roles.homsets."
+        "RefinedSharedHomsetProviderCategory.Homsets.ParentMethods"
+    )
+    shared_provider = _class_fullname(SharedHomsetParentMethods)
+    projection = projections[refined_provider]
+    unsupported_provider = {
+        trace.provider: trace for trace in unsupported_provider_traces()
+    }[shared_provider]
+    runtime_class = (
+        RefinedSharedHomsetProviderCategory.an_instance().Homsets().parent_class
+    )
+
+    assert unsupported_provider.reason == "ambiguous_runtime_mro"
+    assert shared_provider not in projections
+    assert projection.runtime_bases == tuple(
+        _class_fullname(runtime_base) for runtime_base in runtime_class.__bases__
+    )
+    assert projection.provider_bases == (shared_provider,)
+    assert projection.provider_mro == (
+        refined_provider,
+        shared_provider,
+        "sage.categories.objects.Objects.ParentMethods",
     )

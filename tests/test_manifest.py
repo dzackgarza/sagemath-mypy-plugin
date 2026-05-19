@@ -600,6 +600,40 @@ def test_manifest_records_unsupported_provider_classification() -> None:
     assert unsupported_record.provider not in manifest.projection_by_provider
 
 
+def test_manifest_allows_supported_projection_to_reference_unsupported_provider() -> None:
+    payload = _manifest_payload()
+    unsupported_record = _unsupported_provider_record()
+    dependent_provider = (
+        "tests.fixtures.invariant_core.diamond_runtime."
+        "DependentSharedProviderCategory.ParentMethods"
+    )
+    dependent_runtime_class = (
+        "tests.fixtures.invariant_core.diamond_runtime."
+        "DependentSharedProviderCategory.parent_class"
+    )
+    dependent_projection = _projection().model_copy(
+        update={
+            "provider": dependent_provider,
+            "runtime_class": dependent_runtime_class,
+            "runtime_bases": (unsupported_record.runtime_classes[1],),
+            "runtime_mro": (
+                dependent_runtime_class,
+                *unsupported_record.runtime_mros[1],
+            ),
+            "provider_bases": (unsupported_record.provider,),
+            "provider_mro": (dependent_provider, unsupported_record.provider),
+        }
+    )
+    payload["projections"] = [dependent_projection.model_dump(mode="json")]
+    payload["unsupported_providers"] = [unsupported_record.model_dump(mode="json")]
+    payload["concrete_parents"] = []
+
+    manifest = ProjectionManifest.model_validate(payload)
+
+    assert manifest.projections == (dependent_projection,)
+    assert manifest.unsupported_providers == (unsupported_record,)
+
+
 def test_manifest_keeps_role_distinct_unsupported_provider_records() -> None:
     payload = _manifest_payload()
     parent_record = _unsupported_provider_record()

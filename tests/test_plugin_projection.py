@@ -17,9 +17,11 @@ from mypy.options import Options
 from sage_mypy_category_plugin.manifest import (
     ProjectionManifest,
     SourceModuleRecord,
+    UnsupportedProviderRecord,
     write_manifest,
 )
 from sage_mypy_category_plugin.oracle import provider_projections_for_categories
+from sage_mypy_category_plugin.oracle import unsupported_provider_traces
 from sage_mypy_category_plugin.plugin import (
     CONFIG_SECTION,
     SageCategoryProjectionPlugin,
@@ -107,7 +109,13 @@ HOMSET_ROLES_PATH = (
 )
 HOMSET_ROLES_FULLNAMES = (
     f"{HOMSET_ROLES_MODULE}.BottomCategory",
+    f"{HOMSET_ROLES_MODULE}.RefinedSharedHomsetProviderCategory",
 )
+REFINED_SHARED_HOMSET_PARENT_PROVIDER = (
+    f"{HOMSET_ROLES_MODULE}.RefinedSharedHomsetProviderCategory."
+    "Homsets.ParentMethods"
+)
+SHARED_HOMSET_PARENT_PROVIDER = f"{HOMSET_ROLES_MODULE}.SharedHomsetParentMethods"
 AXIOM_FIXTURE_MODULE = "tests.fixtures.invariant_core.axioms"
 AXIOM_FIXTURE_PATH = (
     REPO_ROOT / "tests" / "fixtures" / "invariant_core" / "axioms.py"
@@ -176,6 +184,25 @@ def _provider_projections(
     return dict(_provider_projection_items(category_fullnames, roles))
 
 
+def _provider_projections_with_unsupported(
+    category_fullnames: tuple[str, ...],
+    *,
+    roles: tuple[ProviderRole, ...],
+) -> tuple[dict[str, ProviderProjection], tuple[UnsupportedProviderRecord, ...]]:
+    projections = provider_projections_for_categories(category_fullnames, roles=roles)
+    unsupported_providers = tuple(
+        UnsupportedProviderRecord(
+            provider=trace.provider,
+            role=trace.role,
+            reason=trace.reason,
+            runtime_classes=trace.runtime_classes,
+            runtime_mros=trace.runtime_mros,
+        )
+        for trace in unsupported_provider_traces()
+    )
+    return projections, unsupported_providers
+
+
 @cache
 def _provider_projection_items(
     category_fullnames: tuple[str, ...],
@@ -205,9 +232,11 @@ def test_plugin_projects_structural_typeinfo_mros_from_manifest(
         PROVIDER_ROLES_FULLNAMES,
         roles=("element", "subcategory", "morphism"),
     )
-    homset_projections = _provider_projections(
-        HOMSET_ROLES_FULLNAMES,
-        roles=("homset_parent", "homset_element"),
+    homset_projections, homset_unsupported_providers = (
+        _provider_projections_with_unsupported(
+            HOMSET_ROLES_FULLNAMES,
+            roles=("homset_parent", "homset_element"),
+        )
     )
     base_path = tmp_path / "base_provider.py"
     consumer_path = tmp_path / "consumer.py"
@@ -280,6 +309,7 @@ def test_plugin_projects_structural_typeinfo_mros_from_manifest(
         generated_by="tests",
         sage_version="10.7",
         python_version="3.12.13",
+        unsupported_providers=homset_unsupported_providers,
         projections=tuple(projections.values()),
         external_runtime_classes=external_runtime_class_records_for_test_manifest(
             tuple(projections.values()),
@@ -475,6 +505,39 @@ def test_plugin_projects_structural_typeinfo_mros_from_manifest(
     )
     assert tuple(info.fullname for info in element_info.mro) == (
         *homset_projections[element_provider].provider_mro,
+        "builtins.object",
+    )
+    refined_homsets_info = _nested_typeinfo(
+        result,
+        module=HOMSET_ROLES_MODULE,
+        outer="RefinedSharedHomsetProviderCategory",
+        inner="Homsets",
+    )
+    baseline_refined_homsets_info = _nested_typeinfo(
+        result_without_plugin,
+        module=HOMSET_ROLES_MODULE,
+        outer="RefinedSharedHomsetProviderCategory",
+        inner="Homsets",
+    )
+    refined_parent_info = _inner_typeinfo(refined_homsets_info, "ParentMethods")
+    baseline_refined_parent_info = _inner_typeinfo(
+        baseline_refined_homsets_info,
+        "ParentMethods",
+    )
+    refined_homset_mro = homset_projections[
+        REFINED_SHARED_HOMSET_PARENT_PROVIDER
+    ].provider_mro
+    assert tuple(info.fullname for info in baseline_refined_parent_info.mro) == (
+        REFINED_SHARED_HOMSET_PARENT_PROVIDER,
+        "builtins.object",
+    )
+    assert refined_homset_mro == (
+        REFINED_SHARED_HOMSET_PARENT_PROVIDER,
+        SHARED_HOMSET_PARENT_PROVIDER,
+        "sage.categories.objects.Objects.ParentMethods",
+    )
+    assert tuple(info.fullname for info in refined_parent_info.mro) == (
+        *refined_homset_mro,
         "builtins.object",
     )
 
@@ -675,7 +738,7 @@ def test_plugin_projects_linked_axiom_typeinfo_mro_from_manifest(
 def test_plugin_reports_homset_external_provider_boundary(
     tmp_path: Path,
 ) -> None:
-    projections = _provider_projections(
+    projections, unsupported_providers = _provider_projections_with_unsupported(
         HOMSET_ROLES_FULLNAMES,
         roles=("homset_parent", "homset_element"),
     )
@@ -684,6 +747,7 @@ def test_plugin_reports_homset_external_provider_boundary(
         generated_by="tests",
         sage_version="10.7",
         python_version="3.12.13",
+        unsupported_providers=unsupported_providers,
         projections=tuple(projections.values()),
         external_runtime_classes=external_runtime_class_records_for_test_manifest(
             tuple(projections.values()),

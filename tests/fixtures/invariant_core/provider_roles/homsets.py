@@ -89,6 +89,22 @@ class SharedHomsetProviderCategory(LocalCategoryBase):
         ParentMethods = cast(type[SageHomsets.ParentMethods], SharedHomsetParentMethods)
 
 
+class RefinedSharedHomsetProviderCategory(LocalCategoryBase):
+    def super_categories(self) -> list[LocalCategoryBase]:
+        return [SharedHomsetProviderCategory.an_instance()]
+
+    def is_full_subcategory(self, category: object) -> bool:
+        return category is SharedHomsetProviderCategory.an_instance()
+
+    class Homsets(HomsetsCategory):
+        def extra_super_categories(self) -> list[object]:
+            return []
+
+        class ParentMethods:
+            def refined_homset_parent(self) -> int:
+                return 2
+
+
 class StandaloneHomCategory(LocalHomsetsBase):
     def super_categories(self) -> list[object]:
         return [Objects()]

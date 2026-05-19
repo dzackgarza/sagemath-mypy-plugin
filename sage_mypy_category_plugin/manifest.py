@@ -423,6 +423,9 @@ class ProjectionManifest(BaseModel):
             )
 
         declared_providers = frozenset(providers)
+        declared_reference_providers = declared_providers | frozenset(
+            record.provider for record in self.unsupported_providers
+        )
         referenced_providers = frozenset(
             provider
             for projection in self.projections
@@ -441,7 +444,7 @@ class ProjectionManifest(BaseModel):
         unresolved_references = tuple(
             sorted(
                 (referenced_providers | referenced_method_providers)
-                - declared_providers
+                - declared_reference_providers
             )
         )
         if unresolved_references:
