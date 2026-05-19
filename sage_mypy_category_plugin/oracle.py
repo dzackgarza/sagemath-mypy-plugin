@@ -317,11 +317,14 @@ def _provider_projection(
         _UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role].add(runtime_class)
         return None
 
-    provider_bases = _project_runtime_classes(
-        runtime_class.__bases__,
-        runtime_to_provider,
-        allow_unmapped=frozenset(
-            {object, *_UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role]}
+    provider_bases = _provider_bases_without_self(
+        provider,
+        _project_runtime_classes(
+            runtime_class.__bases__,
+            runtime_to_provider,
+            allow_unmapped=frozenset(
+                {object, *_UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role]}
+            ),
         ),
     )
     provider_mro = _project_runtime_classes(
@@ -370,10 +373,13 @@ def _provider_projection_from_runtime_class(
     allow_unmapped: frozenset[type[object]] = frozenset(
         {object, *_UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role]}
     )
-    provider_bases = _project_runtime_classes(
-        runtime_class.__bases__,
-        runtime_to_provider,
-        allow_unmapped=allow_unmapped,
+    provider_bases = _provider_bases_without_self(
+        provider,
+        _project_runtime_classes(
+            runtime_class.__bases__,
+            runtime_to_provider,
+            allow_unmapped=allow_unmapped,
+        ),
     )
     provider_mro = _project_runtime_classes(
         runtime_class.__mro__,
@@ -427,9 +433,20 @@ def _project_runtime_classes(
         f"{tuple(_class_fullname(runtime_class) for runtime_class in unmapped)!r}"
     )
     return tuple(
-        runtime_to_provider[runtime_class]
-        for runtime_class in runtime_classes
-        if runtime_class in runtime_to_provider
+        dict.fromkeys(
+            runtime_to_provider[runtime_class]
+            for runtime_class in runtime_classes
+            if runtime_class in runtime_to_provider
+        )
+    )
+
+
+def _provider_bases_without_self(
+    provider: str,
+    provider_bases: tuple[str, ...],
+) -> tuple[str, ...]:
+    return tuple(
+        provider_base for provider_base in provider_bases if provider_base != provider
     )
 
 

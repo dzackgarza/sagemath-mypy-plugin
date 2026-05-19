@@ -388,6 +388,26 @@ def test_manifest_rejects_duplicate_provider_records() -> None:
     assert "duplicate provider" in str(raised.value)
 
 
+def test_manifest_rejects_duplicate_provider_mro_entries() -> None:
+    payload = _manifest_payload()
+    payload["projections"] = [*payload["projections"]]
+    provider_mro = payload["projections"][-1]["provider_mro"]
+    payload["projections"][-1] = {
+        **payload["projections"][-1],
+        "provider_mro": (
+            provider_mro[0],
+            provider_mro[1],
+            provider_mro[1],
+            *provider_mro[2:],
+        ),
+    }
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    assert "duplicate provider_mro entries" in str(raised.value)
+
+
 @pytest.mark.parametrize(
     ("projection_index", "mutation", "expected_field"),
     (

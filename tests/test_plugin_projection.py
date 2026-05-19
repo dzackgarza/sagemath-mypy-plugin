@@ -1514,7 +1514,6 @@ def _write_projected_provider_stubs(
         projections=projections,
         external_runtime_classes=external_runtime_class_records_for_test_manifest(
             projections,
-            source_modules=manifest_source_modules,
         ),
         source_modules=manifest_source_modules,
     )

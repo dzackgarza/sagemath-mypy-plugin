@@ -68,10 +68,18 @@ def write_generated_stub_tree(
     preserved_source_module_prefixes: Sequence[str] = (),
 ) -> tuple[SourceModuleRecord, ...]:
     preserved_prefixes = tuple(dict.fromkeys(preserved_source_module_prefixes))
+    external_runtime_source_modules = frozenset(
+        record.source_module
+        for record in manifest.external_runtime_classes
+        if record.source_module is not None
+    )
+    original_source_module_by_module = manifest.source_module_by_module
     source_modules: list[SourceModuleRecord] = []
+    declared_source_modules: set[str] = set()
     for record in manifest.source_modules:
         if _is_preserved_source_module(record.module, preserved_prefixes):
             source_modules.append(record)
+            declared_source_modules.add(record.module)
     for relative_path, source in generated_stub_sources(
         manifest,
         preserved_source_module_prefixes=preserved_prefixes,
@@ -82,14 +90,24 @@ def write_generated_stub_tree(
         path.write_text(source)
         source_bytes = path.read_bytes()
         source_stat = path.stat()
+        module_name = ".".join(relative_path.with_suffix("").parts)
+        assert module_name not in declared_source_modules, (
+            f"duplicate generated source module: {module_name}"
+        )
         source_modules.append(
             SourceModuleRecord(
-                module=".".join(relative_path.with_suffix("").parts),
+                module=module_name,
                 path=str(path),
                 sha256=sha256(source_bytes).hexdigest(),
                 mtime_ns=source_stat.st_mtime_ns,
             )
         )
+        declared_source_modules.add(module_name)
+    for module_name in sorted(external_runtime_source_modules):
+        if module_name in declared_source_modules:
+            continue
+        source_modules.append(original_source_module_by_module[module_name])
+        declared_source_modules.add(module_name)
     return tuple(source_modules)
 
 

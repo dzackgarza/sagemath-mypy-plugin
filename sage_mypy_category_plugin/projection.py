@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from typing import Literal, Self
 
-from pydantic import BaseModel, ConfigDict, StrictStr, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    StrictStr,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 ProviderRole = Literal[
     "parent",
@@ -84,6 +91,24 @@ class ProviderProjection(BaseModel):
     @classmethod
     def _validate_fullname_tuple(cls, value: tuple[str, ...]) -> tuple[str, ...]:
         return validate_dotted_fullnames(value)
+
+    @field_validator("provider_bases", "provider_mro")
+    @classmethod
+    def _validate_unique_fullname_tuple(
+        cls,
+        value: tuple[str, ...],
+        info: ValidationInfo,
+    ) -> tuple[str, ...]:
+        duplicates = tuple(
+            fullname
+            for fullname in dict.fromkeys(value)
+            if value.count(fullname) > 1
+        )
+        if duplicates:
+            raise ValueError(
+                f"duplicate {info.field_name} entries: " + ", ".join(duplicates)
+            )
+        return value
 
 
 class ConcreteParentRecord(BaseModel):

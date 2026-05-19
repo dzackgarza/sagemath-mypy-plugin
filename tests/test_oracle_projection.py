@@ -6,6 +6,8 @@ from sage_mypy_category_plugin.oracle import RoleProjection
 from sage_mypy_category_plugin.oracle import concrete_parent_records_for_factories
 from sage_mypy_category_plugin.oracle import provider_projections_for_categories
 from sage_mypy_category_plugin.oracle import named_class_traces
+from sage_mypy_category_plugin.oracle import _provider_bases_without_self
+from sage_mypy_category_plugin.oracle import _project_runtime_classes
 from sage_mypy_category_plugin.oracle import _provider_fullname_from_runtime_class_or_none
 from tests.fixtures.invariant_core.diamond_runtime import (
     BottomCategory,
@@ -81,6 +83,41 @@ def test_runtime_provider_resolution_rejects_broken_provider_attribute() -> None
             RuntimeProviderResolutionFixtures.BrokenProvider.parent_class,
             role_projection,
         )
+
+
+def test_runtime_projection_deduplicates_shared_provider_targets() -> None:
+    class RuntimeBase:
+        pass
+
+    class RuntimeAlias(RuntimeBase):
+        pass
+
+    provider = (
+        "tests.test_oracle_projection."
+        "test_runtime_projection_deduplicates_shared_provider_targets.Provider"
+    )
+
+    assert _project_runtime_classes(
+        (RuntimeAlias, RuntimeBase),
+        {RuntimeAlias: provider, RuntimeBase: provider},
+        allow_unmapped=frozenset(),
+    ) == (provider,)
+
+
+def test_provider_bases_omit_self_provider_after_projection() -> None:
+    provider = (
+        "tests.test_oracle_projection."
+        "test_provider_bases_omit_self_provider_after_projection.Provider"
+    )
+    inherited_provider = (
+        "tests.test_oracle_projection."
+        "test_provider_bases_omit_self_provider_after_projection.InheritedProvider"
+    )
+
+    assert _provider_bases_without_self(
+        provider,
+        (provider, inherited_provider),
+    ) == (inherited_provider,)
 
 
 def test_projection_skips_inherited_homsets_subcategory_provider() -> None:

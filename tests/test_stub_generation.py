@@ -13,6 +13,7 @@ from sage_mypy_category_plugin.manifest import (
     load_manifest,
 )
 from sage_mypy_category_plugin.projection import ConcreteParentRecord
+from sage_mypy_category_plugin.projection import ExternalRuntimeClassRecord
 from sage_mypy_category_plugin.projection import ProviderMethodRecord
 from sage_mypy_category_plugin.projection import ProviderProjection
 from sage_mypy_category_plugin import stubs as stubs_cli
@@ -270,6 +271,126 @@ def test_generated_stub_cli_preserves_requested_source_modules(
     assert not (output_root / "fixtures" / "self_type.pyi").exists()
     assert (output_root / "_sage_category_types.pyi").is_file()
     assert stub_manifest.source_module_by_module["fixtures.self_type"] == source_record
+
+
+def test_generated_stub_cli_keeps_external_runtime_source_modules(
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "source" / "sage" / "categories" / (
+        "sets_with_partial_maps.py"
+    )
+    source_path.parent.mkdir(parents=True)
+    source_path.write_text(
+        "\n".join(
+            (
+                "class SetsWithPartialMaps:",
+                "    class parent_class:",
+                "        pass",
+                "",
+            )
+        )
+    )
+    external_source = SourceModuleRecord(
+        module="sage.categories.sets_with_partial_maps",
+        path=str(source_path),
+        sha256=sha256(source_path.read_bytes()).hexdigest(),
+        mtime_ns=source_path.stat().st_mtime_ns,
+    )
+    external_runtime = ExternalRuntimeClassRecord(
+        runtime_class=(
+            "sage.categories.sets_with_partial_maps."
+            "SetsWithPartialMaps.parent_class"
+        ),
+        module="sage.categories.sets_with_partial_maps",
+        static_signature_source="python_source",
+        source_module=external_source.module,
+    )
+    base_manifest = _sets_cartesian_products_manifest()
+    projection = base_manifest.projections[1].model_copy(
+        update={"unprojected_runtime_mro": (external_runtime.runtime_class,)}
+    )
+    manifest = base_manifest.model_copy(
+        update={
+            "projections": (
+                base_manifest.projections[0],
+                projection,
+                *base_manifest.projections[2:],
+            ),
+            "external_runtime_classes": (external_runtime,),
+            "source_modules": (*base_manifest.source_modules, external_source),
+        }
+    )
+    manifest_path = tmp_path / "manifest.json"
+    output_root = tmp_path / "generated-stubs"
+    manifest_output_path = tmp_path / "manifest.with-stubs.json"
+    manifest_path.write_text(manifest.model_dump_json())
+
+    assert (
+        stubs_cli.main(
+            [
+                str(manifest_path),
+                str(output_root),
+                "--manifest-output",
+                str(manifest_output_path),
+            ]
+        )
+        == 0
+    )
+
+    stub_manifest = load_manifest(manifest_output_path)
+
+    assert stub_manifest.external_runtime_classes == (external_runtime,)
+    assert (
+        stub_manifest.source_module_by_module[external_source.module]
+        == external_source
+    )
+
+
+def test_generated_stub_cli_uses_generated_module_once_for_external_runtime_overlap(
+    tmp_path: Path,
+) -> None:
+    external_runtime = ExternalRuntimeClassRecord(
+        runtime_class="sage.categories.objects.Objects.element_class",
+        module="sage.categories.objects",
+        static_signature_source="python_source",
+        source_module="sage.categories.objects",
+    )
+    base_manifest = _sets_cartesian_products_manifest()
+    projection = base_manifest.projections[0].model_copy(
+        update={"unprojected_runtime_mro": (external_runtime.runtime_class,)}
+    )
+    manifest = base_manifest.model_copy(
+        update={
+            "projections": (projection, *base_manifest.projections[1:]),
+            "external_runtime_classes": (external_runtime,),
+        }
+    )
+    manifest_path = tmp_path / "manifest.json"
+    output_root = tmp_path / "generated-stubs"
+    manifest_output_path = tmp_path / "manifest.with-stubs.json"
+    manifest_path.write_text(manifest.model_dump_json())
+
+    assert (
+        stubs_cli.main(
+            [
+                str(manifest_path),
+                str(output_root),
+                "--manifest-output",
+                str(manifest_output_path),
+            ]
+        )
+        == 0
+    )
+
+    stub_manifest = load_manifest(manifest_output_path)
+    source_record = stub_manifest.source_module_by_module["sage.categories.objects"]
+
+    assert source_record.path == str(output_root / "sage/categories/objects.pyi")
+    assert tuple(
+        record.module
+        for record in stub_manifest.source_modules
+        if record.module == "sage.categories.objects"
+    ) == ("sage.categories.objects",)
 
 
 def test_generated_stubs_include_concrete_parent_runtime_aliases() -> None:
