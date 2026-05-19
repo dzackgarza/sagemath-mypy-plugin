@@ -25,6 +25,7 @@ FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "invariant_core"
 REAL_CATEGORIES_ROOT = REPO_ROOT / "tests" / "real_categories"
 FINITE_SMALL_GROUPS_VALID = "tests.real_categories.finite_small_groups_valid"
 FINITE_SMALL_GROUPS_INVALID = "tests.real_categories.finite_small_groups_invalid"
+FINITE_POSETS_MODULE = "tests.real_categories.finite_posets"
 BASE_CATEGORY_FULLNAMES = (
     "tests.fixtures.invariant_core.diamond_runtime.TopCategory",
     "tests.fixtures.invariant_core.diamond_runtime.LeftCategory",
@@ -408,6 +409,71 @@ def test_real_sage_category_behavior_matrix_uses_standard_mypy_rules(
     # KleinFourGroups.ParentMethods as a base — the method is just a new definition
     assert not final_errors_off, (
         f"Expected no errors without plugin (parent MRO invisible); got: {final_errors_off}"
+    )
+
+
+def test_real_sage_category_identical_method_names_are_projected_independently(
+    tmp_path: Path,
+) -> None:
+    """Phase 3 P5: plugin uses MRO-based projection, not method-name matching.
+
+    finite_small_groups.FiniteGroupsOfOrderLessThanTwenty.ParentMethods defines
+    order() and has_even_order().  finite_posets.FinitePosets.ParentMethods
+    defines the same method names with different mathematical semantics
+    (poset size vs group order).  The two chains are completely unrelated in the
+    Sage runtime category graph.
+
+    This test proves that both chains work correctly and independently:
+      SmallFinitePosets.ParentMethods.@override order()      → no errors
+      SmallFinitePosets.ParentMethods.@override has_even_order() → no errors
+      GroupsOfOrderFour.ParentMethods.@override order()      → no errors (same name, different chain)
+
+    If the plugin matched methods by name across chains, one of these would fail.
+    """
+    cache_dir = tmp_path / "sage-category-cache"
+    stub_root = cache_dir / "stubs"
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "ignore_missing_imports = True",
+                "",
+                "[sage-mypy-category-plugin]",
+                "packages = tests.real_categories",
+                "roles = parent",
+                f"cache_dir = {cache_dir}",
+                "",
+            )
+        )
+    )
+
+    posets_path = REAL_CATEGORIES_ROOT / "finite_posets.py"
+    sources = (
+        # Include both groups and posets so both are in the same mypy build
+        BuildSource(str(REAL_CATEGORIES_ROOT / "finite_small_groups.py"),
+                    "tests.real_categories.finite_small_groups", None),
+        BuildSource(str(posets_path), FINITE_POSETS_MODULE, None),
+    )
+
+    result = _run_mypy_with_sources(
+        sources,
+        config_path,
+        tmp_path,
+        mypy_path_entries=(stub_root, REPO_ROOT),
+    )
+
+    posets_errors = tuple(e for e in result.errors if "finite_posets" in e)
+    groups_errors = tuple(e for e in result.errors if "finite_small_groups.py" in e)
+
+    # SmallFinitePosets.order() and has_even_order() override correctly (posets chain)
+    assert not posets_errors, (
+        f"Expected no errors for finite_posets with plugin; got: {posets_errors}"
+    )
+    # GroupsOfOrderFour.order() still overrides correctly (groups chain)
+    assert not groups_errors, (
+        f"Expected no errors for finite_small_groups with plugin; got: {groups_errors}"
     )
 
 
