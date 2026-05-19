@@ -165,15 +165,18 @@ typecheck *args:
   sage -python -m mypy --config-file=/dev/null --ignore-missing-imports --explicit-package-bases sage_mypy_category_plugin tests/test_*.py "${args[@]}"
 
 [group('validate')]
-consumer-mypy manifest *args:
+consumer-mypy *args:
   #!/usr/bin/env bash
   set -euo pipefail
   args=({{args}})
   mypy_args=()
   targets=()
+  manifest_arg=""
   for arg in "${args[@]}"; do
     if [[ "$arg" == -* ]]; then
       mypy_args+=("$arg")
+    elif [[ -f "$arg" && "$arg" == *.json ]]; then
+      manifest_arg="$arg"
     else
       targets+=("$arg")
     fi
@@ -189,32 +192,15 @@ consumer-mypy manifest *args:
     printf 'category_specs consumer tree not found at %s\n' "$consumer_package" >&2
     exit 2
   fi
-  if [[ ! -f "{{manifest}}" ]]; then
-    printf 'consumer manifest not found: %s\n' "{{manifest}}" >&2
-    printf 'Generate one with just generate-manifest before running consumer evidence.\n' >&2
-    exit 2
-  fi
-  stub_root="$(mktemp -d)"
-  trap 'rm -rf "$stub_root"' EXIT
-  stub_manifest="${stub_root}/projection-manifest.json"
-  config_path="${stub_root}/mypy.ini"
-  sage -python -m sage_mypy_category_plugin.stubs \
-    "{{manifest}}" \
-    "$stub_root" \
-    --manifest-output "$stub_manifest" \
-    --preserve-source-module-prefix category_specs \
-    --preserve-source-module-prefix sage.categories
-  cat >"$config_path" <<EOF
-  [mypy]
-  plugins = sage_mypy_category_plugin.plugin
-  ignore_missing_imports = True
-  explicit_package_bases = True
 
-  [sage-mypy-category-plugin]
-  manifest = ${stub_manifest}
-  EOF
+  config_root="$(mktemp -d)"
+  trap 'rm -rf "$config_root"' EXIT
+  config_path="${config_root}/mypy.ini"
+  cache_dir="${config_root}/sage-category-cache"
+
+  sage -python -m sage_mypy_category_plugin.write_consumer_config "$config_path" "$manifest_arg" "$cache_dir"
+
   export PYTHONPATH="${repo_root}:${consumer_root}${PYTHONPATH:+:${PYTHONPATH}}"
-  export MYPYPATH="${stub_root}${MYPYPATH:+:${MYPYPATH}}"
   cd "$consumer_root"
   for target in "${targets[@]}"; do
     path_target="${target//./\/}"

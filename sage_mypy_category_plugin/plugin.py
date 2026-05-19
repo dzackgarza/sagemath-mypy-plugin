@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from configparser import ConfigParser
+from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Sequence
 
 from mypy.errors import CompileError
 from mypy.nodes import MypyFile, TypeInfo
@@ -16,19 +17,42 @@ from sage_mypy_category_plugin.manifest import (
     ProjectionManifest,
     SourceModuleRecord,
     load_manifest,
+    write_manifest,
 )
-from sage_mypy_category_plugin.projection import ProviderProjection
+from sage_mypy_category_plugin.projection import ProviderProjection, ProviderRole
 
 CONFIG_SECTION = "sage-mypy-category-plugin"
 MYPY_OBJECT = "builtins.object"
 MYPY_DEP_PRIORITY = 10
 
+DEFAULT_CACHE_DIR = ".mypy_cache/sage-category-plugin"
+DEFAULT_ROLES: tuple[ProviderRole, ...] = ("parent",)
+
+
+@dataclass(frozen=True)
+class PluginConfig:
+    packages: tuple[str, ...] = ()
+    roles: tuple[ProviderRole, ...] = DEFAULT_ROLES
+    cache_dir: Path | None = None
+    strict: bool = False
+    debug_manifest: Path | None = None
+
 
 class SageCategoryProjectionPlugin(Plugin):
     def __init__(self, options: Options) -> None:
         super().__init__(options)
-        self._manifest_path = _manifest_path_from_config(options)
-        self._manifest = _load_manifest_for_plugin(self._manifest_path)
+        config = _read_plugin_config(options)
+
+        if config.debug_manifest is not None:
+            self._manifest = _load_manifest_for_plugin(config.debug_manifest)
+            self._manifest_path = config.debug_manifest
+        else:
+            self._manifest, self._manifest_path = _generate_and_cache(config)
+            _add_generated_stubs_to_mypy_path(
+                options, stub_root=_stub_root_for_manifest(self._manifest_path)
+            )
+            self._manifest = load_manifest(self._manifest_path)
+
         _validate_source_module_metadata(self._manifest.source_modules)
         self._manifest_digest = sha256(self._manifest_path.read_bytes()).hexdigest()
         self._projection_by_provider = self._manifest.projection_by_provider
@@ -182,7 +206,10 @@ def _lookup_typeinfo(
     return symbol.node
 
 
-def _manifest_path_from_config(options: Options) -> Path:
+# ── Config parsing ───────────────────────────────────────────────────────────
+
+
+def _read_plugin_config(options: Options) -> PluginConfig:
     if options.config_file is None:
         raise CompileError(["mypy config file is required"])
 
@@ -191,17 +218,198 @@ def _manifest_path_from_config(options: Options) -> Path:
     parsed_files = parser.read(config_path)
     if parsed_files != [str(config_path)]:
         raise CompileError([f"Could not read {config_path}"])
+
     if not parser.has_section(CONFIG_SECTION):
         raise CompileError([f"Missing [{CONFIG_SECTION}] section in {config_path}"])
-    if not parser.has_option(CONFIG_SECTION, "manifest"):
+
+    has_manifest = parser.has_option(CONFIG_SECTION, "manifest")
+    has_packages = parser.has_option(CONFIG_SECTION, "packages")
+
+    if not has_manifest and not has_packages:
         raise CompileError(
-            [f"Missing manifest option in [{CONFIG_SECTION}] section of {config_path}"]
+            [
+                f"[{CONFIG_SECTION}] section in {config_path} must specify either "
+                "'manifest' (debug/pregenerated path) or 'packages' (auto-generation)"
+            ]
         )
 
-    manifest_path = Path(parser.get(CONFIG_SECTION, "manifest"))
-    if not manifest_path.is_absolute():
-        manifest_path = config_path.parent / manifest_path
-    return manifest_path
+    packages: tuple[str, ...] = ()
+    if has_packages:
+        packages = _parse_multiline_option(parser, CONFIG_SECTION, "packages")
+
+    roles: tuple[ProviderRole, ...] = DEFAULT_ROLES
+    if parser.has_option(CONFIG_SECTION, "roles"):
+        raw_roles = _parse_multiline_option(parser, CONFIG_SECTION, "roles")
+        roles = _parse_roles(config_path, raw_roles)
+
+    cache_dir: Path | None = None
+    if parser.has_option(CONFIG_SECTION, "cache_dir"):
+        raw_cache_dir = parser.get(CONFIG_SECTION, "cache_dir")
+        cache_dir = Path(raw_cache_dir)
+        if not cache_dir.is_absolute():
+            cache_dir = config_path.parent / cache_dir
+
+    strict: bool = False
+    if parser.has_option(CONFIG_SECTION, "strict"):
+        strict = parser.getboolean(CONFIG_SECTION, "strict")
+
+    debug_manifest: Path | None = None
+    if has_manifest:
+        raw_path = parser.get(CONFIG_SECTION, "manifest")
+        debug_manifest = Path(raw_path)
+        if not debug_manifest.is_absolute():
+            debug_manifest = config_path.parent / debug_manifest
+
+    return PluginConfig(
+        packages=packages,
+        roles=roles,
+        cache_dir=cache_dir,
+        strict=strict,
+        debug_manifest=debug_manifest,
+    )
+
+
+def _parse_multiline_option(
+    parser: ConfigParser,
+    section: str,
+    option: str,
+) -> tuple[str, ...]:
+    raw = parser.get(section, option)
+    return tuple(
+        item.strip()
+        for line in raw.splitlines()
+        for item in (line.split("#")[0].strip(),)
+        if item
+    )
+
+
+def _parse_roles(
+    config_path: Path,
+    raw_roles: tuple[str, ...],
+) -> tuple[ProviderRole, ...]:
+    from typing import get_args
+
+    valid_roles: tuple[ProviderRole, ...] = get_args(ProviderRole)
+    roles: list[ProviderRole] = []
+    for raw in raw_roles:
+        # Map user-friendly names to ProviderRole literals
+        role = _normalize_role_name(raw)
+        if role not in valid_roles:
+            raise CompileError(
+                [
+                    f"Invalid role {raw!r} in [{CONFIG_SECTION}] section of "
+                    f"{config_path}. Valid roles: {', '.join(valid_roles)}"
+                ]
+            )
+        roles.append(role)
+    return tuple(dict.fromkeys(roles))
+
+
+def _normalize_role_name(raw: str) -> str:
+    """Map common role name variants to ProviderRole literals."""
+    normalized = raw.strip().lower()
+    # Handle combined names like "homset_parent" -> "homset_parent", "homset parent" -> "homset_parent"
+    role_map = {
+        "parent": "parent",
+        "element": "element",
+        "subcategory": "subcategory",
+        "morphism": "morphism",
+        "homset_parent": "homset_parent",
+        "homset parent": "homset_parent",
+        "homsetparent": "homset_parent",
+        "homset_element": "homset_element",
+        "homset element": "homset_element",
+        "homsetelement": "homset_element",
+    }
+    return role_map.get(normalized, normalized)
+
+
+# ── Manifest generation ──────────────────────────────────────────────────────
+
+
+def _generate_and_cache(config: PluginConfig) -> tuple[ProjectionManifest, Path]:
+    from sage_mypy_category_plugin.resolver import (
+        discover_category_fullnames,
+        resolve_projection_manifest,
+    )
+    from sage_mypy_category_plugin.stubs import write_generated_stub_tree
+
+    category_fullnames = discover_category_fullnames(config.packages)
+    if not category_fullnames:
+        raise CompileError(
+            [
+                f"No Sage category classes found in configured packages: "
+                f"{', '.join(config.packages)}"
+            ]
+        )
+
+    manifest = resolve_projection_manifest(
+        category_fullnames=category_fullnames,
+        roles=config.roles,
+    )
+
+    # Generate stubs into manifest-relative directory
+    cache_dir = _resolve_cache_dir(config)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = cache_dir / "projection-manifest.json"
+    stub_root = _stub_root_for_manifest(manifest_path)
+
+    stub_source_modules = write_generated_stub_tree(
+        stub_root,
+        manifest,
+        preserved_source_module_prefixes=config.packages,
+    )
+
+    # Update manifest with stub-augmented source modules
+    manifest = manifest.model_copy(
+        update={"source_modules": stub_source_modules}
+    )
+    write_manifest(manifest_path, manifest)
+
+    return manifest, manifest_path
+
+
+def _add_generated_stubs_to_mypy_path(options: Options, *, stub_root: Path) -> None:
+    """Ensure mypy can see generated stubs without requiring MYPYPATH.
+
+    Mutates options.mypy_path in-place during plugin initialization. This is
+    the preferred mechanism under pinned mypy versions: it makes generated
+    stubs visible to the type checker as if they were on MYPYPATH.
+    """
+    stub_root_str = str(stub_root.resolve())
+    if options.mypy_path is None:
+        options.mypy_path = []
+    if stub_root_str not in options.mypy_path:
+        options.mypy_path.append(stub_root_str)
+
+
+def _generate_and_write_stubs(
+    manifest: ProjectionManifest,
+    *,
+    stub_root: Path,
+    packages: tuple[str, ...],
+) -> None:
+    """Generate stubs and update the manifest on disk. Used for debug manifest path."""
+    from sage_mypy_category_plugin.stubs import write_generated_stub_tree
+
+    stub_root.mkdir(parents=True, exist_ok=True)
+    stub_source_modules = write_generated_stub_tree(
+        stub_root,
+        manifest,
+        preserved_source_module_prefixes=packages,
+    )
+    updated = manifest.model_copy(update={"source_modules": stub_source_modules})
+    write_manifest(stub_root.parent / "projection-manifest.json", updated)
+
+
+def _resolve_cache_dir(config: PluginConfig) -> Path:
+    if config.cache_dir is not None:
+        return config.cache_dir
+    return Path(DEFAULT_CACHE_DIR)
+
+
+def _stub_root_for_manifest(manifest_path: Path) -> Path:
+    return manifest_path.parent / "stubs"
 
 
 def _load_manifest_for_plugin(path: Path) -> ProjectionManifest:
@@ -302,4 +510,5 @@ def plugin(version: str) -> type[Plugin]:
 __all__ = [
     "SageCategoryProjectionPlugin",
     "plugin",
+    "CONFIG_SECTION",
 ]

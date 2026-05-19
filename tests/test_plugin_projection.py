@@ -1259,9 +1259,8 @@ def test_plugin_fails_clearly_when_manifest_option_is_missing(tmp_path: Path) ->
     with pytest.raises(CompileError) as raised:
         SageCategoryProjectionPlugin(options)
 
-    assert raised.value.messages == [
-        f"Missing manifest option in [{CONFIG_SECTION}] section of {config_path}"
-    ]
+    assert f"[{CONFIG_SECTION}] section in {config_path} must specify either " in raised.value.messages[0]
+    assert "'manifest' (debug/pregenerated path) or 'packages' (auto-generation)" in raised.value.messages[0]
 
 
 def test_plugin_fails_clearly_when_manifest_file_is_missing(tmp_path: Path) -> None:
@@ -1333,6 +1332,134 @@ def test_plugin_fails_clearly_for_invalid_manifest_schema(tmp_path: Path) -> Non
         "Invalid Sage category projection manifest "
         f"{manifest_path}: plugin_schema_version: Input should be '1'"
     ]
+
+
+def test_plugin_generates_manifest_from_packages_config(tmp_path: Path) -> None:
+    """Phase 1A: plugin init with 'packages' config auto-generates manifest + stubs."""
+    cache_dir = tmp_path / "sage-category-cache"
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                "[sage-mypy-category-plugin]",
+                "packages = tests.fixtures.invariant_core.diamond_runtime",
+                "roles = parent",
+                f"cache_dir = {cache_dir}",
+                "",
+            )
+        )
+    )
+    options = Options()
+    options.config_file = str(config_path)
+    options.ignore_missing_imports = True
+
+    plugin = SageCategoryProjectionPlugin(options)
+
+    # Manifest was generated
+    manifest_path = cache_dir / "projection-manifest.json"
+    assert manifest_path.is_file(), "Plugin should have generated manifest"
+    manifest = json.loads(manifest_path.read_text())
+    assert len(manifest["projections"]) == 4, "Diamond fixture has 4 categories"
+
+    # Stubs were generated
+    stub_root = cache_dir / "stubs"
+    assert stub_root.is_dir(), "Plugin should have generated stubs"
+    pyi_files = list(stub_root.rglob("*.pyi"))
+    assert len(pyi_files) >= 1, "At least one .pyi should be generated"
+
+    # mypy_path was mutated to include stub root
+    assert str(stub_root.resolve()) in options.mypy_path, (
+        "options.mypy_path should include stub root"
+    )
+
+    # Projections are loaded correctly
+    bottom_provider = (
+        "tests.fixtures.invariant_core.diamond_runtime.BottomCategory.ParentMethods"
+    )
+    assert bottom_provider in plugin._projection_by_provider
+
+
+def test_plugin_regenerates_from_clean_cache(tmp_path: Path) -> None:
+    """Phase 1A: plugin init regenerates when no cache exists."""
+    cache_dir = tmp_path / "sage-category-cache"
+    # Ensure clean state
+    assert not cache_dir.exists()
+
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                "[sage-mypy-category-plugin]",
+                "packages = tests.fixtures.invariant_core.diamond_runtime",
+                "roles = parent",
+                f"cache_dir = {cache_dir}",
+                "",
+            )
+        )
+    )
+    options = Options()
+    options.config_file = str(config_path)
+    options.ignore_missing_imports = True
+
+    _plugin = SageCategoryProjectionPlugin(options)
+
+    # Cache was created
+    assert cache_dir.is_dir()
+    assert (cache_dir / "projection-manifest.json").is_file()
+    assert (cache_dir / "stubs").is_dir()
+
+    # Second init from same cache works (idempotency)
+    _plugin2 = SageCategoryProjectionPlugin(options)
+    assert (cache_dir / "projection-manifest.json").is_file()
+
+
+def test_plugin_debug_manifest_still_works(tmp_path: Path) -> None:
+    """Phase 1A: backward-compatible 'manifest = ...' debug path still functions."""
+    projections = _provider_projections(
+        CATEGORY_FULLNAMES,
+        roles=("parent",),
+    )
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=tuple(projections.values()),
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            tuple(projections.values()),
+        ),
+    )
+    manifest_path = tmp_path / "manifest.json"
+    write_manifest(manifest_path, manifest)
+
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+    options = Options()
+    options.config_file = str(config_path)
+
+    plugin = SageCategoryProjectionPlugin(options)
+
+    bottom_provider = (
+        "tests.fixtures.invariant_core.diamond_runtime.BottomCategory.ParentMethods"
+    )
+    assert bottom_provider in plugin._projection_by_provider
 
 
 def test_plugin_reports_manifest_drift_and_rebuilds_projection(
