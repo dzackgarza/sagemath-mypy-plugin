@@ -22,6 +22,9 @@ type SourceTree = dict[str, "SourceTree"]
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "invariant_core"
+REAL_CATEGORIES_ROOT = REPO_ROOT / "tests" / "real_categories"
+FINITE_SMALL_GROUPS_VALID = "tests.real_categories.finite_small_groups_valid"
+FINITE_SMALL_GROUPS_INVALID = "tests.real_categories.finite_small_groups_invalid"
 BASE_CATEGORY_FULLNAMES = (
     "tests.fixtures.invariant_core.diamond_runtime.TopCategory",
     "tests.fixtures.invariant_core.diamond_runtime.LeftCategory",
@@ -303,6 +306,87 @@ def test_packages_config_behavior_matrix_end_to_end(tmp_path: Path) -> None:
         "Expected invalid @override to still fail with plugin on"
     )
     assert _case_contains(without_plugin, "invalid", "no base method was found")
+
+
+def test_real_sage_category_behavior_matrix_uses_standard_mypy_rules(
+    tmp_path: Path,
+) -> None:
+    """Phase 3 P3: real mathematical Sage categories satisfy the 4-cell behavioral conjunction.
+
+    Uses real Sage categories (FiniteGroupsOfOrderLessThanTwenty subclassing
+    Groups().Finite()) — not synthetic LocalCategoryBase fixtures.  This proves
+    the plugin correctly projects real Sage runtime provider MROs, not just the
+    synthetic diamond graph.
+
+    The stub_root is pre-declared in mypy_path before build() so that the Sage
+    system provider stubs (generated during plugin.__init__) are visible when
+    mypy resolves the provider TypeInfos.
+
+      plugin off + valid code   → "no base method was found" (real Sage provider invisible)
+      plugin on  + valid code   → no errors (plugin projects runtime provider MRO)
+      plugin off + invalid code → "no base method was found"
+      plugin on  + invalid code → "no base method was found" (mypy still enforces @override)
+    """
+    cache_dir = tmp_path / "sage-category-cache"
+    # The stub root must be declared in mypy_path BEFORE build() is called so
+    # that mypy can see the Sage system provider stubs that the plugin generates
+    # during plugin.__init__.  For local Python source files the stub root is
+    # not needed (they are found via REPO_ROOT), but Sage system providers
+    # (FiniteGroups.ParentMethods, Groups.ParentMethods, etc.) only exist in the
+    # generated stubs, so mypy must know the stub root upfront.
+    stub_root = cache_dir / "stubs"
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "ignore_missing_imports = True",
+                "",
+                "[sage-mypy-category-plugin]",
+                "packages = tests.real_categories",
+                "roles = parent",
+                f"cache_dir = {cache_dir}",
+                "",
+            )
+        )
+    )
+
+    valid_path = REAL_CATEGORIES_ROOT / "finite_small_groups_valid.py"
+    invalid_path = REAL_CATEGORIES_ROOT / "finite_small_groups_invalid.py"
+    sources = (
+        BuildSource(str(valid_path), FINITE_SMALL_GROUPS_VALID, None),
+        BuildSource(str(invalid_path), FINITE_SMALL_GROUPS_INVALID, None),
+    )
+
+    with_plugin = _run_mypy_with_sources(
+        sources,
+        config_path,
+        tmp_path,
+        mypy_path_entries=(stub_root, REPO_ROOT),
+    )
+    without_plugin = _run_mypy_without_plugin_with_sources(
+        sources,
+        tmp_path,
+    )
+
+    valid_filename = valid_path.name  # "finite_small_groups_valid.py"
+    invalid_filename = invalid_path.name  # "finite_small_groups_invalid.py"
+    valid_errors = tuple(e for e in with_plugin.errors if valid_filename in e)
+    invalid_errors_on = tuple(e for e in with_plugin.errors if invalid_filename in e)
+    valid_errors_off = tuple(e for e in without_plugin.errors if valid_filename in e)
+    invalid_errors_off = tuple(e for e in without_plugin.errors if invalid_filename in e)
+
+    assert not valid_errors, (
+        f"Expected no errors for valid code with plugin; got: {valid_errors}"
+    )
+    assert any("no base method was found" in e for e in valid_errors_off), (
+        "Expected valid code to fail without plugin (real Sage provider MRO invisible)"
+    )
+    assert any("no base method was found" in e for e in invalid_errors_on), (
+        "Expected invalid @override to still fail with plugin on"
+    )
+    assert any("no base method was found" in e for e in invalid_errors_off)
 
 
 def _write_plugin_config(tmp_path: Path) -> Path:
@@ -698,6 +782,36 @@ def _source(module: str) -> BuildSource:
 def _module_path(module: str) -> Path:
     filename = module.rsplit(".", maxsplit=1)[-1] + ".py"
     return FIXTURE_ROOT / filename
+
+
+def _run_mypy_with_sources(
+    sources: tuple[BuildSource, ...],
+    config_path: Path,
+    tmp_path: Path,
+    *,
+    mypy_path_entries: tuple[Path, ...] = (REPO_ROOT,),
+) -> BuildResult:
+    """Like _run_mypy but accepts explicit BuildSource objects instead of module names.
+
+    Used for categories outside FIXTURE_ROOT (e.g. tests/real_categories/).
+    """
+    options = _options(tmp_path)
+    options.config_file = str(config_path)
+    options.plugins = ["sage_mypy_category_plugin.plugin"]
+    options.mypy_path = [str(path) for path in mypy_path_entries]
+    return build(sources=list(sources), options=options)
+
+
+def _run_mypy_without_plugin_with_sources(
+    sources: tuple[BuildSource, ...],
+    tmp_path: Path,
+    *,
+    mypy_path_entries: tuple[Path, ...] = (REPO_ROOT,),
+) -> BuildResult:
+    """Like _run_mypy_without_plugin but accepts explicit BuildSource objects."""
+    options = _options(tmp_path)
+    options.mypy_path = [str(path) for path in mypy_path_entries]
+    return build(sources=list(sources), options=options)
 
 
 def _write_visible_sage_axiom_stubs(tmp_path: Path) -> Path:
