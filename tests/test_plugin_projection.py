@@ -390,13 +390,22 @@ def test_plugin_projects_structural_typeinfo_mros_from_manifest(
         BOTTOM_PROVIDER,
         "builtins.object",
     )
+    assert tuple(base.type.fullname for base in baseline_bottom_parent_info.bases) == (
+        "builtins.object",
+    )
     assert tuple(info.fullname for info in bottom_parent_info.mro) == (
         *diamond_projections[BOTTOM_PROVIDER].provider_mro,
         "builtins.object",
     )
+    assert tuple(base.type.fullname for base in bottom_parent_info.bases) == (
+        diamond_projections[BOTTOM_PROVIDER].provider_bases
+    )
     assert tuple(info.fullname for info in repeated_bottom_parent_info.mro) == (
         *diamond_projections[BOTTOM_PROVIDER].provider_mro,
         "builtins.object",
+    )
+    assert tuple(base.type.fullname for base in repeated_bottom_parent_info.bases) == (
+        diamond_projections[BOTTOM_PROVIDER].provider_bases
     )
 
     commutative_parent_info = _nested_typeinfo(
@@ -422,9 +431,15 @@ def test_plugin_projects_structural_typeinfo_mros_from_manifest(
         CATEGORY_SPECS_LIKE_COMMUTATIVE_PROVIDER,
         "builtins.object",
     )
+    assert tuple(base.type.fullname for base in baseline_commutative_parent_info.bases) == (
+        "builtins.object",
+    )
     assert tuple(info.fullname for info in commutative_parent_info.mro) == (
         *expected_commutative_mro,
         "builtins.object",
+    )
+    assert tuple(base.type.fullname for base in commutative_parent_info.bases) == (
+        category_specs_projections[CATEGORY_SPECS_LIKE_COMMUTATIVE_PROVIDER].provider_bases
     )
     assert expected_commutative_mro == (
         CATEGORY_SPECS_LIKE_COMMUTATIVE_PROVIDER,
@@ -461,9 +476,15 @@ def test_plugin_projects_structural_typeinfo_mros_from_manifest(
             provider,
             "builtins.object",
         )
+        assert tuple(base.type.fullname for base in baseline_decorated_info.bases) == (
+            "builtins.object",
+        )
         assert tuple(info.fullname for info in decorated_info.mro) == (
             *decorated_behavior_projections[provider].provider_mro,
             "builtins.object",
+        )
+        assert tuple(base.type.fullname for base in decorated_info.bases) == (
+            decorated_behavior_projections[provider].provider_bases
         )
 
     for provider_name in ("ElementMethods", "SubcategoryMethods", "MorphismMethods"):
@@ -485,9 +506,15 @@ def test_plugin_projects_structural_typeinfo_mros_from_manifest(
             provider,
             "builtins.object",
         )
+        assert tuple(base.type.fullname for base in baseline_role_info.bases) == (
+            "builtins.object",
+        )
         assert tuple(info.fullname for info in role_info.mro) == (
             *projections[provider].provider_mro,
             "builtins.object",
+        )
+        assert tuple(base.type.fullname for base in role_info.bases) == (
+            projections[provider].provider_bases
         )
 
     homsets_info = _nested_typeinfo(
@@ -504,9 +531,15 @@ def test_plugin_projects_structural_typeinfo_mros_from_manifest(
         *homset_projections[parent_provider].provider_mro,
         "builtins.object",
     )
+    assert tuple(base.type.fullname for base in parent_info.bases) == (
+        homset_projections[parent_provider].provider_bases
+    )
     assert tuple(info.fullname for info in element_info.mro) == (
         *homset_projections[element_provider].provider_mro,
         "builtins.object",
+    )
+    assert tuple(base.type.fullname for base in element_info.bases) == (
+        homset_projections[element_provider].provider_bases
     )
     refined_homsets_info = _nested_typeinfo(
         result,
@@ -532,6 +565,9 @@ def test_plugin_projects_structural_typeinfo_mros_from_manifest(
         REFINED_SHARED_HOMSET_PARENT_PROVIDER,
         "builtins.object",
     )
+    assert tuple(base.type.fullname for base in baseline_refined_parent_info.bases) == (
+        "builtins.object",
+    )
     assert refined_homset_mro == (
         REFINED_SHARED_HOMSET_PARENT_PROVIDER,
         SHARED_HOMSET_PARENT_PROVIDER,
@@ -540,6 +576,9 @@ def test_plugin_projects_structural_typeinfo_mros_from_manifest(
     assert tuple(info.fullname for info in refined_parent_info.mro) == (
         *refined_homset_mro,
         "builtins.object",
+    )
+    assert tuple(base.type.fullname for base in refined_parent_info.bases) == (
+        homset_projections[REFINED_SHARED_HOMSET_PARENT_PROVIDER].provider_bases
     )
 
     consumer_info = _nested_typeinfo(
@@ -560,10 +599,16 @@ def test_plugin_projects_structural_typeinfo_mros_from_manifest(
         consumer_provider,
         "builtins.object",
     )
+    assert tuple(base.type.fullname for base in baseline_consumer_info.bases) == (
+        "builtins.object",
+    )
     assert tuple(info.fullname for info in consumer_info.mro) == (
         consumer_provider,
         base_provider,
         "builtins.object",
+    )
+    assert tuple(base.type.fullname for base in consumer_info.bases) == (
+        cross_module_projections[consumer_provider].provider_bases
     )
 
 
