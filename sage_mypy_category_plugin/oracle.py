@@ -9,6 +9,15 @@ import logging
 from types import FunctionType
 from typing import Literal, Protocol, Self as TypingSelf, runtime_checkable
 
+try:
+    from typing_extensions import Self as _TypingExtSelf  # type: ignore[import-untyped]
+except ImportError:
+    _TypingExtSelf = None  # type: ignore[assignment,misc]
+
+_SELF_ANNOTATION_OBJECTS: frozenset[object] = frozenset(
+    obj for obj in (TypingSelf, _TypingExtSelf) if obj is not None
+)
+
 from pydantic import BaseModel, ConfigDict
 
 import sage.all  # type: ignore[import-untyped] # noqa: F401
@@ -748,8 +757,25 @@ def _direct_provider_function_or_none(member: object) -> FunctionType | None:
 
 
 def _returns_typing_self(function: FunctionType) -> bool:
+    """Return True if the function's return annotation is typing.Self or typing_extensions.Self.
+
+    Three forms are recognised:
+
+    - The string ``"Self"`` — produced by ``from __future__ import annotations``
+      (PEP 563) or an explicit forward-reference string.  This covers both
+      ``typing.Self`` and ``typing_extensions.Self`` regardless of which module
+      the caller imported from, since PEP 563 erases the module.
+    - The actual ``typing.Self`` special form object (Python ≥ 3.11).
+    - The actual ``typing_extensions.Self`` special form object (any Python
+      version supported by ``typing_extensions``).
+
+    Fully-qualified string forms (``"typing.Self"``, ``"typing_extensions.Self"``)
+    are deliberately not handled: no Sage category provider uses them in practice,
+    and their introduction into Sage's codebase would require an explicit migration
+    at that point.
+    """
     return_annotation = signature(function).return_annotation
-    return return_annotation == "Self" or return_annotation is TypingSelf
+    return return_annotation == "Self" or return_annotation in _SELF_ANNOTATION_OBJECTS
 
 
 def _runtime_named_class(
