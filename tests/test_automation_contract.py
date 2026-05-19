@@ -239,9 +239,9 @@ def test_consumer_mypy_uses_generated_stubs_without_hiding_sources(
         },
     )
 
-    assert result.returncode == 0, result.stdout + result.stderr
-    # Generated runtime aliases (via _sage_category_types.pyi) are Any-typed
-    # so the alias import no longer produces type errors. Confirm no crash.
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "category_specs/example.py" in result.stdout
+    assert "Incompatible return value type" in result.stdout
     assert "_sage_category_types" not in result.stdout
 
 
@@ -345,7 +345,8 @@ def test_consumer_mypy_accepts_explicit_consumer_target(tmp_path: Path) -> None:
         },
     )
 
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "category_specs/example.py" in result.stdout
     assert "category_specs/unrelated.py" not in result.stdout
 
 

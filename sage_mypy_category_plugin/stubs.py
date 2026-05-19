@@ -91,7 +91,10 @@ def generated_stub_sources(
             stub_order=stub_order,
         )
         for module_name, tree in sorted(module_trees.items())
-        if not _is_preserved_source_module(module_name, preserved_prefixes)
+        if (
+            not _is_preserved_source_module(module_name, preserved_prefixes)
+            or module_name in untyped_external_only_modules
+        )
     }
     for relative_path, suffix in MODULE_STUB_SUFFIXES.items():
         if relative_path in stub_sources:
@@ -100,7 +103,6 @@ def generated_stub_sources(
         manifest,
         source_modules=source_modules,
     )
-    stub_sources.update(static_stub_sources())
     return dict(sorted(stub_sources.items()))
 
 
@@ -127,6 +129,34 @@ def write_generated_stub_tree(
             source_module_index_by_module[record.module] = len(source_modules)
             source_modules.append(record)
             declared_source_modules.add(record.module)
+
+    # Write static stubs FIRST so generated stubs can override them for
+    # untyped_external classes (which need shell stubs, not rich signatures).
+    for relative_path, source in static_stub_sources().items():
+        path = output_root / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source)
+        if relative_path.name == "__init__.pyi":
+            continue
+        source_bytes = path.read_bytes()
+        source_stat = path.stat()
+        module_name = ".".join(relative_path.with_suffix("").parts)
+        record = SourceModuleRecord(
+            module=module_name,
+            path=str(path),
+            sha256=sha256(source_bytes).hexdigest(),
+            mtime_ns=source_stat.st_mtime_ns,
+        )
+        existing_index = source_module_index_by_module.get(module_name)
+        if existing_index is None:
+            source_module_index_by_module[module_name] = len(source_modules)
+            source_modules.append(record)
+        else:
+            source_modules[existing_index] = record
+        declared_source_modules.add(module_name)
+
+    # Write generated stubs SECOND so they override static stubs for any module
+    # that has untyped_external classes (shell stubs take precedence).
     for relative_path, source in generated_stub_sources(
         manifest,
         preserved_source_module_prefixes=preserved_prefixes,
@@ -158,28 +188,6 @@ def write_generated_stub_tree(
             continue
         source_module_index_by_module[module_name] = len(source_modules)
         source_modules.append(original_source_module_by_module[module_name])
-        declared_source_modules.add(module_name)
-    for relative_path, source in static_stub_sources().items():
-        path = output_root / relative_path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(source)
-        if relative_path.name == "__init__.pyi":
-            continue
-        source_bytes = path.read_bytes()
-        source_stat = path.stat()
-        module_name = ".".join(relative_path.with_suffix("").parts)
-        record = SourceModuleRecord(
-            module=module_name,
-            path=str(path),
-            sha256=sha256(source_bytes).hexdigest(),
-            mtime_ns=source_stat.st_mtime_ns,
-        )
-        existing_index = source_module_index_by_module.get(module_name)
-        if existing_index is None:
-            source_module_index_by_module[module_name] = len(source_modules)
-            source_modules.append(record)
-        else:
-            source_modules[existing_index] = record
         declared_source_modules.add(module_name)
     return tuple(source_modules)
 
@@ -326,22 +334,17 @@ def _stub_class_bases(
     *,
     source_modules: tuple[str, ...],
 ) -> ClassBaseMap:
-    class_bases: ClassBaseMap = {
-        _source_module_and_qualname(
-            projection.provider,
-            source_modules=source_modules,
-        ): projection.provider_bases
-        for projection in manifest.projections
-        if projection.provider_bases
-    }
-    class_bases.update({
+    # Provider bases are injected at analysis time by the plugin — they must
+    # not appear in generated stubs, or without-plugin runs would see them and
+    # not raise [attr-defined] for methods that come from the injected MRO.
+    # Only concrete_parent bases (runtime alias → provider MRO) go into stubs.
+    return {
         _source_module_and_qualname(
             concrete_parent.concrete_class,
             source_modules=source_modules,
         ): concrete_parent.parent_provider_mro
         for concrete_parent in manifest.concrete_parents
-    })
-    return class_bases
+    }
 
 
 def _runtime_alias_stub_source(

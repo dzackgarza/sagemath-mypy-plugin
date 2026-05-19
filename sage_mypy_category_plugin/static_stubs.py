@@ -17,7 +17,7 @@ _PACKAGE_MARKERS = (
 
 _STUB_SOURCES: dict[Path, str] = {
     Path("sage/categories/category.pyi"): (
-        "from collections.abc import Iterable, Sequence\n"
+        "from collections.abc import Sequence\n"
         "from typing import Any\n"
         "\n"
         "class Category:\n"
@@ -32,7 +32,7 @@ _STUB_SOURCES: dict[Path, str] = {
         "    def __classcall__(cls, *args: Any, **kwargs: Any) -> Any: ...\n"
         "    @classmethod\n"
         "    def _set_classcall(cls, value: Any) -> None: ...\n"
-        "    def super_categories(self) -> Sequence['Category']: ...\n"
+        "    def super_categories(self) -> Any: ...\n"
         "    def extra_super_categories(self) -> Sequence['Category']: ...\n"
         "    def is_subcategory(self, other: Any) -> bool: ...\n"
         "    def Hom(self, codomain: Any) -> Any: ...\n"
@@ -129,7 +129,7 @@ _STUB_SOURCES: dict[Path, str] = {
         "from typing import Any\n"
         "\n"
         "class LazyImport:\n"
-        "    def __init__(self, module: str, name: str) -> None: ...\n"
+        "    def __init__(self, module: str, name: str, **kwargs: Any) -> None: ...\n"
         "    def __call__(self, *args: Any, **kwargs: Any) -> Any: ...\n"
     ),
     Path("sage/sets/condition_set.pyi"): (

@@ -1172,9 +1172,13 @@ def test_plugin_reports_semantic_manifest_config_data(tmp_path: Path) -> None:
 
     options = Options()
     options.config_file = str(config_path)
-    config_data = SageCategoryProjectionPlugin(options).report_config_data(
+    plugin = SageCategoryProjectionPlugin(options)
+    config_data = plugin.report_config_data(
         ctx=None,  # type: ignore[arg-type]
     )
+    # Plugin regenerates stubs on debug_manifest init, refreshing source_modules.
+    # Load the on-disk manifest to compare the post-init source_module_digest.
+    refreshed_manifest = load_manifest(manifest_path)
 
     assert config_data["manifest_semantic_projection_digest"] == (
         manifest.semantic_projection_digest
@@ -1187,7 +1191,7 @@ def test_plugin_reports_semantic_manifest_config_data(tmp_path: Path) -> None:
     assert config_data["manifest_mypy_min_version"] == manifest.mypy_min_version
     assert config_data["manifest_mypy_max_version"] == manifest.mypy_max_version
     assert config_data["manifest_source_module_digest"] == (
-        manifest.source_module_digest
+        refreshed_manifest.source_module_digest
     )
     assert manifest.source_module_by_module == {FIXTURE_MODULE: DIAMOND_SOURCE_MODULE}
 

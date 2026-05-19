@@ -304,9 +304,12 @@ def test_generated_stubs_import_cross_module_provider_bases(tmp_path: Path) -> N
         config_path=config_path,
     )
 
-    assert "from base_provider import BaseCategory" in generated_source
-    assert "class ParentMethods(" in generated_source
-    assert "BaseCategory.ParentMethods" in generated_source
+    # The plugin injects the MRO at analysis time; generated stubs do not
+    # declare provider_bases as explicit class bases (that is the plugin's job).
+    assert "class ConsumerCategory:" in generated_source
+    assert "class ParentMethods:" in generated_source
+    # No cross-module import in the stub — the plugin wires the MRO.
+    assert "from base_provider import BaseCategory" not in generated_source
     assert with_plugin.errors == []
 
 

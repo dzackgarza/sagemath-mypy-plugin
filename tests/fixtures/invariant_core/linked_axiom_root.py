@@ -16,7 +16,7 @@ class LinkedAxiomRootCategory(LocalCategoryBase):
             return 4
 
 
-LinkedAxiomRootCategory.Finite = LazyImport(
+LinkedAxiomRootCategory.Finite = LazyImport(  # type: ignore[attr-defined]
     "tests.fixtures.invariant_core.linked_axiom_finite",
     "LinkedFiniteAxiomCategory",
     as_name="Finite",
