@@ -26,6 +26,12 @@ FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "invariant_core"
 REAL_CATEGORIES_ROOT = REPO_ROOT / "tests" / "real_categories"
 FINITE_SMALL_GROUPS_VALID = "tests.real_categories.finite_small_groups_valid"
 FINITE_SMALL_GROUPS_INVALID = "tests.real_categories.finite_small_groups_invalid"
+FINITE_SMALL_GROUPS_SIGNATURE_MISMATCH = (
+    "tests.real_categories.finite_small_groups_signature_mismatch"
+)
+FINITE_SMALL_GROUPS_MISSING_EXPLICIT_OVERRIDE = (
+    "tests.real_categories.finite_small_groups_missing_explicit_override"
+)
 FINITE_POSETS_MODULE = "tests.real_categories.finite_posets"
 BASE_CATEGORY_FULLNAMES = (
     "tests.fixtures.invariant_core.diamond_runtime.TopCategory",
@@ -313,21 +319,29 @@ def test_packages_config_behavior_matrix_end_to_end(tmp_path: Path) -> None:
 def test_real_sage_category_behavior_matrix_uses_standard_mypy_rules(
     tmp_path: Path,
 ) -> None:
-    """Phase 3 P3: real mathematical Sage categories satisfy the 4-cell behavioral conjunction.
+    """Phase 3 P3 + Phase 4: real Sage categories satisfy the full behavioral conjunction.
 
     Uses real Sage categories (FiniteGroupsOfOrderLessThanTwenty subclassing
     Groups().Finite()) — not synthetic LocalCategoryBase fixtures.  This proves
     the plugin correctly projects real Sage runtime provider MROs, not just the
-    synthetic diamond graph.
+    synthetic diamond graph, and that all standard mypy inheritance rules fire
+    correctly when the provider MRO is visible.
 
     The stub_root is pre-declared in mypy_path before build() so that the Sage
     system provider stubs (generated during plugin.__init__) are visible when
     mypy resolves the provider TypeInfos.
 
-      plugin off + valid code   → "no base method was found" (real Sage provider invisible)
-      plugin on  + valid code   → no errors (plugin projects runtime provider MRO)
-      plugin off + invalid code → "no base method was found"
-      plugin on  + invalid code → "no base method was found" (mypy still enforces @override)
+    6-cell behavioral conjunction:
+      plugin off + valid code                   → "no base method was found"
+      plugin on  + valid code                   → no errors
+      plugin off + invalid code (@override DNE) → "no base method was found"
+      plugin on  + invalid code                 → "no base method was found"
+      plugin on  + @final violation             → "Cannot override final attribute"
+      plugin off + @final violation             → no errors (parent invisible)
+      plugin on  + signature mismatch           → [override] signature error
+      plugin off + signature mismatch           → "no base method was found"
+      plugin on  + missing @override decorator  → [explicit-override]
+      plugin off + missing @override decorator  → no errors (parent invisible)
     """
     cache_dir = tmp_path / "sage-category-cache"
     # The stub root must be declared in mypy_path BEFORE build() is called so
@@ -357,12 +371,22 @@ def test_real_sage_category_behavior_matrix_uses_standard_mypy_rules(
     valid_path = REAL_CATEGORIES_ROOT / "finite_small_groups_valid.py"
     invalid_path = REAL_CATEGORIES_ROOT / "finite_small_groups_invalid.py"
     final_path = REAL_CATEGORIES_ROOT / "finite_small_groups_final_violation.py"
+    sig_mismatch_path = REAL_CATEGORIES_ROOT / "finite_small_groups_signature_mismatch.py"
+    missing_override_path = (
+        REAL_CATEGORIES_ROOT / "finite_small_groups_missing_explicit_override.py"
+    )
     sources = (
         BuildSource(str(valid_path), FINITE_SMALL_GROUPS_VALID, None),
         BuildSource(str(invalid_path), FINITE_SMALL_GROUPS_INVALID, None),
         BuildSource(
             str(final_path),
             "tests.real_categories.finite_small_groups_final_violation",
+            None,
+        ),
+        BuildSource(str(sig_mismatch_path), FINITE_SMALL_GROUPS_SIGNATURE_MISMATCH, None),
+        BuildSource(
+            str(missing_override_path),
+            FINITE_SMALL_GROUPS_MISSING_EXPLICIT_OVERRIDE,
             None,
         ),
     )
@@ -378,15 +402,22 @@ def test_real_sage_category_behavior_matrix_uses_standard_mypy_rules(
         tmp_path,
     )
 
-    valid_fn = valid_path.name   # "finite_small_groups_valid.py"
-    invalid_fn = invalid_path.name  # "finite_small_groups_invalid.py"
-    final_fn = final_path.name   # "finite_small_groups_final_violation.py"
+    valid_fn = valid_path.name           # "finite_small_groups_valid.py"
+    invalid_fn = invalid_path.name       # "finite_small_groups_invalid.py"
+    final_fn = final_path.name           # "finite_small_groups_final_violation.py"
+    sig_fn = sig_mismatch_path.name      # "finite_small_groups_signature_mismatch.py"
+    missing_fn = missing_override_path.name  # "finite_small_groups_missing_explicit_override.py"
+
     valid_errors = tuple(e for e in with_plugin.errors if valid_fn in e)
     invalid_errors_on = tuple(e for e in with_plugin.errors if invalid_fn in e)
     valid_errors_off = tuple(e for e in without_plugin.errors if valid_fn in e)
     invalid_errors_off = tuple(e for e in without_plugin.errors if invalid_fn in e)
     final_errors_on = tuple(e for e in with_plugin.errors if final_fn in e)
     final_errors_off = tuple(e for e in without_plugin.errors if final_fn in e)
+    sig_errors_on = tuple(e for e in with_plugin.errors if sig_fn in e)
+    sig_errors_off = tuple(e for e in without_plugin.errors if sig_fn in e)
+    missing_errors_on = tuple(e for e in with_plugin.errors if missing_fn in e)
+    missing_errors_off = tuple(e for e in without_plugin.errors if missing_fn in e)
 
     # Plugin on + valid: no errors (provider MRO projected, @override resolves)
     assert not valid_errors, (
@@ -396,11 +427,13 @@ def test_real_sage_category_behavior_matrix_uses_standard_mypy_rules(
     assert any("no base method was found" in e for e in valid_errors_off), (
         "Expected valid code to fail without plugin (real Sage provider MRO invisible)"
     )
+
     # Plugin on + invalid (nonexistent method @override): still fails
     assert any("no base method was found" in e for e in invalid_errors_on), (
         "Expected invalid @override to still fail with plugin on"
     )
     assert any("no base method was found" in e for e in invalid_errors_off)
+
     # Plugin on + @final violation: mypy catches the final override because it
     # sees KleinFourGroups.ParentMethods as the actual base via MRO projection
     assert any("Cannot override final attribute" in e for e in final_errors_on), (
@@ -410,6 +443,27 @@ def test_real_sage_category_behavior_matrix_uses_standard_mypy_rules(
     # KleinFourGroups.ParentMethods as a base — the method is just a new definition
     assert not final_errors_off, (
         f"Expected no errors without plugin (parent MRO invisible); got: {final_errors_off}"
+    )
+
+    # Phase 4: Plugin on + signature mismatch: mypy enforces return-type compatibility
+    # has_even_order() -> str is not a subtype of bool → [override]
+    assert any("[override]" in e for e in sig_errors_on), (
+        f"Expected [override] signature error with plugin on; got: {sig_errors_on}"
+    )
+    # Plugin off + signature mismatch: parent invisible → "no base method was found"
+    assert any("no base method was found" in e for e in sig_errors_off), (
+        "Expected signature mismatch to fail differently without plugin "
+        f"(no base method); got: {sig_errors_off}"
+    )
+
+    # Phase 4: Plugin on + missing @override decorator: [explicit-override] triggered
+    # order() overrides parent method but has no @override → explicit-override error
+    assert any("[explicit-override]" in e for e in missing_errors_on), (
+        f"Expected [explicit-override] with plugin on; got: {missing_errors_on}"
+    )
+    # Plugin off + missing @override: parent invisible → no error (looks like new method)
+    assert not missing_errors_off, (
+        f"Expected no errors without plugin (parent invisible); got: {missing_errors_off}"
     )
 
 
