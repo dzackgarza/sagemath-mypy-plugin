@@ -765,6 +765,206 @@ def test_renamed_consumer_package_behavioral_invariant_holds(tmp_path: Path) -> 
     assert any("no base method was found" in e for e in invalid_errors_off)
 
 
+# ── Phase 8: Mutation tests ─────────────────────────────────────────────────
+
+
+def _ghost_provider_projection(ghost_provider: str) -> ProviderProjection:
+    """A schema-valid projection for a provider class that does not exist in Python.
+
+    The manifest schema requires closed-world consistency: every provider name
+    referenced in provider_bases or provider_mro must appear as a declared projection.
+    This helper creates such a declaration while leaving the class genuinely absent
+    from any importable Python module, so that mypy's TypeInfo lookup fails when the
+    plugin tries to apply the projection.  This exercises the _lookup_typeinfos
+    error path without violating the schema.
+
+    The ghost runtime_class uses the same naming convention (provider suffix →
+    parent_class suffix) but lives in the same nonexistent module, so it does not
+    pollute external_runtime_classes (unprojected_runtime_mro is empty).
+    """
+    ghost_runtime_class = ghost_provider.replace(".ParentMethods", ".parent_class")
+    return ProviderProjection(
+        provider=ghost_provider,
+        role="parent",
+        runtime_class=ghost_runtime_class,
+        runtime_bases=(),
+        runtime_mro=(ghost_runtime_class,),
+        provider_mro=(ghost_provider,),
+        provider_bases=(),
+        unprojected_runtime_mro=(),
+    )
+
+
+def test_false_provider_base_reference_is_detected_by_plugin(tmp_path: Path) -> None:
+    """Phase 8: manifest with a ghost provider_base → plugin reports missing symbol.
+
+    A valid projection manifest is augmented with a ghost ProviderProjection for a
+    class that does not exist in Python, then that ghost provider is added to the
+    provider_bases of BottomCategory.ParentMethods.
+
+    The manifest schema is satisfied (closed-world: every referenced provider is
+    declared).  But when mypy runs, the plugin tries to resolve the ghost's TypeInfo
+    via ctx.api.lookup_fully_qualified_or_none → returns None → plugin emits
+    "provider_bases references missing symbols" instead of silently skipping.
+
+    This proves there is no "ignore missing bases" fallback in _lookup_typeinfos.
+    """
+    category_fullnames = list(BASE_CATEGORY_FULLNAMES)
+    category_fullnames.extend(BEHAVIOR_CASES["valid"][1:])
+    projections: dict[str, ProviderProjection] = dict(
+        provider_projections_for_categories(
+            tuple(category_fullnames),
+            roles=("parent",),
+        )
+    )
+
+    # Add a ghost projection so the schema's closed-world reference check passes.
+    ghost_provider = "tests.fixtures.phantom.GhostCategory.ParentMethods"
+    projections[ghost_provider] = _ghost_provider_projection(ghost_provider)
+
+    # Inject the ghost into provider_bases and provider_mro of BottomCategory.
+    # The schema requires provider_bases ⊆ provider_mro[1:], so both must be updated.
+    bottom_provider = (
+        "tests.fixtures.invariant_core.diamond_runtime.BottomCategory.ParentMethods"
+    )
+    original = projections[bottom_provider]
+    projections[bottom_provider] = original.model_copy(
+        update={
+            "provider_bases": (*original.provider_bases, ghost_provider),
+            "provider_mro": (*original.provider_mro, ghost_provider),
+        }
+    )
+
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=tuple(projections.values()),
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            tuple(projections.values()),
+        ),
+    )
+    manifest_path = tmp_path / "corrupted-bases-manifest.json"
+    config_path = tmp_path / "mypy.ini"
+    write_manifest(manifest_path, manifest)
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "ignore_missing_imports = True",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+
+    # Include diamond_runtime as a root source so mypy does not silence its errors.
+    # Pytest adds the project root to sys.path (pythonpath = ["."]), which causes
+    # mypy to treat project files as site-packages and silence them unless they are
+    # root sources (follow_imports forces "normal" for root_source=True).
+    diamond_runtime_module = "tests.fixtures.invariant_core.diamond_runtime"
+    result = _run_mypy(
+        (BEHAVIOR_CASES["valid"][0], diamond_runtime_module),
+        config_path,
+        tmp_path,
+    )
+
+    # The plugin must report the missing TypeInfo rather than silently skip it
+    assert any(
+        "provider_bases references missing symbols" in e for e in result.errors
+    ), (
+        f"Expected 'provider_bases references missing symbols' error for ghost manifest; "
+        f"got: {result.errors}"
+    )
+
+
+def test_false_provider_mro_entry_is_detected_by_plugin(tmp_path: Path) -> None:
+    """Phase 8: manifest with a ghost provider_mro entry → plugin reports missing symbol.
+
+    A valid projection manifest is augmented with a ghost ProviderProjection for a
+    class that does not exist in Python, then that ghost provider is added to the
+    provider_mro of BottomCategory.ParentMethods (but NOT provider_bases, so the
+    bases check succeeds and the MRO check is reached).
+
+    The manifest schema is satisfied (closed-world).  But when mypy runs, the plugin
+    resolves provider_bases successfully, then tries to resolve provider_mro and fails
+    on the ghost → "provider_mro references missing symbols".
+
+    This proves there is no "skip unknown MRO entries" fallback in _lookup_typeinfos.
+    """
+    category_fullnames = list(BASE_CATEGORY_FULLNAMES)
+    category_fullnames.extend(BEHAVIOR_CASES["valid"][1:])
+    projections: dict[str, ProviderProjection] = dict(
+        provider_projections_for_categories(
+            tuple(category_fullnames),
+            roles=("parent",),
+        )
+    )
+
+    # Add a ghost projection so the schema's closed-world reference check passes.
+    ghost_provider = "tests.fixtures.phantom.GhostMroCategory.ParentMethods"
+    projections[ghost_provider] = _ghost_provider_projection(ghost_provider)
+
+    # Inject the ghost into provider_mro only (not provider_bases).
+    # The plugin checks bases first; since bases are unchanged, that check passes,
+    # and then the MRO lookup for the ghost fails.
+    bottom_provider = (
+        "tests.fixtures.invariant_core.diamond_runtime.BottomCategory.ParentMethods"
+    )
+    original = projections[bottom_provider]
+    projections[bottom_provider] = original.model_copy(
+        update={"provider_mro": (*original.provider_mro, ghost_provider)}
+    )
+
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=tuple(projections.values()),
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            tuple(projections.values()),
+        ),
+    )
+    manifest_path = tmp_path / "corrupted-mro-manifest.json"
+    config_path = tmp_path / "mypy.ini"
+    write_manifest(manifest_path, manifest)
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "ignore_missing_imports = True",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+
+    # Include diamond_runtime as a root source — see the provider_bases test for
+    # the full explanation of why this is required in the pytest environment.
+    diamond_runtime_module = "tests.fixtures.invariant_core.diamond_runtime"
+    result = _run_mypy(
+        (BEHAVIOR_CASES["valid"][0], diamond_runtime_module),
+        config_path,
+        tmp_path,
+    )
+
+    # The plugin must report the missing TypeInfo rather than silently skip it
+    assert any(
+        "provider_mro references missing symbols" in e for e in result.errors
+    ), (
+        f"Expected 'provider_mro references missing symbols' error for ghost manifest; "
+        f"got: {result.errors}"
+    )
+
+
 def _write_plugin_config(tmp_path: Path) -> Path:
     category_fullnames = list(BASE_CATEGORY_FULLNAMES)
     for case in BEHAVIOR_CASES.values():
