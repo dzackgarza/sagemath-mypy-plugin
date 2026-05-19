@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from configparser import ConfigParser
 from dataclasses import dataclass, field
 from hashlib import sha256
@@ -348,6 +349,18 @@ def _generate_and_cache(config: PluginConfig) -> tuple[ProjectionManifest, Path]
     )
     from sage_mypy_category_plugin.stubs import write_generated_stub_tree
 
+    cache_dir = _resolve_cache_dir(config)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = cache_dir / "projection-manifest.json"
+
+    # Phase 1B: attempt cache reuse before running expensive category discovery.
+    # _try_load_cached_manifest returns None and logs the reason on any miss.
+    if manifest_path.is_file():
+        cached = _try_load_cached_manifest(manifest_path)
+        if cached is not None:
+            return cached, manifest_path
+
+    # Full generation: discover categories, resolve projections, write stubs.
     category_fullnames = discover_category_fullnames(config.packages)
     if not category_fullnames:
         raise CompileError(
@@ -362,10 +375,6 @@ def _generate_and_cache(config: PluginConfig) -> tuple[ProjectionManifest, Path]
         roles=config.roles,
     )
 
-    # Generate stubs into manifest-relative directory
-    cache_dir = _resolve_cache_dir(config)
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    manifest_path = cache_dir / "projection-manifest.json"
     stub_root = _stub_root_for_manifest(manifest_path)
 
     stub_source_modules = write_generated_stub_tree(
@@ -523,29 +532,71 @@ def _format_validation_error(error: ValidationError) -> str:
 def _validate_source_module_metadata(
     source_modules: tuple[SourceModuleRecord, ...],
 ) -> None:
+    """Raise CompileError if any source module record is stale or missing."""
+    reason = _source_modules_stale_reason(source_modules)
+    if reason is not None:
+        raise CompileError([reason])
+
+
+def _source_modules_stale_reason(
+    source_modules: tuple[SourceModuleRecord, ...],
+) -> str | None:
+    """Return a diagnostic string if any source module is stale, or None if all are fresh."""
     for record in source_modules:
         path = Path(record.path)
         if not path.is_file():
-            raise CompileError(
-                [
-                    "Stale Sage category source module metadata for "
-                    f"{record.module}: file is missing"
-                ]
+            return (
+                f"Stale Sage category source module metadata for "
+                f"{record.module}: file is missing"
+            )
+        current_mtime = path.stat().st_mtime_ns
+        if current_mtime != record.mtime_ns:
+            return (
+                f"Stale Sage category source module metadata for "
+                f"{record.module}: mtime_ns mismatch "
+                f"({record.mtime_ns} → {current_mtime})"
             )
         if sha256(path.read_bytes()).hexdigest() != record.sha256:
-            raise CompileError(
-                [
-                    "Stale Sage category source module metadata for "
-                    f"{record.module}: sha256 mismatch"
-                ]
+            return (
+                f"Stale Sage category source module metadata for "
+                f"{record.module}: sha256 mismatch"
             )
-        if path.stat().st_mtime_ns != record.mtime_ns:
-            raise CompileError(
-                [
-                    "Stale Sage category source module metadata for "
-                    f"{record.module}: mtime_ns mismatch"
-                ]
-            )
+    return None
+
+
+def _try_load_cached_manifest(manifest_path: Path) -> ProjectionManifest | None:
+    """Load and validate a cached manifest; return None (with stderr logging) on any miss.
+
+    A cache miss is not an error — it means generation must be re-run.  The
+    reason is logged to stderr so users can see why regeneration occurred.
+    """
+    try:
+        cached = load_manifest(manifest_path)
+    except ValidationError as error:
+        print(
+            f"[sage-mypy-plugin] corrupt manifest {manifest_path}: "
+            f"{_format_validation_error(error)} — regenerating",
+            file=sys.stderr,
+        )
+        return None
+    except OSError as error:
+        print(
+            f"[sage-mypy-plugin] cannot read manifest {manifest_path}: "
+            f"{error} — regenerating",
+            file=sys.stderr,
+        )
+        return None
+
+    stale_reason = _source_modules_stale_reason(cached.source_modules)
+    if stale_reason is not None:
+        print(
+            f"[sage-mypy-plugin] stale manifest {manifest_path}: "
+            f"{stale_reason} — regenerating",
+            file=sys.stderr,
+        )
+        return None
+
+    return cached
 
 
 def _provider_module(

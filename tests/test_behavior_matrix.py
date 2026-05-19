@@ -12,6 +12,7 @@ from mypy.options import Options
 from sage_mypy_category_plugin.manifest import (
     ProjectionManifest,
     SourceModuleRecord,
+    load_manifest,
     write_manifest,
 )
 from sage_mypy_category_plugin.oracle import provider_projections_for_categories
@@ -474,6 +475,155 @@ def test_real_sage_category_identical_method_names_are_projected_independently(
     # GroupsOfOrderFour.order() still overrides correctly (groups chain)
     assert not groups_errors, (
         f"Expected no errors for finite_small_groups with plugin; got: {groups_errors}"
+    )
+
+
+def test_cached_run_reuses_manifest_without_regenerating(tmp_path: Path) -> None:
+    """Phase 7 E2: second plugin run with valid cache reuses manifest without regenerating.
+
+    Proves cache reuse: _generate_and_cache returns early (no disk write) when
+    all source module sha256/mtime records are still fresh.  The manifest file
+    content is identical after the second run.
+
+      run 1: cold cache → manifest generated, written to disk
+      run 2: warm cache → manifest reused, NOT rewritten to disk
+      invariant: sha256(manifest_path) is unchanged after run 2
+    """
+    cache_dir = tmp_path / "sage-category-cache"
+    config_path = tmp_path / "mypy.ini"
+    valid_module = BEHAVIOR_CASES["valid"][0]
+    invalid_module = BEHAVIOR_CASES["invalid"][0]
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "ignore_missing_imports = True",
+                "",
+                "[sage-mypy-category-plugin]",
+                "packages =",
+                "    tests.fixtures.invariant_core.diamond_runtime",
+                f"    {valid_module}",
+                f"    {invalid_module}",
+                "roles = parent",
+                f"cache_dir = {cache_dir}",
+                "",
+            )
+        )
+    )
+
+    modules = (valid_module, invalid_module)
+    manifest_path = cache_dir / "projection-manifest.json"
+
+    # First run: cold cache — plugin generates and writes manifest
+    _run_mypy(modules, config_path, tmp_path)
+    assert manifest_path.is_file(), "manifest not generated on first (cold) run"
+    digest_after_run1 = sha256(manifest_path.read_bytes()).hexdigest()
+
+    # Second run: warm cache — plugin reuses manifest without rewriting
+    _run_mypy(modules, config_path, tmp_path)
+    digest_after_run2 = sha256(manifest_path.read_bytes()).hexdigest()
+
+    # Manifest file content is unchanged: cache was reused, not regenerated
+    assert digest_after_run2 == digest_after_run1, (
+        "manifest was rewritten on second run even though source modules are unchanged; "
+        "cache reuse logic did not fire"
+    )
+
+
+def test_stale_source_module_triggers_cache_regeneration(tmp_path: Path) -> None:
+    """Phase 7 E3: stale source module metadata forces cache regeneration.
+
+    After generating the manifest, corrupting a source module's sha256 (simulating
+    a source mutation that changed the file's content) causes the plugin to discard
+    the cached manifest and regenerate it on the next run.
+
+    This proves _source_modules_stale_reason correctly detects metadata mismatches,
+    that _try_load_cached_manifest returns None on a stale manifest, and that full
+    re-generation records fresh sha256 values — exactly as would happen if the
+    developer edited a category source file.
+
+      run 1: cold cache → manifest generated with correct source sha256 values
+      corrupt: write wrong sha256 for one local source module record
+      run 2: stale manifest detected → discarded → manifest fully regenerated
+      invariant: regenerated manifest has the CORRECT sha256 for that source module
+    """
+    cache_dir = tmp_path / "sage-category-cache"
+    config_path = tmp_path / "mypy.ini"
+    valid_module = BEHAVIOR_CASES["valid"][0]
+    invalid_module = BEHAVIOR_CASES["invalid"][0]
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "ignore_missing_imports = True",
+                "",
+                "[sage-mypy-category-plugin]",
+                "packages =",
+                "    tests.fixtures.invariant_core.diamond_runtime",
+                f"    {valid_module}",
+                f"    {invalid_module}",
+                "roles = parent",
+                f"cache_dir = {cache_dir}",
+                "",
+            )
+        )
+    )
+
+    modules = (valid_module, invalid_module)
+    manifest_path = cache_dir / "projection-manifest.json"
+
+    # First run: cold cache → generates manifest with correct source module metadata
+    _run_mypy(modules, config_path, tmp_path)
+    assert manifest_path.is_file(), "manifest not generated on first (cold) run"
+
+    # Load the manifest and find a local test-fixture source module to corrupt
+    original_manifest = load_manifest(manifest_path)
+    local_record = next(
+        record for record in original_manifest.source_modules if "tests" in record.module
+    )
+    actual_sha256 = sha256(Path(local_record.path).read_bytes()).hexdigest()
+    assert local_record.sha256 == actual_sha256, (
+        "pre-condition: manifest sha256 should match actual file on first run"
+    )
+
+    # Corrupt that record's sha256 — simulates the source file having been edited
+    wrong_sha256 = "deadbeef" * 8
+    assert wrong_sha256 != actual_sha256, "chosen corruption value must differ from actual"
+    corrupted_records = tuple(
+        record.model_copy(update={"sha256": wrong_sha256})
+        if record.module == local_record.module
+        else record
+        for record in original_manifest.source_modules
+    )
+    corrupted_manifest = original_manifest.model_copy(
+        update={"source_modules": corrupted_records}
+    )
+    write_manifest(manifest_path, corrupted_manifest)
+    corrupted_digest = sha256(manifest_path.read_bytes()).hexdigest()
+
+    # Second run: plugin detects sha256 mismatch → discards corrupted manifest → regenerates
+    _run_mypy(modules, config_path, tmp_path)
+
+    regenerated_digest = sha256(manifest_path.read_bytes()).hexdigest()
+
+    # The corrupted manifest was replaced: digest no longer matches the corrupted file
+    assert regenerated_digest != corrupted_digest, (
+        "plugin did not regenerate manifest after source module sha256 mismatch; "
+        "corrupted manifest was silently accepted"
+    )
+
+    # The regenerated manifest records the CORRECT sha256 for the source module
+    regenerated_manifest = load_manifest(manifest_path)
+    regenerated_record = next(
+        r for r in regenerated_manifest.source_modules
+        if r.module == local_record.module
+    )
+    regenerated_sha256 = sha256(Path(regenerated_record.path).read_bytes()).hexdigest()
+    assert regenerated_record.sha256 == regenerated_sha256, (
+        f"regenerated manifest has wrong sha256 for {local_record.module}: "
+        f"expected {regenerated_sha256!r}, got {regenerated_record.sha256!r}"
     )
 
 
