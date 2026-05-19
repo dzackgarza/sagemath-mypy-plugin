@@ -21,6 +21,7 @@ from sage_mypy_category_plugin.projection import (
     ProviderMethodRecord,
     ProviderProjection,
     ProviderRole,
+    roles_share_projection,
 )
 
 
@@ -129,13 +130,16 @@ def provider_projections_for_categories(
             for role in roles:
                 projection = _provider_projection(category, role)
                 if projection is not None:
-                    projections[projection.provider] = projection
+                    _record_provider_projection(projections, projection)
         for (role, provider), runtime_class in _RUNTIME_CLASS_BY_PROVIDER_ROLE.items():
             if provider not in projections:
-                projections[provider] = _provider_projection_from_runtime_class(
-                    role=role,
-                    provider=provider,
-                    runtime_class=runtime_class,
+                _record_provider_projection(
+                    projections,
+                    _provider_projection_from_runtime_class(
+                        role=role,
+                        provider=provider,
+                        runtime_class=runtime_class,
+                    ),
                 )
         return projections
 
@@ -164,6 +168,38 @@ def concrete_parent_records_for_factories(
 
 def named_class_traces() -> tuple[NamedClassTrace, ...]:
     return tuple(_NAMED_CLASS_TRACES_BY_PROVIDER.values())
+
+
+def _record_provider_projection(
+    projections: dict[str, ProviderProjection],
+    projection: ProviderProjection,
+) -> None:
+    existing = projections.get(projection.provider)
+    if existing is None:
+        projections[projection.provider] = projection
+        return
+
+    assert _provider_projections_share_typeinfo(existing, projection), (
+        "Conflicting provider projections for "
+        f"{projection.provider}: "
+        f"{existing.role} -> {existing.runtime_class} vs "
+        f"{projection.role} -> {projection.runtime_class}"
+    )
+
+
+def _provider_projections_share_typeinfo(
+    left: ProviderProjection,
+    right: ProviderProjection,
+) -> bool:
+    return (
+        roles_share_projection(left.role, right.role)
+        and left.runtime_class == right.runtime_class
+        and left.runtime_bases == right.runtime_bases
+        and left.runtime_mro == right.runtime_mro
+        and left.provider_bases == right.provider_bases
+        and left.provider_mro == right.provider_mro
+        and left.unprojected_runtime_mro == right.unprojected_runtime_mro
+    )
 
 
 def provider_method_records_for_projections(

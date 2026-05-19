@@ -13,6 +13,18 @@ ProviderRole = Literal[
     "homset_element",
 ]
 ProviderMethodReturnType = Literal["Self", "object"]
+ROLE_PROJECTION_ALIASES: frozenset[frozenset[ProviderRole]] = frozenset(
+    (
+        frozenset(("parent", "homset_parent")),
+        frozenset(("element", "homset_element")),
+    )
+)
+
+
+def roles_share_projection(left: ProviderRole, right: ProviderRole) -> bool:
+    if left == right:
+        return True
+    return frozenset((left, right)) in ROLE_PROJECTION_ALIASES
 
 
 def validate_dotted_name(
@@ -127,4 +139,5 @@ __all__ = [
     "ProviderMethodRecord",
     "ProviderProjection",
     "ProviderRole",
+    "roles_share_projection",
 ]

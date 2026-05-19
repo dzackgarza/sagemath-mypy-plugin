@@ -24,6 +24,7 @@ from sage_mypy_category_plugin.projection import (
     ProviderMethodRecord,
     ProviderProjection,
     ProviderRole,
+    roles_share_projection,
     validate_dotted_fullname,
     validate_dotted_fullnames,
     validate_module_name,
@@ -315,8 +316,13 @@ class ProjectionManifest(BaseModel):
                     "named class trace has no matching provider projection",
                     {"provider": named_class.provider, "field": "provider"},
                 )
+            if not roles_share_projection(named_class.role, projection.role):
+                raise PydanticCustomError(
+                    "named_class_projection_mismatch",
+                    "named class trace disagrees with provider projection",
+                    {"provider": named_class.provider, "field": "role"},
+                )
             for field_name, traced_value, projected_value in (
-                ("role", named_class.role, projection.role),
                 ("runtime_class", named_class.runtime_class, projection.runtime_class),
                 ("runtime_bases", named_class.runtime_bases, projection.runtime_bases),
                 ("runtime_mro", named_class.runtime_mro, projection.runtime_mro),

@@ -95,6 +95,19 @@ def test_projection_skips_inherited_homsets_subcategory_provider() -> None:
     assert "sage.categories.homsets.Homsets.SubcategoryMethods" not in projections
 
 
+def test_projection_rejects_shared_provider_with_conflicting_runtime_mros() -> None:
+    with pytest.raises(AssertionError):
+        provider_projections_for_categories(
+            (
+                "tests.fixtures.invariant_core.provider_conflict."
+                "SharedProviderTopCategory",
+                "tests.fixtures.invariant_core.provider_conflict."
+                "SharedProviderBottomCategory",
+            ),
+            roles=("parent",),
+        )
+
+
 def test_diamond_parent_projection_matches_sage_runtime_mro() -> None:
     assert BottomCategory.__bases__ == (LocalCategoryBase,)
 

@@ -527,6 +527,17 @@ def test_manifest_rejects_malformed_named_class_fullnames(
     )
 
 
+def test_manifest_accepts_named_class_trace_role_alias_when_projection_matches() -> None:
+    payload = _manifest_payload()
+    named_class_record = _named_class_record().model_dump(mode="json")
+    named_class_record["role"] = "homset_parent"
+    payload["named_classes"] = [named_class_record]
+
+    manifest = ProjectionManifest.model_validate(payload)
+
+    assert manifest.named_classes[0].role == "homset_parent"
+
+
 @pytest.mark.parametrize(
     ("mutation", "expected_field"),
     (
