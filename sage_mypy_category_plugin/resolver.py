@@ -58,6 +58,8 @@ def resolve_projection_manifest(
         category_fullnames,
         roles=roles,
     )
+    projection_providers = frozenset(projections)
+
     concrete_parent_records, concrete_parent_projections = (
         concrete_parent_records_and_provider_projections_for_factories(
             concrete_parent_fullnames

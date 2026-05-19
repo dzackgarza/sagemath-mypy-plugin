@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from importlib import import_module
 from inspect import signature
+import logging
 from types import FunctionType
 from typing import Literal, Protocol, Self as TypingSelf, runtime_checkable
 
@@ -52,6 +53,9 @@ class RoleProjection(BaseModel):
     runtime_attr: str
     provider_attr: str
     category_attr: str | None = None
+
+
+_logger = logging.getLogger(__name__)
 
 
 ROLE_PROJECTIONS: Mapping[ProviderRole, RoleProjection] = {
@@ -140,9 +144,28 @@ def provider_projections_for_categories(
     with _trace_make_named_class(roles=roles):
         projections: dict[str, ProviderProjection] = {}
         for category_fullname in category_fullnames:
-            category = _import_category(category_fullname)
+            try:
+                category = _import_category(category_fullname)
+            except (AttributeError, TypeError, ValueError, AssertionError) as exc:
+                _logger.debug(
+                    "Skipping %r — import failed: %s",
+                    category_fullname,
+                    exc,
+                    exc_info=True,
+                )
+                continue
             for role in roles:
-                projection = _provider_projection(category, role)
+                try:
+                    projection = _provider_projection(category, role)
+                except (AttributeError, TypeError, ValueError, AssertionError) as exc:
+                    _logger.debug(
+                        "Skipping %r role=%r: %s",
+                        category_fullname,
+                        role,
+                        exc,
+                        exc_info=True,
+                    )
+                    continue
                 if projection is not None:
                     _record_provider_projection(projections, projection)
         projections = _supported_provider_projections(projections)
@@ -179,6 +202,30 @@ def _supported_provider_projections(
         for provider, projection in projections.items()
         if not _is_unsupported_provider(projection.role, provider)
     }
+
+
+def _projections_with_resolved_bases(
+    projections: dict[str, ProviderProjection],
+) -> dict[str, ProviderProjection]:
+    """Filter to only projections whose provider_bases and provider_mro
+    elements are all present as projection keys.
+
+    When consumer categories raise exceptions during introspection, they
+    are skipped. Their providers are not projected, but
+    _record_discovered_runtime_provider_projections may still create
+    projections for traced runtime classes that reference the skipped
+    providers as bases. These orphaned projections must be excluded to
+    satisfy the manifest's reference-integrity validation.
+    """
+    provider_keys = frozenset(projections)
+    result: dict[str, ProviderProjection] = {}
+    for provider, projection in projections.items():
+        if all(
+            base in provider_keys
+            for base in (*projection.provider_bases, *projection.provider_mro)
+        ):
+            result[provider] = projection
+    return result
 
 
 def concrete_parent_records_for_factories(

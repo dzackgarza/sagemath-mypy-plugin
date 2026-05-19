@@ -12,6 +12,10 @@ from sage_mypy_category_plugin.manifest import (
     write_manifest,
 )
 from sage_mypy_category_plugin.projection import ProviderMethodRecord
+from sage_mypy_category_plugin.static_stubs import (
+    static_stub_modules,
+    static_stub_sources,
+)
 
 type StubTree = dict[str, "StubTree"]
 type ProviderMethodMap = dict[
@@ -20,7 +24,19 @@ type ProviderMethodMap = dict[
 ]
 type ClassBaseMap = dict[tuple[str, tuple[str, ...]], tuple[str, ...]]
 type StubOrder = dict[tuple[str, tuple[str, ...]], int]
-METHOD_PROVIDER_NAMES = frozenset(("ParentMethods", "ElementMethods"))
+METHOD_PROVIDER_NAMES = frozenset(
+    ("ParentMethods", "ElementMethods", "SubcategoryMethods", "MorphismMethods")
+)
+MODULE_STUB_SUFFIXES: dict[Path, str] = {
+    Path("sage/categories/homsets.pyi"): (
+        "\n"
+        "class HomsetsCategory:\n"
+        "    ...\n"
+        "\n"
+        "class HomsetsOf(HomsetsCategory):\n"
+        "    ...\n"
+    ),
+}
 
 
 def generated_stub_sources(
@@ -30,7 +46,9 @@ def generated_stub_sources(
 ) -> dict[Path, str]:
     source_modules = tuple(record.module for record in manifest.source_modules)
     assert source_modules, "generated stubs require manifest source_modules"
-    preserved_prefixes = tuple(dict.fromkeys(preserved_source_module_prefixes))
+    preserved_prefixes = tuple(
+        dict.fromkeys((*preserved_source_module_prefixes, *static_stub_modules()))
+    )
 
     module_trees: dict[str, StubTree] = {}
     for fullname in _manifest_stub_fullnames(manifest):
@@ -54,7 +72,7 @@ def generated_stub_sources(
         manifest.provider_methods,
         source_modules=source_modules,
     )
-    class_bases = _concrete_parent_class_bases(
+    class_bases = _stub_class_bases(
         manifest,
         source_modules=source_modules,
     )
@@ -73,15 +91,16 @@ def generated_stub_sources(
             stub_order=stub_order,
         )
         for module_name, tree in sorted(module_trees.items())
-        if (
-            not _is_preserved_source_module(module_name, preserved_prefixes)
-            or module_name in untyped_external_only_modules
-        )
+        if not _is_preserved_source_module(module_name, preserved_prefixes)
     }
+    for relative_path, suffix in MODULE_STUB_SUFFIXES.items():
+        if relative_path in stub_sources:
+            stub_sources[relative_path] = stub_sources[relative_path].rstrip() + suffix
     stub_sources[Path("_sage_category_types.pyi")] = _runtime_alias_stub_source(
         manifest,
         source_modules=source_modules,
     )
+    stub_sources.update(static_stub_sources())
     return dict(sorted(stub_sources.items()))
 
 
@@ -91,7 +110,9 @@ def write_generated_stub_tree(
     *,
     preserved_source_module_prefixes: Sequence[str] = (),
 ) -> tuple[SourceModuleRecord, ...]:
-    preserved_prefixes = tuple(dict.fromkeys(preserved_source_module_prefixes))
+    preserved_prefixes = tuple(
+        dict.fromkeys((*preserved_source_module_prefixes, *static_stub_modules()))
+    )
     external_runtime_source_modules = frozenset(
         record.source_module
         for record in manifest.external_runtime_classes
@@ -100,8 +121,10 @@ def write_generated_stub_tree(
     original_source_module_by_module = manifest.source_module_by_module
     source_modules: list[SourceModuleRecord] = []
     declared_source_modules: set[str] = set()
+    source_module_index_by_module: dict[str, int] = {}
     for record in manifest.source_modules:
         if _is_preserved_source_module(record.module, preserved_prefixes):
+            source_module_index_by_module[record.module] = len(source_modules)
             source_modules.append(record)
             declared_source_modules.add(record.module)
     for relative_path, source in generated_stub_sources(
@@ -112,25 +135,51 @@ def write_generated_stub_tree(
         path.parent.mkdir(parents=True, exist_ok=True)
         _write_package_markers(output_root, path.parent)
         path.write_text(source)
+        if relative_path.name == "__init__.pyi":
+            continue
         source_bytes = path.read_bytes()
         source_stat = path.stat()
         module_name = ".".join(relative_path.with_suffix("").parts)
-        assert module_name not in declared_source_modules, (
-            f"duplicate generated source module: {module_name}"
+        record = SourceModuleRecord(
+            module=module_name,
+            path=str(path),
+            sha256=sha256(source_bytes).hexdigest(),
+            mtime_ns=source_stat.st_mtime_ns,
         )
-        source_modules.append(
-            SourceModuleRecord(
-                module=module_name,
-                path=str(path),
-                sha256=sha256(source_bytes).hexdigest(),
-                mtime_ns=source_stat.st_mtime_ns,
-            )
-        )
+        existing_index = source_module_index_by_module.get(module_name)
+        if existing_index is None:
+            source_module_index_by_module[module_name] = len(source_modules)
+            source_modules.append(record)
+        else:
+            source_modules[existing_index] = record
         declared_source_modules.add(module_name)
     for module_name in sorted(external_runtime_source_modules):
         if module_name in declared_source_modules:
             continue
+        source_module_index_by_module[module_name] = len(source_modules)
         source_modules.append(original_source_module_by_module[module_name])
+        declared_source_modules.add(module_name)
+    for relative_path, source in static_stub_sources().items():
+        path = output_root / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source)
+        if relative_path.name == "__init__.pyi":
+            continue
+        source_bytes = path.read_bytes()
+        source_stat = path.stat()
+        module_name = ".".join(relative_path.with_suffix("").parts)
+        record = SourceModuleRecord(
+            module=module_name,
+            path=str(path),
+            sha256=sha256(source_bytes).hexdigest(),
+            mtime_ns=source_stat.st_mtime_ns,
+        )
+        existing_index = source_module_index_by_module.get(module_name)
+        if existing_index is None:
+            source_module_index_by_module[module_name] = len(source_modules)
+            source_modules.append(record)
+        else:
+            source_modules[existing_index] = record
         declared_source_modules.add(module_name)
     return tuple(source_modules)
 
@@ -272,18 +321,27 @@ def _provider_methods_by_owner(
     }
 
 
-def _concrete_parent_class_bases(
+def _stub_class_bases(
     manifest: ProjectionManifest,
     *,
     source_modules: tuple[str, ...],
 ) -> ClassBaseMap:
-    return {
+    class_bases: ClassBaseMap = {
+        _source_module_and_qualname(
+            projection.provider,
+            source_modules=source_modules,
+        ): projection.provider_bases
+        for projection in manifest.projections
+        if projection.provider_bases
+    }
+    class_bases.update({
         _source_module_and_qualname(
             concrete_parent.concrete_class,
             source_modules=source_modules,
         ): concrete_parent.parent_provider_mro
         for concrete_parent in manifest.concrete_parents
-    }
+    })
+    return class_bases
 
 
 def _runtime_alias_stub_source(

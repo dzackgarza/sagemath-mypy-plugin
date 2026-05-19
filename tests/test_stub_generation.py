@@ -130,6 +130,186 @@ def test_generated_stubs_define_sibling_provider_bases_before_dependents(
     assert with_plugin.errors == []
 
 
+def test_generated_stubs_define_subcategory_bases_before_nested_dependents(
+    tmp_path: Path,
+) -> None:
+    top_provider = "fixture.Top.SubcategoryMethods"
+    child_provider = "fixture.Top.Child.SubcategoryMethods"
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=(
+            ProviderProjection(
+                provider=top_provider,
+                role="subcategory",
+                runtime_class="fixture.Top.subcategory_class",
+                runtime_bases=("builtins.object",),
+                runtime_mro=("fixture.Top.subcategory_class", "builtins.object"),
+                provider_bases=(),
+                provider_mro=(top_provider,),
+            ),
+            ProviderProjection(
+                provider=child_provider,
+                role="subcategory",
+                runtime_class="fixture.Top.Child.subcategory_class",
+                runtime_bases=("fixture.Top.subcategory_class",),
+                runtime_mro=(
+                    "fixture.Top.Child.subcategory_class",
+                    "fixture.Top.subcategory_class",
+                    "builtins.object",
+                ),
+                provider_bases=(top_provider,),
+                provider_mro=(child_provider, top_provider),
+            ),
+        ),
+        source_modules=(
+            SourceModuleRecord(
+                module="fixture",
+                path=str(tmp_path / "fixture.py"),
+                sha256="0" * 64,
+                mtime_ns=0,
+            ),
+        ),
+    )
+    stub_root = tmp_path / "generated-stubs"
+    source_modules = write_generated_stub_tree(stub_root, manifest)
+    plugin_manifest = manifest.model_copy(update={"source_modules": source_modules})
+    manifest_path = tmp_path / "manifest.json"
+    config_path = tmp_path / "mypy.ini"
+    consumer_path = tmp_path / "consumer.py"
+    manifest_path.write_text(plugin_manifest.model_dump_json())
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+    consumer_path.write_text(
+        "\n".join(
+            (
+                "from fixture import Top",
+                "",
+                "Top.Child.SubcategoryMethods",
+                "",
+            )
+        )
+    )
+
+    generated_source = (stub_root / "fixture.pyi").read_text()
+    with_plugin = _run_mypy(
+        consumer_path,
+        mypy_path_entries=(stub_root,),
+        config_path=config_path,
+    )
+
+    assert generated_source.index("class SubcategoryMethods:") < generated_source.index(
+        "class Child:"
+    )
+    assert "class SubcategoryMethods:" in generated_source
+    assert with_plugin.errors == []
+
+
+def test_generated_stubs_import_cross_module_provider_bases(tmp_path: Path) -> None:
+    base_provider = "base_provider.BaseCategory.ParentMethods"
+    child_provider = "consumer_mod.ConsumerCategory.ParentMethods"
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=(
+            ProviderProjection(
+                provider=base_provider,
+                role="parent",
+                runtime_class="base_provider.BaseCategory.parent_class",
+                runtime_bases=("builtins.object",),
+                runtime_mro=(
+                    "base_provider.BaseCategory.parent_class",
+                    "builtins.object",
+                ),
+                provider_bases=(),
+                provider_mro=(base_provider,),
+            ),
+            ProviderProjection(
+                provider=child_provider,
+                role="parent",
+                runtime_class="consumer_mod.ConsumerCategory.parent_class",
+                runtime_bases=("base_provider.BaseCategory.parent_class",),
+                runtime_mro=(
+                    "consumer_mod.ConsumerCategory.parent_class",
+                    "base_provider.BaseCategory.parent_class",
+                    "builtins.object",
+                ),
+                provider_bases=(base_provider,),
+                provider_mro=(child_provider, base_provider),
+            ),
+        ),
+        source_modules=(
+            SourceModuleRecord(
+                module="base_provider",
+                path=str(tmp_path / "base_provider.py"),
+                sha256="0" * 64,
+                mtime_ns=0,
+            ),
+            SourceModuleRecord(
+                module="consumer_mod",
+                path=str(tmp_path / "consumer_mod.py"),
+                sha256="0" * 64,
+                mtime_ns=0,
+            ),
+        ),
+    )
+    stub_root = tmp_path / "generated-stubs"
+    source_modules = write_generated_stub_tree(stub_root, manifest)
+    plugin_manifest = manifest.model_copy(update={"source_modules": source_modules})
+    manifest_path = tmp_path / "manifest.json"
+    config_path = tmp_path / "mypy.ini"
+    consumer_path = tmp_path / "consumer.py"
+    manifest_path.write_text(plugin_manifest.model_dump_json())
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+    consumer_path.write_text(
+        "\n".join(
+            (
+                "from consumer_mod import ConsumerCategory",
+                "",
+                "ConsumerCategory.ParentMethods",
+                "",
+            )
+        )
+    )
+
+    generated_source = (stub_root / "consumer_mod.pyi").read_text()
+    with_plugin = _run_mypy(
+        consumer_path,
+        mypy_path_entries=(stub_root,),
+        config_path=config_path,
+    )
+
+    assert "from base_provider import BaseCategory" in generated_source
+    assert "class ParentMethods(" in generated_source
+    assert "BaseCategory.ParentMethods" in generated_source
+    assert with_plugin.errors == []
+
+
 def test_generated_stubs_reproduce_provider_tree_from_manifest() -> None:
     manifest = _sets_cartesian_products_manifest()
 

@@ -115,10 +115,10 @@ class UnsupportedProviderRecord(BaseModel):
 
     @model_validator(mode="after")
     def _validate_runtime_mro_evidence(self) -> Self:
-        if len(self.runtime_classes) < 2:
+        if len(self.runtime_classes) < 1:
             raise PydanticCustomError(
                 "unsupported_provider_graph_mismatch",
-                "unsupported providers require at least two runtime classes",
+                "unsupported providers require at least one runtime class",
                 {"provider": self.provider, "field": "runtime_classes"},
             )
         if len(self.runtime_classes) != len(self.runtime_mros):

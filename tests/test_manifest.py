@@ -199,6 +199,27 @@ def _unsupported_provider_record() -> UnsupportedProviderRecord:
     )
 
 
+def _single_runtime_unsupported_provider_record() -> UnsupportedProviderRecord:
+    return UnsupportedProviderRecord(
+        provider="tests.fixtures.invariant_core.diamond_runtime.SharedParentMethods",
+        role="parent",
+        reason="ambiguous_runtime_mro",
+        runtime_classes=(
+            "tests.fixtures.invariant_core.diamond_runtime."
+            "SharedProviderBottomCategory.parent_class",
+        ),
+        runtime_mros=(
+            (
+                "tests.fixtures.invariant_core.diamond_runtime."
+                "SharedProviderBottomCategory.parent_class",
+                "tests.fixtures.invariant_core.diamond_runtime."
+                "SharedProviderTopCategory.parent_class",
+                "builtins.object",
+            ),
+        ),
+    )
+
+
 def _manifest_payload() -> dict[str, Any]:
     manifest = ProjectionManifest(
         schema_version=1,
@@ -652,6 +673,40 @@ def test_manifest_allows_supported_projection_to_reference_unsupported_provider(
     assert manifest.unsupported_providers == (unsupported_record,)
 
 
+def test_manifest_allows_supported_projection_to_reference_single_runtime_unsupported_provider() -> None:
+    payload = _manifest_payload()
+    unsupported_record = _single_runtime_unsupported_provider_record()
+    dependent_provider = (
+        "tests.fixtures.invariant_core.diamond_runtime."
+        "DependentSharedProviderCategory.ParentMethods"
+    )
+    dependent_runtime_class = (
+        "tests.fixtures.invariant_core.diamond_runtime."
+        "DependentSharedProviderCategory.parent_class"
+    )
+    dependent_projection = _projection().model_copy(
+        update={
+            "provider": dependent_provider,
+            "runtime_class": dependent_runtime_class,
+            "runtime_bases": unsupported_record.runtime_classes,
+            "runtime_mro": (
+                dependent_runtime_class,
+                *unsupported_record.runtime_mros[0],
+            ),
+            "provider_bases": (unsupported_record.provider,),
+            "provider_mro": (dependent_provider, unsupported_record.provider),
+        }
+    )
+    payload["projections"] = [dependent_projection.model_dump(mode="json")]
+    payload["unsupported_providers"] = [unsupported_record.model_dump(mode="json")]
+    payload["concrete_parents"] = []
+
+    manifest = ProjectionManifest.model_validate(payload)
+
+    assert manifest.projections == (dependent_projection,)
+    assert manifest.unsupported_providers == (unsupported_record,)
+
+
 def test_manifest_keeps_role_distinct_unsupported_provider_records() -> None:
     payload = _manifest_payload()
     parent_record = _unsupported_provider_record()
@@ -698,9 +753,7 @@ def test_manifest_rejects_supported_and_unsupported_provider_overlap() -> None:
     (
         (
             {
-                "runtime_classes": (
-                    "tests.fixtures.invariant_core.diamond_runtime.Only",
-                )
+                "runtime_classes": (),
             },
             "runtime_classes",
         ),

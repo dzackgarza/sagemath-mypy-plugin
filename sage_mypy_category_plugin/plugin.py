@@ -3,7 +3,10 @@ from __future__ import annotations
 from configparser import ConfigParser
 from dataclasses import dataclass, field
 from hashlib import sha256
+from importlib.util import find_spec
 from pathlib import Path
+from site import getsitepackages, getusersitepackages
+from sysconfig import get_paths
 from typing import Callable, Sequence
 
 from mypy.errors import CompileError
@@ -46,6 +49,17 @@ class SageCategoryProjectionPlugin(Plugin):
         if config.debug_manifest is not None:
             self._manifest = _load_manifest_for_plugin(config.debug_manifest)
             self._manifest_path = config.debug_manifest
+            if self._manifest.source_modules:
+                _generate_and_write_stubs(
+                    self._manifest,
+                    manifest_path=self._manifest_path,
+                    stub_root=_stub_root_for_manifest(self._manifest_path),
+                )
+                _add_generated_stubs_to_mypy_path(
+                    options,
+                    stub_root=_stub_root_for_manifest(self._manifest_path),
+                )
+                self._manifest = load_manifest(self._manifest_path)
         else:
             self._manifest, self._manifest_path = _generate_and_cache(config)
             _add_generated_stubs_to_mypy_path(
@@ -357,7 +371,10 @@ def _generate_and_cache(config: PluginConfig) -> tuple[ProjectionManifest, Path]
     stub_source_modules = write_generated_stub_tree(
         stub_root,
         manifest,
-        preserved_source_module_prefixes=config.packages,
+        preserved_source_module_prefixes=_preserved_source_module_prefixes(
+            manifest,
+            manifest_path=manifest_path,
+        ),
     )
 
     # Update manifest with stub-augmented source modules
@@ -372,22 +389,28 @@ def _generate_and_cache(config: PluginConfig) -> tuple[ProjectionManifest, Path]
 def _add_generated_stubs_to_mypy_path(options: Options, *, stub_root: Path) -> None:
     """Ensure mypy can see generated stubs without requiring MYPYPATH.
 
-    Mutates options.mypy_path in-place during plugin initialization. This is
-    the preferred mechanism under pinned mypy versions: it makes generated
-    stubs visible to the type checker as if they were on MYPYPATH.
+    Mutates options.mypy_path in-place during plugin initialization so callers
+    that reuse Options see the generated stub root. CLI runs must also declare
+    the stub root in config before mypy starts, since mypy computes import
+    search paths before constructing plugins.
     """
     stub_root_str = str(stub_root.resolve())
     if options.mypy_path is None:
         options.mypy_path = []
-    if stub_root_str not in options.mypy_path:
-        options.mypy_path.append(stub_root_str)
+    else:
+        options.mypy_path = [
+            existing_path
+            for existing_path in options.mypy_path
+            if existing_path != stub_root_str
+        ]
+    options.mypy_path.insert(0, stub_root_str)
 
 
 def _generate_and_write_stubs(
     manifest: ProjectionManifest,
     *,
+    manifest_path: Path,
     stub_root: Path,
-    packages: tuple[str, ...],
 ) -> None:
     """Generate stubs and update the manifest on disk. Used for debug manifest path."""
     from sage_mypy_category_plugin.stubs import write_generated_stub_tree
@@ -396,10 +419,13 @@ def _generate_and_write_stubs(
     stub_source_modules = write_generated_stub_tree(
         stub_root,
         manifest,
-        preserved_source_module_prefixes=packages,
+        preserved_source_module_prefixes=_preserved_source_module_prefixes(
+            manifest,
+            manifest_path=manifest_path,
+        ),
     )
     updated = manifest.model_copy(update={"source_modules": stub_source_modules})
-    write_manifest(stub_root.parent / "projection-manifest.json", updated)
+    write_manifest(manifest_path, updated)
 
 
 def _resolve_cache_dir(config: PluginConfig) -> Path:
@@ -410,6 +436,59 @@ def _resolve_cache_dir(config: PluginConfig) -> Path:
 
 def _stub_root_for_manifest(manifest_path: Path) -> Path:
     return manifest_path.parent / "stubs"
+
+
+def _preserved_source_module_prefixes(
+    manifest: ProjectionManifest,
+    *,
+    manifest_path: Path,
+) -> tuple[str, ...]:
+    preserved: dict[str, None] = {}
+    for record in manifest.source_modules:
+        record_path = Path(record.path).resolve()
+        try:
+            spec = find_spec(record.module)
+        except ModuleNotFoundError:
+            continue
+        if spec is None or spec.origin is None:
+            continue
+        spec_path = Path(spec.origin).resolve()
+        if spec_path != record_path:
+            continue
+        if spec_path.suffix not in {".py", ".pyi", ".so"}:
+            continue
+        if _is_site_package_path(spec_path):
+            continue
+        preserved[record.module] = None
+    return tuple(preserved)
+
+
+def _is_site_package_path(path: Path) -> bool:
+    resolved = path.resolve()
+    for root in _site_package_roots():
+        try:
+            resolved.relative_to(root)
+        except ValueError:
+            continue
+        return True
+    return False
+
+
+def _site_package_roots() -> tuple[Path, ...]:
+    candidates = (
+        *getsitepackages(),
+        getusersitepackages(),
+        get_paths().get("purelib", ""),
+        get_paths().get("platlib", ""),
+    )
+    roots: list[Path] = []
+    for candidate in candidates:
+        if not candidate:
+            continue
+        root = Path(candidate).resolve()
+        if root not in roots:
+            roots.append(root)
+    return tuple(roots)
 
 
 def _load_manifest_for_plugin(path: Path) -> ProjectionManifest:

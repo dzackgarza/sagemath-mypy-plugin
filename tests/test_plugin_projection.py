@@ -18,6 +18,7 @@ from sage_mypy_category_plugin.manifest import (
     ProjectionManifest,
     SourceModuleRecord,
     UnsupportedProviderRecord,
+    load_manifest,
     write_manifest,
 )
 from sage_mypy_category_plugin.oracle import provider_projections_for_categories
@@ -1419,6 +1420,39 @@ def test_plugin_regenerates_from_clean_cache(tmp_path: Path) -> None:
     assert (cache_dir / "projection-manifest.json").is_file()
 
 
+def test_plugin_prepends_generated_stub_root_to_mypy_path(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "sage-category-cache"
+    preexisting_path = tmp_path / "existing-mypy-path"
+    preexisting_path.mkdir()
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                "[sage-mypy-category-plugin]",
+                "packages = tests.fixtures.invariant_core.diamond_runtime",
+                "roles = parent",
+                f"cache_dir = {cache_dir}",
+                "",
+            )
+        )
+    )
+    options = Options()
+    options.config_file = str(config_path)
+    options.ignore_missing_imports = True
+    options.mypy_path = [str(preexisting_path)]
+
+    SageCategoryProjectionPlugin(options)
+
+    stub_root = cache_dir / "stubs"
+    assert options.mypy_path == [
+        str(stub_root.resolve()),
+        str(preexisting_path),
+    ]
+
+
 def test_plugin_debug_manifest_still_works(tmp_path: Path) -> None:
     """Phase 1A: backward-compatible 'manifest = ...' debug path still functions."""
     projections = _provider_projections(
@@ -1460,6 +1494,56 @@ def test_plugin_debug_manifest_still_works(tmp_path: Path) -> None:
         "tests.fixtures.invariant_core.diamond_runtime.BottomCategory.ParentMethods"
     )
     assert bottom_provider in plugin._projection_by_provider
+
+
+def test_plugin_debug_manifest_refreshes_source_module_metadata_in_place(
+    tmp_path: Path,
+) -> None:
+    projections = tuple(
+        _provider_projections(CATEGORY_FULLNAMES, roles=("parent",)).values()
+    )
+    source_modules = _write_projected_provider_stubs(
+        tmp_path / "pregenerated-stubs",
+        projections=projections,
+    )
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=projections,
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            projections,
+            source_modules=source_modules,
+        ),
+        source_modules=source_modules,
+    )
+    manifest_path = tmp_path / "manifest.json"
+    write_manifest(manifest_path, manifest)
+
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+    options = Options()
+    options.config_file = str(config_path)
+    options.ignore_missing_imports = True
+
+    plugin = SageCategoryProjectionPlugin(options)
+
+    refreshed_manifest = load_manifest(manifest_path)
+    assert plugin._manifest_path == manifest_path
+    assert refreshed_manifest.source_modules == plugin._manifest.source_modules
+    assert any(record.module == "_sage_category_types" for record in refreshed_manifest.source_modules)
 
 
 def test_plugin_reports_manifest_drift_and_rebuilds_projection(
