@@ -444,6 +444,79 @@ def test_generated_stub_cli_uses_generated_module_once_for_external_runtime_over
     ) == ("sage.categories.objects",)
 
 
+def test_generated_stubs_shell_untyped_external_runtime_classes(
+    tmp_path: Path,
+) -> None:
+    external_runtime = ExternalRuntimeClassRecord(
+        runtime_class="sage.structure.parent.Parent",
+        module="sage.structure.parent",
+        static_signature_source="untyped_external",
+    )
+    manifest = _sets_cartesian_products_manifest().model_copy(
+        update={"external_runtime_classes": (external_runtime,)}
+    )
+    stub_root = tmp_path / "generated-stubs"
+    source_modules = write_generated_stub_tree(stub_root, manifest)
+    consumer_path = tmp_path / "consumer.py"
+    consumer_path.write_text(
+        "\n".join(
+            (
+                "from sage.structure.parent import Parent as SageParent",
+                "",
+                "CategoryObject = SageParent",
+                "",
+                "def valid_alias(value: CategoryObject) -> CategoryObject:",
+                "    return value",
+                "",
+                "def invalid_signature_claim(value: CategoryObject) -> object:",
+                "    return value.structure_morphism()",
+                "",
+            )
+        )
+    )
+
+    result = _run_mypy(
+        consumer_path,
+        mypy_path_entries=(stub_root,),
+        config_path=None,
+    )
+    source_record = {
+        record.module: record for record in source_modules
+    }["sage.structure.parent"]
+
+    assert source_record.path == str(stub_root / "sage/structure/parent.pyi")
+    assert (stub_root / "sage/structure/parent.pyi").read_text() == (
+        "class Parent:\n"
+        "    ...\n"
+    )
+    assert result.errors == [
+        f'{consumer_path}:9: error: "Parent" has no attribute '
+        '"structure_morphism"  [attr-defined]',
+    ]
+
+
+def test_generated_stubs_preserve_source_prefix_but_shell_untyped_external() -> None:
+    external_runtime = ExternalRuntimeClassRecord(
+        runtime_class="sage.categories.morphism.Morphism",
+        module="sage.categories.morphism",
+        static_signature_source="untyped_external",
+    )
+    manifest = _sets_cartesian_products_manifest().model_copy(
+        update={"external_runtime_classes": (external_runtime,)}
+    )
+
+    sources = generated_stub_sources(
+        manifest,
+        preserved_source_module_prefixes=("sage.categories",),
+    )
+
+    assert sources[Path("sage/categories/morphism.pyi")] == (
+        "class Morphism:\n"
+        "    ...\n"
+    )
+    assert Path("sage/categories/sets_cat.pyi") not in sources
+
+
 def test_generated_stubs_include_concrete_parent_runtime_aliases() -> None:
     manifest = _left_zero_semigroup_concrete_parent_manifest()
 

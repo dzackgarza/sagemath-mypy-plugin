@@ -40,6 +40,16 @@ def generated_stub_sources(
         )
         module_tree = module_trees.setdefault(module_name, {})
         _add_qualname(module_tree, qualname)
+    provider_stub_modules = frozenset(module_trees)
+    untyped_external_classes = _untyped_external_stub_classes(manifest)
+    for module_name, qualname in untyped_external_classes:
+        module_tree = module_trees.setdefault(module_name, {})
+        _add_qualname(module_tree, qualname)
+    untyped_external_only_modules = frozenset(
+        module_name
+        for module_name, _ in untyped_external_classes
+        if module_name not in provider_stub_modules
+    )
     provider_methods = _provider_methods_by_owner(
         manifest.provider_methods,
         source_modules=source_modules,
@@ -63,7 +73,10 @@ def generated_stub_sources(
             stub_order=stub_order,
         )
         for module_name, tree in sorted(module_trees.items())
-        if not _is_preserved_source_module(module_name, preserved_prefixes)
+        if (
+            not _is_preserved_source_module(module_name, preserved_prefixes)
+            or module_name in untyped_external_only_modules
+        )
     }
     stub_sources[Path("_sage_category_types.pyi")] = _runtime_alias_stub_source(
         manifest,
@@ -187,6 +200,29 @@ def _manifest_stub_fullnames(manifest: ProjectionManifest) -> tuple[str, ...]:
     for record in manifest.concrete_parents:
         fullnames.append(record.concrete_class)
     return tuple(dict.fromkeys(fullnames))
+
+
+def _untyped_external_stub_classes(
+    manifest: ProjectionManifest,
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    return tuple(
+        _external_runtime_module_and_qualname(record.runtime_class, module=record.module)
+        for record in manifest.external_runtime_classes
+        if record.static_signature_source == "untyped_external"
+    )
+
+
+def _external_runtime_module_and_qualname(
+    runtime_class: str,
+    *,
+    module: str,
+) -> tuple[str, tuple[str, ...]]:
+    assert runtime_class.startswith(f"{module}."), (
+        f"External runtime class {runtime_class!r} is not in module {module!r}"
+    )
+    qualname = tuple(runtime_class[len(module) + 1 :].split("."))
+    assert qualname, f"External runtime class {runtime_class!r} needs a qualname"
+    return module, qualname
 
 
 def _stub_order(
