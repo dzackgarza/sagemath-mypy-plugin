@@ -438,6 +438,42 @@ def test_resolver_records_concrete_parent_initialization(tmp_path: Path) -> None
     assert record.element_provider_mro[0] == (
         "sage.categories.semigroups.Semigroups.ElementMethods"
     )
+
+
+def test_resolver_concrete_parent_records_own_provider_projections(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "sage-category-concrete-parent-only.json"
+
+    resolver.main(
+        [
+            "--output",
+            str(manifest_path),
+            "--role",
+            "parent",
+            "--role",
+            "element",
+            "--concrete-parent",
+            LEFT_ZERO_SEMIGROUP,
+        ]
+    )
+
+    manifest = load_manifest(manifest_path)
+    record = manifest.concrete_parent_by_class[LEFT_ZERO_SEMIGROUP]
+
+    assert record.parent_provider_mro == (
+        "sage.categories.semigroups.Semigroups.ParentMethods",
+        "sage.categories.magmas.Magmas.ParentMethods",
+        "sage.categories.sets_cat.Sets.ParentMethods",
+        OBJECTS_PARENT_PROVIDER,
+    )
+    assert record.element_provider_mro == (
+        "sage.categories.semigroups.Semigroups.ElementMethods",
+        "sage.categories.magmas.Magmas.ElementMethods",
+        "sage.categories.sets_cat.Sets.ElementMethods",
+    )
+    assert set(record.parent_provider_mro).issubset(manifest.projection_by_provider)
+    assert set(record.element_provider_mro).issubset(manifest.projection_by_provider)
     assert manifest.external_runtime_class_by_fullname[
         "sage.structure.parent.Parent"
     ].static_signature_source == "untyped_external"

@@ -184,6 +184,17 @@ def _supported_provider_projections(
 def concrete_parent_records_for_factories(
     factory_fullnames: Iterable[str],
 ) -> dict[str, ConcreteParentRecord]:
+    records, _projections = (
+        concrete_parent_records_and_provider_projections_for_factories(
+            factory_fullnames
+        )
+    )
+    return records
+
+
+def concrete_parent_records_and_provider_projections_for_factories(
+    factory_fullnames: Iterable[str],
+) -> tuple[dict[str, ConcreteParentRecord], dict[str, ProviderProjection]]:
     for role in _CONCRETE_PARENT_ROLES:
         _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role].clear()
         _UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role].clear()
@@ -200,7 +211,9 @@ def concrete_parent_records_for_factories(
             )
             record = _concrete_parent_record(parent)
             records[record.concrete_class] = record
-    return records
+    projections: dict[str, ProviderProjection] = {}
+    _record_discovered_runtime_provider_projections(projections)
+    return records, _supported_provider_projections(projections)
 
 
 def named_class_traces() -> tuple[NamedClassTrace, ...]:
@@ -952,6 +965,7 @@ __all__ = [
     "NamedClassTrace",
     "UnsupportedProviderTrace",
     "concrete_parent_records_for_factories",
+    "concrete_parent_records_and_provider_projections_for_factories",
     "named_class_traces",
     "provider_method_records_for_projections",
     "provider_projections_for_categories",

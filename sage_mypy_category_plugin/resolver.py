@@ -22,7 +22,7 @@ from sage_mypy_category_plugin.manifest import (
 )
 from sage_mypy_category_plugin.imports import importable_module_name_or_none
 from sage_mypy_category_plugin.oracle import (
-    concrete_parent_records_for_factories,
+    concrete_parent_records_and_provider_projections_for_factories,
     named_class_traces,
     provider_method_records_for_projections,
     provider_projections_for_categories,
@@ -57,8 +57,22 @@ def resolve_projection_manifest(
         category_fullnames,
         roles=roles,
     )
+    concrete_parent_records, concrete_parent_projections = (
+        concrete_parent_records_and_provider_projections_for_factories(
+            concrete_parent_fullnames
+        )
+    )
+    for provider, projection in concrete_parent_projections.items():
+        existing_projection = projections.get(provider)
+        if existing_projection is not None:
+            assert existing_projection == projection, (
+                f"Conflicting projection for concrete parent provider {provider}: "
+                f"{existing_projection!r} vs {projection!r}"
+            )
+            continue
+        projections[provider] = projection
     concrete_parents = tuple(
-        concrete_parent_records_for_factories(concrete_parent_fullnames).values()
+        concrete_parent_records.values()
     )
     external_runtime_classes = _external_runtime_class_records(
         projections=projections.values(),
@@ -520,8 +534,10 @@ def _relative_to_cwd(path: Path) -> Path:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _resolver_argument_parser()
     args = parser.parse_args(argv)
-    if not args.category_fullnames and not args.package:
-        parser.error("provide at least one category fullname or --package")
+    if not args.category_fullnames and not args.package and not args.concrete_parent:
+        parser.error(
+            "provide at least one category fullname, --package, or --concrete-parent"
+        )
     roles: tuple[ProviderRole, ...] = (
         ("parent",)
         if not args.role
