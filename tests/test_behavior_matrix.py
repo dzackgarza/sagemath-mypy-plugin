@@ -24,6 +24,7 @@ type SourceTree = dict[str, "SourceTree"]
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "invariant_core"
 REAL_CATEGORIES_ROOT = REPO_ROOT / "tests" / "real_categories"
+E5_ROOT = REPO_ROOT / "tests" / "fixtures" / "e5_renamed_consumer"
 FINITE_SMALL_GROUPS_VALID = "tests.real_categories.finite_small_groups_valid"
 FINITE_SMALL_GROUPS_INVALID = "tests.real_categories.finite_small_groups_invalid"
 FINITE_SMALL_GROUPS_SIGNATURE_MISMATCH = (
@@ -33,6 +34,8 @@ FINITE_SMALL_GROUPS_MISSING_EXPLICIT_OVERRIDE = (
     "tests.real_categories.finite_small_groups_missing_explicit_override"
 )
 FINITE_POSETS_MODULE = "tests.real_categories.finite_posets"
+E5_VALID_MODULE = "tests.fixtures.e5_renamed_consumer.valid_override"
+E5_INVALID_MODULE = "tests.fixtures.e5_renamed_consumer.invalid_override"
 BASE_CATEGORY_FULLNAMES = (
     "tests.fixtures.invariant_core.diamond_runtime.TopCategory",
     "tests.fixtures.invariant_core.diamond_runtime.LeftCategory",
@@ -679,6 +682,87 @@ def test_stale_source_module_triggers_cache_regeneration(tmp_path: Path) -> None
         f"regenerated manifest has wrong sha256 for {local_record.module}: "
         f"expected {regenerated_sha256!r}, got {regenerated_record.sha256!r}"
     )
+
+
+def test_renamed_consumer_package_behavioral_invariant_holds(tmp_path: Path) -> None:
+    """Phase 7 E5: plugin works with any consumer package name — no namespace hardcoding.
+
+    tests.fixtures.e5_renamed_consumer is a self-contained Sage category package
+    with a completely different namespace from 'category_specs', 'tests.real_categories',
+    and 'tests.fixtures.invariant_core'.  The plugin is configured with
+
+        packages = tests.fixtures.e5_renamed_consumer
+
+    and the 4-cell behavioral conjunction must hold on that package's categories,
+    proving the plugin reads only from the config-specified packages and contains
+    no hardcoded consumer or namespace names.
+
+      plugin off + valid code   → "no base method was found" (Sage provider invisible)
+      plugin on  + valid code   → no errors (plugin projects runtime provider MRO)
+      plugin off + invalid code → "no base method was found"
+      plugin on  + invalid code → "no base method was found" (genuine nonexistent method)
+    """
+    cache_dir = tmp_path / "sage-category-cache"
+    # stub_root must be pre-declared in mypy_path so Sage system provider stubs
+    # (generated during plugin.__init__) are visible when mypy resolves TypeInfos.
+    stub_root = cache_dir / "stubs"
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "ignore_missing_imports = True",
+                "",
+                "[sage-mypy-category-plugin]",
+                "packages = tests.fixtures.e5_renamed_consumer",
+                "roles = parent",
+                f"cache_dir = {cache_dir}",
+                "",
+            )
+        )
+    )
+
+    valid_path = E5_ROOT / "valid_override.py"
+    invalid_path = E5_ROOT / "invalid_override.py"
+    sources = (
+        BuildSource(str(valid_path), E5_VALID_MODULE, None),
+        BuildSource(str(invalid_path), E5_INVALID_MODULE, None),
+    )
+
+    with_plugin = _run_mypy_with_sources(
+        sources,
+        config_path,
+        tmp_path,
+        mypy_path_entries=(stub_root, REPO_ROOT),
+    )
+    without_plugin = _run_mypy_without_plugin_with_sources(sources, tmp_path)
+
+    # Use full relative paths to avoid substring collisions:
+    # "valid_override.py" is a substring of "invalid_override.py".
+    valid_rel = str(valid_path.relative_to(REPO_ROOT))    # "tests/fixtures/e5_renamed_consumer/valid_override.py"
+    invalid_rel = str(invalid_path.relative_to(REPO_ROOT))  # "tests/fixtures/e5_renamed_consumer/invalid_override.py"
+    valid_errors = tuple(e for e in with_plugin.errors if valid_rel in e)
+    invalid_errors_on = tuple(e for e in with_plugin.errors if invalid_rel in e)
+    valid_errors_off = tuple(e for e in without_plugin.errors if valid_rel in e)
+    invalid_errors_off = tuple(e for e in without_plugin.errors if invalid_rel in e)
+
+    # Plugin on + valid: provider MRO projected → @override resolves → no errors
+    assert not valid_errors, (
+        f"Expected no errors for renamed-consumer valid code with plugin; "
+        f"got: {valid_errors}"
+    )
+    # Plugin off + valid: Sage provider invisible → @override finds no base method
+    assert any("no base method was found" in e for e in valid_errors_off), (
+        "Expected renamed-consumer valid code to fail without plugin "
+        "(Sage provider MRO invisible to plain mypy)"
+    )
+    # Plugin on + invalid (nonexistent method): still fails with standard mypy rule
+    assert any("no base method was found" in e for e in invalid_errors_on), (
+        "Expected renamed-consumer invalid @override to still fail with plugin on"
+    )
+    # Plugin off + invalid: also fails (same error, different root cause)
+    assert any("no base method was found" in e for e in invalid_errors_off)
 
 
 def _write_plugin_config(tmp_path: Path) -> Path:
