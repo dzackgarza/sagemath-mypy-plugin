@@ -85,7 +85,7 @@ test-behavior *args:
 
 [group('test')]
 test-mutation:
-  just test tests/test_manifest.py::test_manifest_semantic_digest_tracks_projection_changes tests/test_manifest.py::test_manifest_source_module_digest_tracks_source_hash_changes tests/test_plugin_projection.py::test_plugin_reports_manifest_drift_and_rebuilds_projection -q
+  just test tests/test_manifest.py::test_manifest_semantic_digest_tracks_projection_changes tests/test_manifest.py::test_manifest_semantic_digest_tracks_unsupported_provider_changes tests/test_manifest.py::test_manifest_source_module_digest_tracks_source_hash_changes tests/test_plugin_projection.py::test_plugin_reports_manifest_drift_and_rebuilds_projection -q
 
 [group('test')]
 test-performance max_seconds="120":

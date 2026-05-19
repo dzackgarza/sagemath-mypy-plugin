@@ -6,6 +6,7 @@ from sage_mypy_category_plugin.oracle import RoleProjection
 from sage_mypy_category_plugin.oracle import concrete_parent_records_for_factories
 from sage_mypy_category_plugin.oracle import provider_projections_for_categories
 from sage_mypy_category_plugin.oracle import named_class_traces
+from sage_mypy_category_plugin.oracle import unsupported_provider_traces
 from sage_mypy_category_plugin.oracle import _provider_bases_without_self
 from sage_mypy_category_plugin.oracle import _project_runtime_classes
 from sage_mypy_category_plugin.oracle import _provider_fullname_from_runtime_class_or_none
@@ -35,6 +36,11 @@ from tests.fixtures.invariant_core.parameterized import (
     ModulesOverIntegers,
     ModulesOverRationals,
     VectorSpacesOverRationals,
+)
+from tests.fixtures.invariant_core.provider_conflict import (
+    SharedParentMethods,
+    SharedProviderBottomCategory,
+    SharedProviderTopCategory,
 )
 
 
@@ -132,17 +138,41 @@ def test_projection_skips_inherited_homsets_subcategory_provider() -> None:
     assert "sage.categories.homsets.Homsets.SubcategoryMethods" not in projections
 
 
-def test_projection_rejects_shared_provider_with_conflicting_runtime_mros() -> None:
-    with pytest.raises(AssertionError):
-        provider_projections_for_categories(
-            (
-                "tests.fixtures.invariant_core.provider_conflict."
-                "SharedProviderTopCategory",
-                "tests.fixtures.invariant_core.provider_conflict."
-                "SharedProviderBottomCategory",
-            ),
-            roles=("parent",),
-        )
+def test_projection_classifies_shared_provider_with_conflicting_runtime_mros() -> None:
+    provider = _class_fullname(SharedParentMethods)
+
+    projections = provider_projections_for_categories(
+        (
+            "tests.fixtures.invariant_core.provider_conflict."
+            "SharedProviderTopCategory",
+            "tests.fixtures.invariant_core.provider_conflict."
+            "SharedProviderBottomCategory",
+        ),
+        roles=("parent",),
+    )
+    unsupported_provider = {
+        trace.provider: trace for trace in unsupported_provider_traces()
+    }[provider]
+    top_runtime_class = SharedProviderTopCategory.an_instance().parent_class
+    bottom_runtime_class = SharedProviderBottomCategory.an_instance().parent_class
+
+    assert provider not in projections
+    assert unsupported_provider.role == "parent"
+    assert unsupported_provider.reason == "ambiguous_runtime_mro"
+    assert unsupported_provider.runtime_classes == (
+        _class_fullname(top_runtime_class),
+        _class_fullname(bottom_runtime_class),
+    )
+    assert unsupported_provider.runtime_mros == (
+        tuple(
+            _class_fullname(runtime_class)
+            for runtime_class in top_runtime_class.__mro__
+        ),
+        tuple(
+            _class_fullname(runtime_class)
+            for runtime_class in bottom_runtime_class.__mro__
+        ),
+    )
 
 
 def test_diamond_parent_projection_matches_sage_runtime_mro() -> None:

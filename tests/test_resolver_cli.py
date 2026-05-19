@@ -21,6 +21,8 @@ HOMSET_BOTTOM_CATEGORY = f"{HOMSET_FIXTURE_MODULE}.BottomCategory"
 BOTTOM_HOMSET_PARENT_PROVIDER = (
     f"{HOMSET_FIXTURE_MODULE}.BottomCategory.Homsets.ParentMethods"
 )
+SHARED_HOMSET_CATEGORY = f"{HOMSET_FIXTURE_MODULE}.SharedHomsetProviderCategory"
+SHARED_HOMSET_PROVIDER = f"{HOMSET_FIXTURE_MODULE}.SharedHomsetParentMethods"
 COMMUTATIVE_RINGS_CATEGORY = "sage.categories.commutative_rings.CommutativeRings"
 SEMIGROUPS_CATEGORY = "sage.categories.semigroups.Semigroups"
 OBJECTS_PARENT_PROVIDER = "sage.categories.objects.Objects.ParentMethods"
@@ -152,6 +154,35 @@ def test_resolver_accepts_homset_provider_roles(tmp_path: Path) -> None:
     assert (
         manifest.projection_by_provider[BOTTOM_HOMSET_PARENT_PROVIDER].role
         == "homset_parent"
+    )
+
+
+def test_resolver_records_unsupported_shared_homset_provider(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "sage-category-unsupported-homset.json"
+
+    resolver.main(
+        [
+            "--output",
+            str(manifest_path),
+            "--role",
+            "homset_parent",
+            SHARED_HOMSET_CATEGORY,
+        ]
+    )
+
+    manifest = load_manifest(manifest_path)
+    unsupported_provider = manifest.unsupported_provider_by_provider[
+        SHARED_HOMSET_PROVIDER
+    ]
+
+    assert SHARED_HOMSET_PROVIDER not in manifest.projection_by_provider
+    assert unsupported_provider.role == "homset_parent"
+    assert unsupported_provider.reason == "ambiguous_runtime_mro"
+    assert unsupported_provider.runtime_classes == (
+        f"{HOMSET_FIXTURE_MODULE}.SharedStandaloneHomCategory.parent_class",
+        f"{HOMSET_FIXTURE_MODULE}.SharedHomsetProviderCategory.Homsets.parent_class",
     )
 
 

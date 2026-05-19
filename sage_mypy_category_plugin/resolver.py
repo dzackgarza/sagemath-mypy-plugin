@@ -17,6 +17,7 @@ from sage_mypy_category_plugin.manifest import (
     NamedClassRecord,
     ProjectionManifest,
     SourceModuleRecord,
+    UnsupportedProviderRecord,
     write_manifest,
 )
 from sage_mypy_category_plugin.imports import importable_module_name_or_none
@@ -25,6 +26,7 @@ from sage_mypy_category_plugin.oracle import (
     named_class_traces,
     provider_method_records_for_projections,
     provider_projections_for_categories,
+    unsupported_provider_traces,
 )
 from sage_mypy_category_plugin.projection import (
     ConcreteParentRecord,
@@ -62,6 +64,7 @@ def resolve_projection_manifest(
         projections=projections.values(),
         concrete_parents=concrete_parents,
     )
+    unsupported_providers = _unsupported_provider_records()
 
     return ProjectionManifest(
         schema_version=1,
@@ -72,6 +75,7 @@ def resolve_projection_manifest(
         mypy_min_version=mypy_min_version,
         mypy_max_version=mypy_max_version,
         named_classes=_named_class_records(),
+        unsupported_providers=unsupported_providers,
         projections=tuple(projections.values()),
         provider_methods=provider_method_records_for_projections(
             projections.values(),
@@ -82,6 +86,7 @@ def resolve_projection_manifest(
         source_modules=_source_module_records(
             category_fullnames,
             projections=projections.values(),
+            unsupported_providers=unsupported_providers,
             concrete_parents=concrete_parents,
         ),
     )
@@ -101,6 +106,19 @@ def _named_class_records() -> tuple[NamedClassRecord, ...]:
             provider_attr=trace.provider_attr,
         )
         for trace in named_class_traces()
+    )
+
+
+def _unsupported_provider_records() -> tuple[UnsupportedProviderRecord, ...]:
+    return tuple(
+        UnsupportedProviderRecord(
+            provider=trace.provider,
+            role=trace.role,
+            reason=trace.reason,
+            runtime_classes=trace.runtime_classes,
+            runtime_mros=trace.runtime_mros,
+        )
+        for trace in unsupported_provider_traces()
     )
 
 
@@ -304,6 +322,7 @@ def _source_module_records(
     category_fullnames: Sequence[str],
     *,
     projections: Iterable[ProviderProjection] = (),
+    unsupported_providers: Iterable[UnsupportedProviderRecord] = (),
     concrete_parents: Iterable[ConcreteParentRecord] = (),
 ) -> tuple[SourceModuleRecord, ...]:
     module_names = tuple(
@@ -314,6 +333,7 @@ def _source_module_records(
                     for fullname in category_fullnames
                 ),
                 *_projection_module_names(projections),
+                *_unsupported_provider_module_names(unsupported_providers),
                 *_concrete_parent_module_names(concrete_parents),
             )
         )
@@ -338,6 +358,26 @@ def _projection_module_names(
             *projection.provider_bases,
             *projection.provider_mro,
             *projection.unprojected_runtime_mro,
+        ):
+            module_name = _importable_module_name_or_none(fullname)
+            if module_name is not None:
+                module_names.append(module_name)
+    return tuple(dict.fromkeys(module_names))
+
+
+def _unsupported_provider_module_names(
+    unsupported_providers: Iterable[UnsupportedProviderRecord],
+) -> tuple[str, ...]:
+    module_names: list[str] = []
+    for unsupported_provider in unsupported_providers:
+        for fullname in (
+            unsupported_provider.provider,
+            *unsupported_provider.runtime_classes,
+            *(
+                runtime_class
+                for runtime_mro in unsupported_provider.runtime_mros
+                for runtime_class in runtime_mro
+            ),
         ):
             module_name = _importable_module_name_or_none(fullname)
             if module_name is not None:

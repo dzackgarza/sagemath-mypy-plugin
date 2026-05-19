@@ -14,6 +14,7 @@ from sage_mypy_category_plugin.manifest import (
     NamedClassRecord,
     ProjectionManifest,
     SourceModuleRecord,
+    UnsupportedProviderRecord,
     load_manifest,
     write_manifest,
 )
@@ -167,6 +168,34 @@ def _named_class_record() -> NamedClassRecord:
         ),
         runtime_attr="parent_class",
         provider_attr="ParentMethods",
+    )
+
+
+def _unsupported_provider_record() -> UnsupportedProviderRecord:
+    return UnsupportedProviderRecord(
+        provider="tests.fixtures.invariant_core.diamond_runtime.SharedParentMethods",
+        role="parent",
+        reason="ambiguous_runtime_mro",
+        runtime_classes=(
+            "tests.fixtures.invariant_core.diamond_runtime."
+            "SharedProviderTopCategory.parent_class",
+            "tests.fixtures.invariant_core.diamond_runtime."
+            "SharedProviderBottomCategory.parent_class",
+        ),
+        runtime_mros=(
+            (
+                "tests.fixtures.invariant_core.diamond_runtime."
+                "SharedProviderTopCategory.parent_class",
+                "builtins.object",
+            ),
+            (
+                "tests.fixtures.invariant_core.diamond_runtime."
+                "SharedProviderBottomCategory.parent_class",
+                "tests.fixtures.invariant_core.diamond_runtime."
+                "SharedProviderTopCategory.parent_class",
+                "builtins.object",
+            ),
+        ),
     )
 
 
@@ -556,6 +585,153 @@ def test_manifest_accepts_named_class_trace_role_alias_when_projection_matches()
     manifest = ProjectionManifest.model_validate(payload)
 
     assert manifest.named_classes[0].role == "homset_parent"
+
+
+def test_manifest_records_unsupported_provider_classification() -> None:
+    payload = _manifest_payload()
+    unsupported_record = _unsupported_provider_record()
+    payload["unsupported_providers"] = [unsupported_record.model_dump(mode="json")]
+
+    manifest = ProjectionManifest.model_validate(payload)
+
+    assert manifest.unsupported_provider_by_provider == {
+        unsupported_record.provider: unsupported_record
+    }
+    assert unsupported_record.provider not in manifest.projection_by_provider
+
+
+def test_manifest_keeps_role_distinct_unsupported_provider_records() -> None:
+    payload = _manifest_payload()
+    parent_record = _unsupported_provider_record()
+    homset_record = parent_record.model_copy(update={"role": "homset_parent"})
+    payload["unsupported_providers"] = [
+        parent_record.model_dump(mode="json"),
+        homset_record.model_dump(mode="json"),
+    ]
+
+    manifest = ProjectionManifest.model_validate(payload)
+
+    assert manifest.unsupported_provider_by_role_and_provider == {
+        ("parent", parent_record.provider): parent_record,
+        ("homset_parent", homset_record.provider): homset_record,
+    }
+    with pytest.raises(ValueError):
+        manifest.unsupported_provider_by_provider
+
+
+def test_manifest_rejects_supported_and_unsupported_provider_overlap() -> None:
+    payload = _manifest_payload()
+    unsupported_record = _unsupported_provider_record().model_copy(
+        update={
+            "provider": _projection().provider,
+        }
+    )
+    payload["unsupported_providers"] = [unsupported_record.model_dump(mode="json")]
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    errors = raised.value.errors()
+    assert {error["type"] for error in errors} == {
+        "unsupported_provider_projection_overlap"
+    }
+    assert errors[0]["ctx"] == {
+        "provider": _projection().provider,
+        "role": "parent",
+    }
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_field"),
+    (
+        (
+            {
+                "runtime_classes": (
+                    "tests.fixtures.invariant_core.diamond_runtime.Only",
+                )
+            },
+            "runtime_classes",
+        ),
+        (
+            {
+                "runtime_mros": (
+                    (
+                        "tests.fixtures.invariant_core.diamond_runtime."
+                        "SharedProviderTopCategory.parent_class",
+                        "builtins.object",
+                    ),
+                )
+            },
+            "runtime_mros",
+        ),
+        (
+            {
+                "runtime_classes": (
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "SharedProviderTopCategory.parent_class",
+                    "tests.fixtures.invariant_core.diamond_runtime."
+                    "SharedProviderTopCategory.parent_class",
+                )
+            },
+            "runtime_classes",
+        ),
+        (
+            {
+                "runtime_mros": (
+                    (
+                        "builtins.object",
+                        "tests.fixtures.invariant_core.diamond_runtime."
+                        "SharedProviderTopCategory.parent_class",
+                    ),
+                    (
+                        "tests.fixtures.invariant_core.diamond_runtime."
+                        "SharedProviderBottomCategory.parent_class",
+                        "builtins.object",
+                    ),
+                )
+            },
+            "runtime_mros",
+        ),
+    ),
+)
+def test_manifest_rejects_incoherent_unsupported_provider_evidence(
+    mutation: dict[str, Any],
+    expected_field: str,
+) -> None:
+    unsupported_record = _unsupported_provider_record().model_dump(mode="json")
+    unsupported_record.update(mutation)
+
+    with pytest.raises(ValidationError) as raised:
+        UnsupportedProviderRecord.model_validate(unsupported_record)
+
+    errors = raised.value.errors()
+    assert {error["type"] for error in errors} == {
+        "unsupported_provider_graph_mismatch"
+    }
+    assert errors[0]["ctx"]["field"] == expected_field
+
+
+def test_manifest_semantic_digest_tracks_unsupported_provider_changes() -> None:
+    payload = _manifest_payload()
+    unsupported_record = _unsupported_provider_record()
+    payload["unsupported_providers"] = [unsupported_record.model_dump(mode="json")]
+    base_manifest = ProjectionManifest.model_validate(payload)
+
+    mutated_payload = base_manifest.model_dump(mode="json")
+    mutated_payload["unsupported_providers"][0]["runtime_mros"] = (
+        unsupported_record.runtime_mros[0],
+        (
+            "tests.fixtures.invariant_core.diamond_runtime."
+            "SharedProviderBottomCategory.parent_class",
+            "builtins.object",
+        ),
+    )
+    mutated_manifest = ProjectionManifest.model_validate(mutated_payload)
+
+    assert (
+        base_manifest.semantic_projection_digest
+        != mutated_manifest.semantic_projection_digest
+    )
 
 
 @pytest.mark.parametrize(

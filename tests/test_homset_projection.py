@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-import pytest
-
 import sage.all  # type: ignore[import-untyped] # noqa: F401
 from sage.categories.homsets import Homsets  # type: ignore[import-untyped]
 from sage.categories.objects import Objects  # type: ignore[import-untyped]
 from sage.categories.sets_cat import Sets  # type: ignore[import-untyped]
 
 from sage_mypy_category_plugin.oracle import provider_projections_for_categories
+from sage_mypy_category_plugin.oracle import unsupported_provider_traces
 from tests.fixtures.invariant_core.provider_roles.homsets import (
     BottomCategory,
     SharedHomsetProviderCategory,
+    SharedHomsetParentMethods,
+    SharedStandaloneHomCategory,
     TopCategory,
 )
 
@@ -155,11 +156,34 @@ def test_homset_element_projection_matches_sage_runtime_mro() -> None:
     )
 
 
-def test_homset_projection_rejects_shared_provider_with_distinct_runtime_mros() -> None:
+def test_homset_projection_classifies_shared_provider_with_distinct_runtime_mros() -> None:
     category = SharedHomsetProviderCategory
+    provider = _class_fullname(SharedHomsetParentMethods)
 
-    with pytest.raises(AssertionError):
-        provider_projections_for_categories(
-            (f"{category.__module__}.{category.__qualname__}",),
-            roles=("homset_parent",),
-        )
+    projections = provider_projections_for_categories(
+        (f"{category.__module__}.{category.__qualname__}",),
+        roles=("homset_parent",),
+    )
+    unsupported_provider = {
+        trace.provider: trace for trace in unsupported_provider_traces()
+    }[provider]
+    standalone_runtime_class = SharedStandaloneHomCategory().parent_class
+    homset_runtime_class = category.an_instance().Homsets().parent_class
+
+    assert provider not in projections
+    assert unsupported_provider.role == "homset_parent"
+    assert unsupported_provider.reason == "ambiguous_runtime_mro"
+    assert unsupported_provider.runtime_classes == (
+        _class_fullname(standalone_runtime_class),
+        _class_fullname(homset_runtime_class),
+    )
+    assert unsupported_provider.runtime_mros == (
+        tuple(
+            _class_fullname(runtime_class)
+            for runtime_class in standalone_runtime_class.__mro__
+        ),
+        tuple(
+            _class_fullname(runtime_class)
+            for runtime_class in homset_runtime_class.__mro__
+        ),
+    )

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from importlib import import_module
 from inspect import signature
 from types import FunctionType
-from typing import Protocol, Self as TypingSelf, runtime_checkable
+from typing import Literal, Protocol, Self as TypingSelf, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
@@ -98,7 +98,20 @@ class NamedClassTrace:
     provider_attr: str
 
 
+@dataclass(frozen=True)
+class UnsupportedProviderTrace:
+    provider: str
+    role: ProviderRole
+    reason: Literal["ambiguous_runtime_mro"]
+    runtime_classes: tuple[str, ...]
+    runtime_mros: tuple[tuple[str, ...], ...]
+
+
 _NAMED_CLASS_TRACES_BY_PROVIDER: dict[tuple[ProviderRole, str], NamedClassTrace] = {}
+_UNSUPPORTED_PROVIDER_TRACES_BY_PROVIDER: dict[
+    tuple[ProviderRole, str],
+    UnsupportedProviderTrace,
+] = {}
 _RUNTIME_CLASS_BY_PROVIDER_ROLE: dict[tuple[ProviderRole, str], type[object]] = {}
 _PROVIDER_CLASS_BY_FULLNAME: dict[str, type[object]] = {}
 _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE: dict[ProviderRole, dict[type[object], str]] = {
@@ -117,6 +130,7 @@ def provider_projections_for_categories(
     roles: Iterable[ProviderRole],
 ) -> dict[str, ProviderProjection]:
     _NAMED_CLASS_TRACES_BY_PROVIDER.clear()
+    _UNSUPPORTED_PROVIDER_TRACES_BY_PROVIDER.clear()
     _RUNTIME_CLASS_BY_PROVIDER_ROLE.clear()
     _PROVIDER_CLASS_BY_FULLNAME.clear()
     for role in roles:
@@ -131,6 +145,7 @@ def provider_projections_for_categories(
                 projection = _provider_projection(category, role)
                 if projection is not None:
                     _record_provider_projection(projections, projection)
+        projections = _supported_provider_projections(projections)
         for (role, provider), runtime_class in _RUNTIME_CLASS_BY_PROVIDER_ROLE.items():
             if provider not in projections:
                 _record_provider_projection(
@@ -142,6 +157,16 @@ def provider_projections_for_categories(
                     ),
                 )
         return projections
+
+
+def _supported_provider_projections(
+    projections: dict[str, ProviderProjection],
+) -> dict[str, ProviderProjection]:
+    return {
+        provider: projection
+        for provider, projection in projections.items()
+        if not _is_unsupported_provider(projection.role, provider)
+    }
 
 
 def concrete_parent_records_for_factories(
@@ -168,6 +193,10 @@ def concrete_parent_records_for_factories(
 
 def named_class_traces() -> tuple[NamedClassTrace, ...]:
     return tuple(_NAMED_CLASS_TRACES_BY_PROVIDER.values())
+
+
+def unsupported_provider_traces() -> tuple[UnsupportedProviderTrace, ...]:
+    return tuple(_UNSUPPORTED_PROVIDER_TRACES_BY_PROVIDER.values())
 
 
 def _record_provider_projection(
@@ -314,6 +343,9 @@ def _provider_projection(
     runtime_to_provider = _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role]
     provider = _provider_fullname_or_none(projected_category, role_projection)
     if provider is None:
+        _UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role].add(runtime_class)
+        return None
+    if _is_unsupported_provider(role, provider):
         _UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role].add(runtime_class)
         return None
 
@@ -537,6 +569,9 @@ def _ensure_runtime_class_projection(
     if provider is None:
         _UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role].add(runtime_class)
         return
+    if _is_unsupported_provider(role, provider):
+        _UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role].add(runtime_class)
+        return
 
     _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role][runtime_class] = provider
     _RUNTIME_CLASS_BY_PROVIDER_ROLE[(role, provider)] = runtime_class
@@ -666,23 +701,97 @@ def _record_named_class_trace(
     runtime_class: type[object],
     trace: NamedClassTrace,
 ) -> None:
-    existing_trace = _NAMED_CLASS_TRACES_BY_PROVIDER.get((role, provider))
-    if existing_trace is not None:
-        assert (
-            existing_trace.runtime_class == trace.runtime_class
-            and existing_trace.runtime_bases == trace.runtime_bases
-            and existing_trace.runtime_mro == trace.runtime_mro
-            and existing_trace.runtime_attr == trace.runtime_attr
-            and existing_trace.provider_attr == trace.provider_attr
-        ), (
-            f"{provider} cannot be projected for {role}: Sage traced "
-            "multiple distinct runtime named classes for the same provider "
-            f"({existing_trace.runtime_class} and {trace.runtime_class})"
+    if _is_unsupported_provider(role, provider):
+        _record_unsupported_provider_trace(
+            role=role,
+            provider=provider,
+            traces=(trace,),
         )
+        _UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role].add(runtime_class)
+        return
+
+    existing_trace = _NAMED_CLASS_TRACES_BY_PROVIDER.get((role, provider))
+    if existing_trace is not None and not _named_class_traces_agree(
+        existing_trace,
+        trace,
+    ):
+        _record_unsupported_provider_trace(
+            role=role,
+            provider=provider,
+            traces=(existing_trace, trace),
+        )
+        _remove_supported_provider_trace(role=role, provider=provider)
+        _UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role].add(runtime_class)
+        return
 
     _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role][runtime_class] = provider
     _RUNTIME_CLASS_BY_PROVIDER_ROLE[(role, provider)] = runtime_class
     _NAMED_CLASS_TRACES_BY_PROVIDER[(role, provider)] = trace
+
+
+def _named_class_traces_agree(
+    left: NamedClassTrace,
+    right: NamedClassTrace,
+) -> bool:
+    return (
+        left.runtime_class == right.runtime_class
+        and left.runtime_bases == right.runtime_bases
+        and left.runtime_mro == right.runtime_mro
+        and left.runtime_attr == right.runtime_attr
+        and left.provider_attr == right.provider_attr
+    )
+
+
+def _is_unsupported_provider(role: ProviderRole, provider: str) -> bool:
+    return (role, provider) in _UNSUPPORTED_PROVIDER_TRACES_BY_PROVIDER
+
+
+def _record_unsupported_provider_trace(
+    *,
+    role: ProviderRole,
+    provider: str,
+    traces: Iterable[NamedClassTrace],
+) -> None:
+    existing_trace = _UNSUPPORTED_PROVIDER_TRACES_BY_PROVIDER.get((role, provider))
+    runtime_mro_by_class: dict[str, tuple[str, ...]] = {}
+    if existing_trace is not None:
+        runtime_mro_by_class.update(
+            zip(
+                existing_trace.runtime_classes,
+                existing_trace.runtime_mros,
+                strict=True,
+            )
+        )
+    for trace in traces:
+        runtime_mro_by_class[trace.runtime_class] = trace.runtime_mro
+    _UNSUPPORTED_PROVIDER_TRACES_BY_PROVIDER[(role, provider)] = (
+        UnsupportedProviderTrace(
+            provider=provider,
+            role=role,
+            reason="ambiguous_runtime_mro",
+            runtime_classes=tuple(runtime_mro_by_class),
+            runtime_mros=tuple(runtime_mro_by_class.values()),
+        )
+    )
+
+
+def _remove_supported_provider_trace(
+    *,
+    role: ProviderRole,
+    provider: str,
+) -> None:
+    _NAMED_CLASS_TRACES_BY_PROVIDER.pop((role, provider), None)
+    _RUNTIME_CLASS_BY_PROVIDER_ROLE.pop((role, provider), None)
+    runtime_classes = tuple(
+        runtime_class
+        for runtime_class, mapped_provider in _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[
+            role
+        ].items()
+        if mapped_provider == provider
+    )
+    for runtime_class in runtime_classes:
+        _UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role].add(runtime_class)
+        del _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role][runtime_class]
 
 
 def _static_category_type(category: SageCategory) -> type[object]:
@@ -793,8 +902,10 @@ __all__ = [
     "ProviderProjection",
     "ProviderRole",
     "NamedClassTrace",
+    "UnsupportedProviderTrace",
     "concrete_parent_records_for_factories",
     "named_class_traces",
     "provider_method_records_for_projections",
     "provider_projections_for_categories",
+    "unsupported_provider_traces",
 ]

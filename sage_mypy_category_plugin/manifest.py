@@ -86,6 +86,73 @@ class NamedClassRecord(BaseModel):
         return validate_dotted_fullnames(value)
 
 
+class UnsupportedProviderRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    provider: StrictStr
+    role: ProviderRole
+    reason: Literal["ambiguous_runtime_mro"]
+    runtime_classes: tuple[StrictStr, ...]
+    runtime_mros: tuple[tuple[StrictStr, ...], ...]
+
+    @field_validator("provider")
+    @classmethod
+    def _validate_fullname(cls, value: str) -> str:
+        return validate_dotted_fullname(value)
+
+    @field_validator("runtime_classes")
+    @classmethod
+    def _validate_runtime_classes(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        return validate_dotted_fullnames(value)
+
+    @field_validator("runtime_mros")
+    @classmethod
+    def _validate_runtime_mros(
+        cls,
+        value: tuple[tuple[str, ...], ...],
+    ) -> tuple[tuple[str, ...], ...]:
+        return tuple(validate_dotted_fullnames(runtime_mro) for runtime_mro in value)
+
+    @model_validator(mode="after")
+    def _validate_runtime_mro_evidence(self) -> Self:
+        if len(self.runtime_classes) < 2:
+            raise PydanticCustomError(
+                "unsupported_provider_graph_mismatch",
+                "unsupported providers require at least two runtime classes",
+                {"provider": self.provider, "field": "runtime_classes"},
+            )
+        if len(self.runtime_classes) != len(self.runtime_mros):
+            raise PydanticCustomError(
+                "unsupported_provider_graph_mismatch",
+                "unsupported provider runtime class and MRO counts must agree",
+                {"provider": self.provider, "field": "runtime_mros"},
+            )
+        duplicate_runtime_classes = tuple(
+            runtime_class
+            for runtime_class in dict.fromkeys(self.runtime_classes)
+            if self.runtime_classes.count(runtime_class) > 1
+        )
+        if duplicate_runtime_classes:
+            raise PydanticCustomError(
+                "unsupported_provider_graph_mismatch",
+                "duplicate unsupported provider runtime classes",
+                {"provider": self.provider, "field": "runtime_classes"},
+            )
+        for runtime_class, runtime_mro in zip(
+            self.runtime_classes,
+            self.runtime_mros,
+            strict=True,
+        ):
+            if not runtime_mro or runtime_mro[0] != runtime_class:
+                raise PydanticCustomError(
+                    "unsupported_provider_graph_mismatch",
+                    "unsupported provider runtime MRO must start with its "
+                    "runtime class",
+                    {"provider": self.provider, "field": "runtime_mros"},
+                )
+        return self
+
+
 class ProjectionManifest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -98,6 +165,7 @@ class ProjectionManifest(BaseModel):
     mypy_max_version: StrictStr = "9999.9999.9999"
     python_version: StrictStr
     named_classes: tuple[NamedClassRecord, ...] = ()
+    unsupported_providers: tuple[UnsupportedProviderRecord, ...] = ()
     projections: tuple[ProviderProjection, ...]
     provider_methods: tuple[ProviderMethodRecord, ...] = ()
     source_modules: tuple[SourceModuleRecord, ...] = ()
@@ -151,6 +219,40 @@ class ProjectionManifest(BaseModel):
             raise ValueError(
                 "duplicate external runtime class records: "
                 + ", ".join(duplicate_external_runtime_classes)
+            )
+
+        unsupported_provider_keys = tuple(
+            (record.role, record.provider) for record in self.unsupported_providers
+        )
+        duplicate_unsupported_providers = tuple(
+            key
+            for key in dict.fromkeys(unsupported_provider_keys)
+            if unsupported_provider_keys.count(key) > 1
+        )
+        if duplicate_unsupported_providers:
+            duplicate_descriptions = tuple(
+                f"{role}:{provider}"
+                for role, provider in duplicate_unsupported_providers
+            )
+            raise ValueError(
+                "duplicate unsupported provider records: "
+                + ", ".join(duplicate_descriptions)
+            )
+        supported_and_unsupported_providers = tuple(
+            (unsupported_provider.role, unsupported_provider.provider)
+            for unsupported_provider in self.unsupported_providers
+            if any(
+                projection.provider == unsupported_provider.provider
+                and roles_share_projection(projection.role, unsupported_provider.role)
+                for projection in self.projections
+            )
+        )
+        if supported_and_unsupported_providers:
+            role, provider = supported_and_unsupported_providers[0]
+            raise PydanticCustomError(
+                "unsupported_provider_projection_overlap",
+                "provider cannot be both supported and unsupported",
+                {"provider": provider, "role": role},
             )
 
         named_class_keys = tuple(
@@ -437,6 +539,30 @@ class ProjectionManifest(BaseModel):
         }
 
     @property
+    def unsupported_provider_by_role_and_provider(
+        self,
+    ) -> dict[tuple[ProviderRole, str], UnsupportedProviderRecord]:
+        return {
+            (record.role, record.provider): record
+            for record in self.unsupported_providers
+        }
+
+    @property
+    def unsupported_provider_by_provider(self) -> dict[str, UnsupportedProviderRecord]:
+        providers = tuple(record.provider for record in self.unsupported_providers)
+        duplicate_providers = tuple(
+            provider
+            for provider in dict.fromkeys(providers)
+            if providers.count(provider) > 1
+        )
+        if duplicate_providers:
+            raise ValueError(
+                "unsupported provider lookup by provider is ambiguous for: "
+                + ", ".join(duplicate_providers)
+            )
+        return {record.provider: record for record in self.unsupported_providers}
+
+    @property
     def source_module_digest(self) -> str:
         source_modules = tuple(
             (record.module, record.path, record.sha256, record.mtime_ns)
@@ -527,6 +653,19 @@ class ProjectionManifest(BaseModel):
                         key=lambda record: (record.role, record.provider),
                     )
                 ),
+                "unsupported_providers": tuple(
+                    (
+                        record.provider,
+                        record.role,
+                        record.reason,
+                        record.runtime_classes,
+                        record.runtime_mros,
+                    )
+                    for record in sorted(
+                        self.unsupported_providers,
+                        key=lambda record: (record.role, record.provider),
+                    )
+                ),
                 "projections": projections,
             },
             sort_keys=True,
@@ -557,6 +696,18 @@ def _semantic_fullnames(manifest: ProjectionManifest) -> tuple[str, ...]:
                 named_class.runtime_class,
                 *named_class.runtime_bases,
                 *named_class.runtime_mro,
+            )
+        )
+    for unsupported_provider in manifest.unsupported_providers:
+        fullnames.extend(
+            (
+                unsupported_provider.provider,
+                *unsupported_provider.runtime_classes,
+                *(
+                    runtime_class
+                    for runtime_mro in unsupported_provider.runtime_mros
+                    for runtime_class in runtime_mro
+                ),
             )
         )
     for provider_method in manifest.provider_methods:
@@ -611,6 +762,7 @@ __all__ = [
     "ProviderMethodRecord",
     "SourceModuleRecord",
     "ProjectionManifest",
+    "UnsupportedProviderRecord",
     "load_manifest",
     "write_manifest",
 ]
