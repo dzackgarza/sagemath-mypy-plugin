@@ -34,6 +34,7 @@ from sage_mypy_category_plugin.projection import (
     ExternalRuntimeClassStaticSignatureSource,
     ProviderProjection,
     ProviderRole,
+    roles_share_projection,
 )
 
 
@@ -65,7 +66,12 @@ def resolve_projection_manifest(
     for provider, projection in concrete_parent_projections.items():
         existing_projection = projections.get(provider)
         if existing_projection is not None:
-            assert existing_projection == projection, (
+            role_normalized_projection = projection
+            if roles_share_projection(existing_projection.role, projection.role):
+                role_normalized_projection = projection.model_copy(
+                    update={"role": existing_projection.role}
+                )
+            assert existing_projection == role_normalized_projection, (
                 f"Conflicting projection for concrete parent provider {provider}: "
                 f"{existing_projection!r} vs {projection!r}"
             )

@@ -171,6 +171,41 @@ def test_resolver_accepts_homset_provider_roles(tmp_path: Path) -> None:
     )
 
 
+def test_resolver_deduplicates_role_alias_provider_projections(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "sage-category-role-aliases.json"
+    top_homset_provider = f"{HOMSET_FIXTURE_MODULE}.TopCategory.Homsets.ParentMethods"
+
+    resolver.main(
+        [
+            "--output",
+            str(manifest_path),
+            "--role",
+            "parent",
+            "--role",
+            "homset_parent",
+            "--package",
+            HOMSET_FIXTURE_MODULE,
+        ]
+    )
+
+    manifest = load_manifest(manifest_path)
+    matching_projections = tuple(
+        projection
+        for projection in manifest.projections
+        if projection.provider == top_homset_provider
+    )
+
+    assert len(matching_projections) == 1
+    assert matching_projections[0].provider_mro == (
+        top_homset_provider,
+        "sage.categories.homsets.Homsets.ParentMethods",
+        "sage.categories.sets_cat.Sets.ParentMethods",
+        OBJECTS_PARENT_PROVIDER,
+    )
+
+
 def test_resolver_records_unsupported_shared_homset_provider(
     tmp_path: Path,
 ) -> None:
@@ -194,10 +229,10 @@ def test_resolver_records_unsupported_shared_homset_provider(
     assert SHARED_HOMSET_PROVIDER not in manifest.projection_by_provider
     assert unsupported_provider.role == "homset_parent"
     assert unsupported_provider.reason == "ambiguous_runtime_mro"
-    assert unsupported_provider.runtime_classes == (
+    assert set(unsupported_provider.runtime_classes) == {
         f"{HOMSET_FIXTURE_MODULE}.SharedStandaloneHomCategory.parent_class",
         f"{HOMSET_FIXTURE_MODULE}.SharedHomsetProviderCategory.Homsets.parent_class",
-    )
+    }
 
 
 def test_resolver_records_sage_git_revision_override(tmp_path: Path) -> None:
