@@ -16,6 +16,7 @@ from sage_mypy_category_plugin.manifest import (
 )
 from sage_mypy_category_plugin.oracle import provider_projections_for_categories
 from sage_mypy_category_plugin.projection import ProviderProjection
+from tests.manifest_helpers import external_runtime_class_records_for_test_manifest
 
 type SourceTree = dict[str, "SourceTree"]
 
@@ -255,6 +256,9 @@ def _write_plugin_config(tmp_path: Path) -> Path:
         sage_version="10.7",
         python_version="3.12.13",
         projections=tuple(projections.values()),
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            tuple(projections.values()),
+        ),
     )
     manifest_path = tmp_path / "sage-category-projections.json"
     config_path = tmp_path / "mypy.ini"
@@ -288,41 +292,46 @@ def _write_axiom_plugin_config(
         tuple(category_fullnames),
         roles=("parent",),
     )
+    source_modules = (
+        _source_module_record(
+            "tests.fixtures.invariant_core.axioms",
+            FIXTURE_ROOT / "axioms.py",
+        ),
+        *(
+            _source_module_record(case[0], _module_path(case[0]))
+            for case in AXIOM_BEHAVIOR_CASES.values()
+        ),
+        _source_module_record(
+            "sage.categories.finite_sets",
+            visible_sage_stubs / "sage" / "categories" / "finite_sets.pyi",
+        ),
+        _source_module_record(
+            "sage.categories.sets_cat",
+            visible_sage_stubs / "sage" / "categories" / "sets_cat.pyi",
+        ),
+        _source_module_record(
+            "sage.categories.sets_with_partial_maps",
+            visible_sage_stubs
+            / "sage"
+            / "categories"
+            / "sets_with_partial_maps.pyi",
+        ),
+        _source_module_record(
+            "sage.categories.objects",
+            visible_sage_stubs / "sage" / "categories" / "objects.pyi",
+        ),
+    )
     manifest = ProjectionManifest(
         schema_version=1,
         generated_by="tests",
         sage_version="10.7",
         python_version="3.12.13",
         projections=tuple(projections.values()),
-        source_modules=(
-            _source_module_record(
-                "tests.fixtures.invariant_core.axioms",
-                FIXTURE_ROOT / "axioms.py",
-            ),
-            *(
-                _source_module_record(case[0], _module_path(case[0]))
-                for case in AXIOM_BEHAVIOR_CASES.values()
-            ),
-            _source_module_record(
-                "sage.categories.finite_sets",
-                visible_sage_stubs / "sage" / "categories" / "finite_sets.pyi",
-            ),
-            _source_module_record(
-                "sage.categories.sets_cat",
-                visible_sage_stubs / "sage" / "categories" / "sets_cat.pyi",
-            ),
-            _source_module_record(
-                "sage.categories.sets_with_partial_maps",
-                visible_sage_stubs
-                / "sage"
-                / "categories"
-                / "sets_with_partial_maps.pyi",
-            ),
-            _source_module_record(
-                "sage.categories.objects",
-                visible_sage_stubs / "sage" / "categories" / "objects.pyi",
-            ),
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            tuple(projections.values()),
+            source_modules=source_modules,
         ),
+        source_modules=source_modules,
     )
     manifest_path = tmp_path / "sage-category-axiom-behavior-projections.json"
     config_path = tmp_path / "axiom-behavior-mypy.ini"
@@ -378,6 +387,10 @@ def _run_nested_provider_mypy(
         sage_version="10.7",
         python_version="3.12.13",
         projections=tuple(projections.values()),
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            tuple(projections.values()),
+            source_modules=source_modules,
+        ),
         source_modules=source_modules,
     )
     write_manifest(manifest_path, manifest)

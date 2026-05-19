@@ -177,6 +177,14 @@ def test_resolver_records_projection_dependency_source_modules(tmp_path: Path) -
     assert "sage.categories.rings" in manifest.source_module_by_module
     assert "sage.categories.magmas" in manifest.source_module_by_module
     assert "sage.categories.magmas.Magmas" not in manifest.source_module_by_module
+    semirings_parent_class = "sage.categories.semirings.Semirings.parent_class"
+    assert manifest.external_runtime_class_by_fullname[
+        semirings_parent_class
+    ].static_signature_source == "python_source"
+    assert (
+        manifest.external_runtime_class_by_fullname[semirings_parent_class].source_module
+        == "sage.categories.semirings"
+    )
 
 
 def test_resolver_accepts_nested_axiom_category_fullname(tmp_path: Path) -> None:
@@ -259,6 +267,9 @@ def test_resolver_records_concrete_parent_initialization(tmp_path: Path) -> None
     assert record.element_provider_mro[0] == (
         "sage.categories.semigroups.Semigroups.ElementMethods"
     )
+    assert manifest.external_runtime_class_by_fullname[
+        "sage.structure.parent.Parent"
+    ].static_signature_source == "untyped_external"
     assert record.parent_provider_mro[0] in manifest.projection_by_provider
     assert record.element_provider_mro[0] in manifest.projection_by_provider
     assert "sage.categories.examples.semigroups" in manifest.source_module_by_module

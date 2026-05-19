@@ -9,6 +9,7 @@ from mypy.options import Options
 from sage_mypy_category_plugin.manifest import ProjectionManifest, write_manifest
 from sage_mypy_category_plugin.oracle import provider_projections_for_categories
 from sage_mypy_category_plugin.projection import ProviderRole
+from tests.manifest_helpers import external_runtime_class_records_for_test_manifest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "invariant_core"
@@ -174,6 +175,9 @@ def _write_plugin_config(tmp_path: Path) -> Path:
         sage_version="10.7",
         python_version="3.12.13",
         projections=tuple(projections.values()),
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            tuple(projections.values()),
+        ),
     )
     manifest_path = tmp_path / "sage-category-projections.json"
     config_path = tmp_path / "mypy.ini"

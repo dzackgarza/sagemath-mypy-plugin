@@ -26,6 +26,7 @@ from sage_mypy_category_plugin.plugin import (
 )
 from sage_mypy_category_plugin.projection import ProviderProjection, ProviderRole
 from sage_mypy_category_plugin.stubs import write_generated_stub_tree
+from tests.manifest_helpers import external_runtime_class_records_for_test_manifest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_MODULE = "tests.fixtures.invariant_core.diamond_runtime"
@@ -280,6 +281,9 @@ def test_plugin_projects_structural_typeinfo_mros_from_manifest(
         sage_version="10.7",
         python_version="3.12.13",
         projections=tuple(projections.values()),
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            tuple(projections.values()),
+        ),
     )
     manifest_path = tmp_path / "sage-category-structural-projections.json"
     config_path = tmp_path / "mypy.ini"
@@ -517,6 +521,10 @@ def test_plugin_projects_nested_axiom_typeinfo_mro_from_manifest(
         sage_version="10.7",
         python_version="3.12.13",
         projections=tuple(projections.values()),
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            tuple(projections.values()),
+            source_modules=source_modules,
+        ),
         source_modules=source_modules,
     )
     manifest_path = tmp_path / "sage-category-nested-axiom-projections.json"
@@ -599,6 +607,10 @@ def test_plugin_projects_linked_axiom_typeinfo_mro_from_manifest(
         sage_version="10.7",
         python_version="3.12.13",
         projections=tuple(projections.values()),
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            tuple(projections.values()),
+            source_modules=source_modules,
+        ),
         source_modules=source_modules,
     )
     manifest_path = tmp_path / "sage-category-linked-axiom-projections.json"
@@ -673,6 +685,9 @@ def test_plugin_reports_homset_external_provider_boundary(
         sage_version="10.7",
         python_version="3.12.13",
         projections=tuple(projections.values()),
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            tuple(projections.values()),
+        ),
     )
     manifest_path = tmp_path / "sage-category-homset-projections.json"
     config_path = tmp_path / "mypy.ini"
@@ -750,6 +765,10 @@ def test_plugin_projects_sage_provider_typeinfo_mros_from_source_modules(
         sage_version="10.7",
         python_version="3.12.13",
         projections=tuple(projections.values()),
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            tuple(projections.values()),
+            source_modules=source_modules,
+        ),
         source_modules=source_modules,
     )
     axiom_fixture_path = tmp_path / "axiom_consumer.py"
@@ -891,6 +910,10 @@ def test_plugin_dependency_modules_use_manifest_source_modules_for_nested_axioms
         sage_version="10.7",
         python_version="3.12.13",
         projections=tuple(projections.values()),
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            tuple(projections.values()),
+            source_modules=source_modules,
+        ),
         source_modules=source_modules,
     )
     manifest_path = tmp_path / "sage-category-axiom-projections.json"
@@ -1060,6 +1083,10 @@ def test_plugin_reports_semantic_manifest_config_data(tmp_path: Path) -> None:
         sage_git_revision="abc123abc123abc123abc123abc123abc123abcd",
         python_version="3.12.13",
         projections=tuple(projections.values()),
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            tuple(projections.values()),
+            source_modules=(DIAMOND_SOURCE_MODULE,),
+        ),
         source_modules=(DIAMOND_SOURCE_MODULE,),
     )
     manifest_path = tmp_path / "sage-category-projections.json"
@@ -1116,6 +1143,10 @@ def test_plugin_fails_clearly_for_stale_source_module_metadata(
         sage_version="10.7",
         python_version="3.12.13",
         projections=tuple(projections.values()),
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            tuple(projections.values()),
+            source_modules=(stale_source_module,),
+        ),
         source_modules=(stale_source_module,),
     )
     manifest_path = tmp_path / "stale-source-module.json"
@@ -1207,6 +1238,9 @@ def test_plugin_fails_clearly_for_invalid_manifest_schema(tmp_path: Path) -> Non
         sage_version="10.7",
         python_version="3.12.13",
         projections=tuple(projections.values()),
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            tuple(projections.values()),
+        ),
     )
     payload = valid_manifest.model_dump(mode="json")
     payload["plugin_schema_version"] = "999"
@@ -1255,23 +1289,30 @@ def test_plugin_reports_manifest_drift_and_rebuilds_projection(
     drifted_projection = original_projection.model_copy(
         update={"provider_mro": drifted_mro}
     )
+    drifted_projections = tuple(
+        projection
+        if projection.provider != BOTTOM_PROVIDER
+        else drifted_projection
+        for projection in projections.values()
+    )
     original_manifest = ProjectionManifest(
         schema_version=1,
         generated_by="tests",
         sage_version="10.7",
         python_version="3.12.13",
         projections=tuple(projections.values()),
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            tuple(projections.values()),
+        ),
     )
     drifted_manifest = ProjectionManifest(
         schema_version=1,
         generated_by="tests",
         sage_version="10.7",
         python_version="3.12.13",
-        projections=tuple(
-            projection
-            if projection.provider != BOTTOM_PROVIDER
-            else drifted_projection
-            for projection in projections.values()
+        projections=drifted_projections,
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            drifted_projections,
         ),
     )
     manifest_path = tmp_path / "drifting-projections.json"
@@ -1471,6 +1512,10 @@ def _write_projected_provider_stubs(
         sage_version="10.7",
         python_version="3.12.13",
         projections=projections,
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            projections,
+            source_modules=manifest_source_modules,
+        ),
         source_modules=manifest_source_modules,
     )
     written_source_modules = {

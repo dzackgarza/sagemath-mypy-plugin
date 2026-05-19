@@ -619,6 +619,79 @@ def test_manifest_rejects_negative_source_module_mtime() -> None:
     assert "mtime_ns" in str(raised.value)
 
 
+def test_manifest_requires_external_metadata_for_unprojected_runtime_classes() -> None:
+    payload = _manifest_payload()
+    payload["projections"] = [*payload["projections"]]
+    payload["projections"][0] = {
+        **payload["projections"][0],
+        "unprojected_runtime_mro": ("sage.structure.parent.Parent",),
+    }
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    errors = raised.value.errors()
+    assert {error["type"] for error in errors} == {
+        "external_runtime_class_missing"
+    }
+    assert errors[0]["ctx"]["runtime_class"] == "sage.structure.parent.Parent"
+
+
+def test_manifest_records_external_runtime_class_boundaries() -> None:
+    payload = _manifest_payload()
+    payload["projections"] = [*payload["projections"]]
+    payload["projections"][0] = {
+        **payload["projections"][0],
+        "unprojected_runtime_mro": ("sage.structure.parent.Parent",),
+    }
+    payload["external_runtime_classes"] = [
+        {
+            "runtime_class": "sage.structure.parent.Parent",
+            "module": "sage.structure.parent",
+            "static_signature_source": "untyped_external",
+            "source_module": None,
+        }
+    ]
+
+    manifest = ProjectionManifest.model_validate(payload)
+
+    assert manifest.model_dump(mode="json")["external_runtime_classes"] == (
+        payload["external_runtime_classes"]
+    )
+    assert manifest.external_runtime_class_by_fullname[
+        "sage.structure.parent.Parent"
+    ].static_signature_source == "untyped_external"
+
+
+def test_manifest_semantic_digest_tracks_external_runtime_class_boundaries() -> None:
+    payload = _manifest_payload()
+    payload["projections"] = [*payload["projections"]]
+    payload["projections"][0] = {
+        **payload["projections"][0],
+        "unprojected_runtime_mro": ("sage.structure.parent.Parent",),
+    }
+    payload["external_runtime_classes"] = [
+        {
+            "runtime_class": "sage.structure.parent.Parent",
+            "module": "sage.structure.parent",
+            "static_signature_source": "untyped_external",
+            "source_module": None,
+        }
+    ]
+    untyped_manifest = ProjectionManifest.model_validate(payload)
+    payload["external_runtime_classes"][0] = {
+        **payload["external_runtime_classes"][0],
+        "static_signature_source": "stub",
+        "source_module": "sage.structure.parent",
+    }
+    stub_visible_manifest = ProjectionManifest.model_validate(payload)
+
+    assert (
+        untyped_manifest.semantic_projection_digest
+        != stub_visible_manifest.semantic_projection_digest
+    )
+
+
 def test_manifest_rejects_invalid_sage_git_revision() -> None:
     payload = _manifest_payload()
     payload["sage_git_revision"] = "not-a-revision"

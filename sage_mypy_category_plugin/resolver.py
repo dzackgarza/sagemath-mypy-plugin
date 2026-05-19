@@ -25,6 +25,8 @@ from sage_mypy_category_plugin.oracle import (
 )
 from sage_mypy_category_plugin.projection import (
     ConcreteParentRecord,
+    ExternalRuntimeClassRecord,
+    ExternalRuntimeClassStaticSignatureSource,
     ProviderProjection,
     ProviderRole,
 )
@@ -53,6 +55,10 @@ def resolve_projection_manifest(
     concrete_parents = tuple(
         concrete_parent_records_for_factories(concrete_parent_fullnames).values()
     )
+    external_runtime_classes = _external_runtime_class_records(
+        projections=projections.values(),
+        concrete_parents=concrete_parents,
+    )
 
     return ProjectionManifest(
         schema_version=1,
@@ -69,6 +75,7 @@ def resolve_projection_manifest(
             concrete_parents=concrete_parents,
         ),
         concrete_parents=concrete_parents,
+        external_runtime_classes=external_runtime_classes,
         source_modules=_source_module_records(
             category_fullnames,
             projections=projections.values(),
@@ -251,6 +258,65 @@ def _concrete_parent_module_names(
             if module_name is not None:
                 module_names.append(module_name)
     return tuple(dict.fromkeys(module_names))
+
+
+def _external_runtime_class_records(
+    *,
+    projections: Iterable[ProviderProjection],
+    concrete_parents: Iterable[ConcreteParentRecord],
+) -> tuple[ExternalRuntimeClassRecord, ...]:
+    records: list[ExternalRuntimeClassRecord] = []
+    for runtime_class in _external_runtime_class_fullnames(
+        projections=projections,
+        concrete_parents=concrete_parents,
+    ):
+        module_name = _importable_module_name_or_none(runtime_class)
+        if module_name is None:
+            continue
+        static_signature_source, source_module = _static_signature_metadata(module_name)
+        records.append(
+            ExternalRuntimeClassRecord(
+                runtime_class=runtime_class,
+                module=module_name,
+                static_signature_source=static_signature_source,
+                source_module=source_module,
+            )
+        )
+    return tuple(records)
+
+
+def _external_runtime_class_fullnames(
+    *,
+    projections: Iterable[ProviderProjection],
+    concrete_parents: Iterable[ConcreteParentRecord],
+) -> tuple[str, ...]:
+    fullnames: list[str] = []
+    for projection in projections:
+        fullnames.extend(projection.unprojected_runtime_mro)
+    for concrete_parent in concrete_parents:
+        fullnames.extend(concrete_parent.runtime_mro)
+        if concrete_parent.element_runtime_class is not None:
+            fullnames.append(concrete_parent.element_runtime_class)
+    return tuple(
+        fullname
+        for fullname in dict.fromkeys(fullnames)
+        if fullname != "builtins.object"
+    )
+
+
+def _static_signature_metadata(
+    module_name: str,
+) -> tuple[ExternalRuntimeClassStaticSignatureSource, str | None]:
+    source_record = _source_module_record_or_none(module_name)
+    if source_record is None:
+        return "untyped_external", None
+
+    suffix = Path(source_record.path).suffix
+    if suffix == ".py":
+        return "python_source", module_name
+    if suffix == ".pyi":
+        return "stub", module_name
+    return "untyped_external", None
 
 
 def _importable_module_name_or_none(fullname: str) -> str | None:

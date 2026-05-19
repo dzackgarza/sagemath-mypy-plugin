@@ -13,6 +13,11 @@ ProviderRole = Literal[
     "homset_element",
 ]
 ProviderMethodReturnType = Literal["Self", "object"]
+ExternalRuntimeClassStaticSignatureSource = Literal[
+    "python_source",
+    "stub",
+    "untyped_external",
+]
 ROLE_PROJECTION_ALIASES: frozenset[frozenset[ProviderRole]] = frozenset(
     (
         frozenset(("parent", "homset_parent")),
@@ -133,8 +138,47 @@ class ProviderMethodRecord(BaseModel):
         return self
 
 
+class ExternalRuntimeClassRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    runtime_class: StrictStr
+    module: StrictStr
+    static_signature_source: ExternalRuntimeClassStaticSignatureSource
+    source_module: StrictStr | None = None
+
+    @field_validator("runtime_class")
+    @classmethod
+    def _validate_runtime_class_fullname(cls, value: str) -> str:
+        return validate_dotted_fullname(value)
+
+    @field_validator("module", "source_module")
+    @classmethod
+    def _validate_module_or_none(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_module_name(value)
+
+    @model_validator(mode="after")
+    def _validate_static_signature_source(self) -> Self:
+        if self.static_signature_source == "untyped_external":
+            if self.source_module is not None:
+                raise ValueError(
+                    "untyped external runtime classes must not claim a source module"
+                )
+            return self
+
+        if self.source_module is None:
+            raise ValueError(
+                f"{self.static_signature_source} runtime classes require "
+                "source_module"
+            )
+        return self
+
+
 __all__ = [
     "ConcreteParentRecord",
+    "ExternalRuntimeClassRecord",
+    "ExternalRuntimeClassStaticSignatureSource",
     "ProviderMethodReturnType",
     "ProviderMethodRecord",
     "ProviderProjection",

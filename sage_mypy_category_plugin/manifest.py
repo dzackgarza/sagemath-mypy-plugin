@@ -21,6 +21,7 @@ from pydantic_core import PydanticCustomError
 
 from sage_mypy_category_plugin.projection import (
     ConcreteParentRecord,
+    ExternalRuntimeClassRecord,
     ProviderMethodRecord,
     ProviderProjection,
     ProviderRole,
@@ -101,6 +102,7 @@ class ProjectionManifest(BaseModel):
     provider_methods: tuple[ProviderMethodRecord, ...] = ()
     source_modules: tuple[SourceModuleRecord, ...] = ()
     concrete_parents: tuple[ConcreteParentRecord, ...] = ()
+    external_runtime_classes: tuple[ExternalRuntimeClassRecord, ...] = ()
 
     @model_validator(mode="after")
     def _validate_git_revision(self) -> Self:
@@ -135,6 +137,20 @@ class ProjectionManifest(BaseModel):
             raise ValueError(
                 "duplicate source module records: "
                 + ", ".join(duplicate_source_modules)
+            )
+
+        external_runtime_classes = tuple(
+            record.runtime_class for record in self.external_runtime_classes
+        )
+        duplicate_external_runtime_classes = tuple(
+            runtime_class
+            for runtime_class in dict.fromkeys(external_runtime_classes)
+            if external_runtime_classes.count(runtime_class) > 1
+        )
+        if duplicate_external_runtime_classes:
+            raise ValueError(
+                "duplicate external runtime class records: "
+                + ", ".join(duplicate_external_runtime_classes)
             )
 
         named_class_keys = tuple(
@@ -276,6 +292,34 @@ class ProjectionManifest(BaseModel):
                     {"provider": projection.provider, "field": "runtime_bases"},
                 )
 
+        declared_external_runtime_classes = frozenset(external_runtime_classes)
+        unclassified_external_runtime_classes = tuple(
+            runtime_class
+            for projection in self.projections
+            for runtime_class in projection.unprojected_runtime_mro
+            if runtime_class not in declared_external_runtime_classes
+        )
+        if unclassified_external_runtime_classes:
+            raise PydanticCustomError(
+                "external_runtime_class_missing",
+                "unprojected runtime classes require external boundary metadata",
+                {"runtime_class": unclassified_external_runtime_classes[0]},
+            )
+
+        declared_source_modules = frozenset(source_modules)
+        missing_external_source_modules = tuple(
+            record.source_module
+            for record in self.external_runtime_classes
+            if record.source_module is not None
+            and record.source_module not in declared_source_modules
+        )
+        if missing_external_source_modules:
+            raise PydanticCustomError(
+                "external_runtime_class_source_module_missing",
+                "external runtime class source modules must be declared",
+                {"source_module": missing_external_source_modules[0]},
+            )
+
         declared_providers = frozenset(providers)
         referenced_providers = frozenset(
             provider
@@ -385,6 +429,14 @@ class ProjectionManifest(BaseModel):
         return {record.concrete_class: record for record in self.concrete_parents}
 
     @property
+    def external_runtime_class_by_fullname(
+        self,
+    ) -> dict[str, ExternalRuntimeClassRecord]:
+        return {
+            record.runtime_class: record for record in self.external_runtime_classes
+        }
+
+    @property
     def source_module_digest(self) -> str:
         source_modules = tuple(
             (record.module, record.path, record.sha256, record.mtime_ns)
@@ -446,6 +498,18 @@ class ProjectionManifest(BaseModel):
                         key=lambda record: (record.provider, record.name),
                     )
                 ),
+                "external_runtime_classes": tuple(
+                    (
+                        record.runtime_class,
+                        record.module,
+                        record.static_signature_source,
+                        record.source_module,
+                    )
+                    for record in sorted(
+                        self.external_runtime_classes,
+                        key=lambda record: record.runtime_class,
+                    )
+                ),
                 "named_classes": tuple(
                     (
                         record.category,
@@ -497,6 +561,9 @@ def _semantic_fullnames(manifest: ProjectionManifest) -> tuple[str, ...]:
         )
     for provider_method in manifest.provider_methods:
         fullnames.append(provider_method.provider)
+    for external_runtime_class in manifest.external_runtime_classes:
+        if external_runtime_class.source_module is not None:
+            fullnames.append(external_runtime_class.runtime_class)
     for concrete_parent in manifest.concrete_parents:
         fullnames.extend(
             (
@@ -539,6 +606,7 @@ def write_manifest(path: Path, manifest: ProjectionManifest) -> None:
 
 __all__ = [
     "ConcreteParentRecord",
+    "ExternalRuntimeClassRecord",
     "NamedClassRecord",
     "ProviderMethodRecord",
     "SourceModuleRecord",
