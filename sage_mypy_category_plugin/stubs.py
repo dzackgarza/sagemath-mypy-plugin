@@ -18,6 +18,7 @@ type ProviderMethodMap = dict[
     tuple[str, tuple[str, ...]],
     tuple[ProviderMethodRecord, ...],
 ]
+type ClassBaseMap = dict[tuple[str, tuple[str, ...]], tuple[str, ...]]
 type StubOrder = dict[tuple[str, tuple[str, ...]], int]
 METHOD_PROVIDER_NAMES = frozenset(("ParentMethods", "ElementMethods"))
 
@@ -43,6 +44,10 @@ def generated_stub_sources(
         manifest.provider_methods,
         source_modules=source_modules,
     )
+    class_bases = _concrete_parent_class_bases(
+        manifest,
+        source_modules=source_modules,
+    )
     for module_name, qualname in provider_methods:
         module_tree = module_trees.setdefault(module_name, {})
         _add_qualname(module_tree, qualname)
@@ -53,6 +58,8 @@ def generated_stub_sources(
             tree,
             module_name=module_name,
             provider_methods=provider_methods,
+            class_bases=class_bases,
+            source_modules=source_modules,
             stub_order=stub_order,
         )
         for module_name, tree in sorted(module_trees.items())
@@ -229,6 +236,20 @@ def _provider_methods_by_owner(
     }
 
 
+def _concrete_parent_class_bases(
+    manifest: ProjectionManifest,
+    *,
+    source_modules: tuple[str, ...],
+) -> ClassBaseMap:
+    return {
+        _source_module_and_qualname(
+            concrete_parent.concrete_class,
+            source_modules=source_modules,
+        ): concrete_parent.parent_provider_mro
+        for concrete_parent in manifest.concrete_parents
+    }
+
+
 def _runtime_alias_stub_source(
     manifest: ProjectionManifest,
     *,
@@ -299,6 +320,7 @@ def _runtime_alias_block(
                 fullname,
                 source_modules=source_modules,
                 imported_names=imported_names,
+                current_module=None,
             )
             for fullname in base_fullnames
         ),
@@ -314,12 +336,14 @@ def _base_expression(
     *,
     source_modules: tuple[str, ...],
     imported_names: dict[str, set[str]],
+    current_module: str | None,
 ) -> str:
     module_name, qualname = _source_module_and_qualname(
         fullname,
         source_modules=source_modules,
     )
-    imported_names.setdefault(module_name, set()).add(qualname[0])
+    if module_name != current_module:
+        imported_names.setdefault(module_name, set()).add(qualname[0])
     return ".".join(qualname)
 
 
@@ -352,17 +376,44 @@ def _stub_source(
     *,
     module_name: str,
     provider_methods: ProviderMethodMap,
+    class_bases: ClassBaseMap,
+    source_modules: tuple[str, ...],
     stub_order: StubOrder,
 ) -> str:
+    imported_names: dict[str, set[str]] = {}
     body_lines = _stub_lines(
         tree,
         module_name=module_name,
         provider_methods=provider_methods,
+        class_bases=class_bases,
+        source_modules=source_modules,
         stub_order=stub_order,
+        imported_names=imported_names,
     )
-    if _module_uses_self_return(module_name, provider_methods):
-        return "\n".join(("from typing import Self", "", *body_lines)) + "\n"
+    import_lines = _source_import_lines(
+        module_name,
+        provider_methods=provider_methods,
+        imported_names=imported_names,
+    )
+    if import_lines:
+        return "\n".join((*import_lines, "", *body_lines)) + "\n"
     return "\n".join(body_lines) + "\n"
+
+
+def _source_import_lines(
+    module_name: str,
+    *,
+    provider_methods: ProviderMethodMap,
+    imported_names: dict[str, set[str]],
+) -> tuple[str, ...]:
+    lines: list[str] = []
+    if _module_uses_self_return(module_name, provider_methods):
+        lines.append("from typing import Self")
+    lines.extend(
+        f"from {imported_module} import {', '.join(sorted(names))}"
+        for imported_module, names in sorted(imported_names.items())
+    )
+    return tuple(lines)
 
 
 def _module_uses_self_return(
@@ -382,7 +433,10 @@ def _stub_lines(
     *,
     module_name: str,
     provider_methods: ProviderMethodMap,
+    class_bases: ClassBaseMap,
+    source_modules: tuple[str, ...],
     stub_order: StubOrder,
+    imported_names: dict[str, set[str]],
     qualname: tuple[str, ...] = (),
     indent: int = 0,
 ) -> tuple[str, ...]:
@@ -398,7 +452,23 @@ def _stub_lines(
     ):
         nested_qualname = (*qualname, name)
         methods = provider_methods.get((module_name, nested_qualname), ())
-        lines.append(f"{'    ' * indent}class {name}:")
+        base_fullnames = class_bases.get((module_name, nested_qualname), ())
+        base_expressions = tuple(
+            _base_expression(
+                fullname,
+                source_modules=source_modules,
+                imported_names=imported_names,
+                current_module=module_name,
+            )
+            for fullname in base_fullnames
+        )
+        class_indent = "    " * indent
+        if base_expressions:
+            lines.append(f"{class_indent}class {name}(")
+            lines.extend(f"{class_indent}    {base}," for base in base_expressions)
+            lines.append(f"{class_indent}):")
+        else:
+            lines.append(f"{class_indent}class {name}:")
         method_indent = "    " * (indent + 1)
         lines.extend(
             f"{method_indent}def {method.name}(self) -> {method.return_type}: ..."
@@ -410,7 +480,10 @@ def _stub_lines(
                     child,
                     module_name=module_name,
                     provider_methods=provider_methods,
+                    class_bases=class_bases,
+                    source_modules=source_modules,
                     stub_order=stub_order,
+                    imported_names=imported_names,
                     qualname=nested_qualname,
                     indent=indent + 1,
                 )

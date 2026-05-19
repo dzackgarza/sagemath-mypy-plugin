@@ -540,6 +540,47 @@ def test_generated_stubs_bind_concrete_parent_runtime_alias_to_concrete_class(
     ]
 
 
+def test_generated_stubs_bind_concrete_parent_class_to_parent_provider(
+    tmp_path: Path,
+) -> None:
+    manifest = _left_zero_semigroup_concrete_parent_manifest()
+    stub_root = tmp_path / "generated-stubs"
+    write_generated_stub_tree(stub_root, manifest)
+    consumer_path = tmp_path / "consumer.py"
+    consumer_path.write_text(
+        "\n".join(
+            (
+                "from sage.categories.examples.semigroups import LeftZeroSemigroup",
+                "from sage.categories.semigroups import Semigroups",
+                "",
+                "def category_parent_provider(",
+                "    parent: LeftZeroSemigroup,",
+                ") -> Semigroups.ParentMethods:",
+                "    return parent",
+                "",
+                "def invalid_element_provider(",
+                "    parent: LeftZeroSemigroup,",
+                ") -> Semigroups.ElementMethods:",
+                "    return parent",
+                "",
+            )
+        )
+    )
+
+    result = _run_mypy(
+        consumer_path,
+        mypy_path_entries=(stub_root,),
+        config_path=None,
+    )
+
+    assert result.errors == [
+        (
+            f"{consumer_path}:12: error: Incompatible return value type "
+            '(got "LeftZeroSemigroup", expected "ElementMethods")  [return-value]'
+        ),
+    ]
+
+
 def test_generated_stubs_bind_inherited_provider_self_return(
     tmp_path: Path,
 ) -> None:
