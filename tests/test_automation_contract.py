@@ -268,3 +268,119 @@ def test_consumer_mypy_accepts_explicit_consumer_target(tmp_path: Path) -> None:
     assert result.returncode == 1
     assert "category_specs/example.py" in result.stdout
     assert "category_specs/unrelated.py" not in result.stdout
+
+
+def test_consumer_mypy_preserves_sage_category_source_modules(
+    tmp_path: Path,
+) -> None:
+    sage_categories = tmp_path / "sage" / "categories"
+    sage_categories.mkdir(parents=True)
+    (tmp_path / "sage" / "__init__.py").write_text("")
+    (sage_categories / "__init__.py").write_text("")
+    homsets_path = sage_categories / "homsets.py"
+    homsets_path.write_text(
+        "\n".join(
+            (
+                "from __future__ import annotations",
+                "",
+                "class HomsetsCategory:",
+                "    pass",
+                "",
+                "class HomsetsOf(HomsetsCategory):",
+                "    pass",
+                "",
+                "class Homsets:",
+                "    class ParentMethods:",
+                "        pass",
+                "",
+                "    class Endset:",
+                "        pass",
+                "",
+            )
+        )
+    )
+
+    consumer_package = tmp_path / "category_specs"
+    consumer_package.mkdir()
+    (consumer_package / "__init__.py").write_text("")
+    source_path = consumer_package / "example.py"
+    source_path.write_text(
+        "\n".join(
+            (
+                "from __future__ import annotations",
+                "",
+                "from _sage_category_types import (",
+                "    sage_categories_homsets__Homsets__parent_class,",
+                ")",
+                "from sage.categories.homsets import (",
+                "    Homsets,",
+                "    HomsetsCategory,",
+                "    HomsetsOf,",
+                ")",
+                "",
+                "def accepts_generated_alias(",
+                "    value: sage_categories_homsets__Homsets__parent_class,",
+                ") -> sage_categories_homsets__Homsets__parent_class:",
+                "    return value",
+                "",
+                "def preserves_source_visible_classes() -> type[HomsetsCategory]:",
+                "    return HomsetsOf",
+                "",
+                "def preserves_nested_axiom_class() -> type[object]:",
+                "    return Homsets.Endset",
+                "",
+            )
+        )
+    )
+
+    provider = "sage.categories.homsets.Homsets.ParentMethods"
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=(
+            ProviderProjection(
+                provider=provider,
+                role="parent",
+                runtime_class="sage.categories.homsets.Homsets.parent_class",
+                runtime_bases=("builtins.object",),
+                runtime_mro=(
+                    "sage.categories.homsets.Homsets.parent_class",
+                    "builtins.object",
+                ),
+                provider_bases=(),
+                provider_mro=(provider,),
+            ),
+        ),
+        source_modules=(
+            SourceModuleRecord(
+                module="sage.categories.homsets",
+                path=str(homsets_path),
+                sha256=sha256(homsets_path.read_bytes()).hexdigest(),
+                mtime_ns=homsets_path.stat().st_mtime_ns,
+            ),
+            SourceModuleRecord(
+                module="category_specs.example",
+                path=str(source_path),
+                sha256=sha256(source_path.read_bytes()).hexdigest(),
+                mtime_ns=source_path.stat().st_mtime_ns,
+            ),
+        ),
+    )
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(manifest.model_dump_json())
+
+    result = subprocess.run(
+        ("just", "--", "consumer-mypy", str(manifest_path), "category_specs.example"),
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "SAGE_MYPY_CONSUMER_ROOT": str(tmp_path),
+        },
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr

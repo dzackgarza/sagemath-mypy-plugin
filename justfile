@@ -202,7 +202,8 @@ consumer-mypy manifest *args:
     "{{manifest}}" \
     "$stub_root" \
     --manifest-output "$stub_manifest" \
-    --preserve-source-module-prefix category_specs
+    --preserve-source-module-prefix category_specs \
+    --preserve-source-module-prefix sage.categories
   cat >"$config_path" <<EOF
   [mypy]
   plugins = sage_mypy_category_plugin.plugin
