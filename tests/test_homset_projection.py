@@ -9,6 +9,7 @@ from sage_mypy_category_plugin.oracle import provider_projections_for_categories
 from sage_mypy_category_plugin.oracle import unsupported_provider_traces
 from tests.fixtures.invariant_core.provider_roles.homsets import (
     BottomCategory,
+    LocalFiniteEndHomCategory,
     RefinedSharedHomsetProviderCategory,
     SharedHomsetProviderCategory,
     SharedHomsetParentMethods,
@@ -221,5 +222,43 @@ def test_dependent_homset_projection_keeps_unsupported_shared_provider_base() ->
     assert projection.provider_mro == (
         refined_provider,
         shared_provider,
+        "sage.categories.objects.Objects.ParentMethods",
+    )
+
+
+def test_axiom_homset_projection_closes_runtime_provider_registry() -> None:
+    projections = provider_projections_for_categories(
+        (
+            "tests.fixtures.invariant_core.provider_roles.homsets."
+            "LocalFiniteEndHomCategory",
+        ),
+        roles=("homset_parent",),
+    )
+
+    finite_provider = _class_fullname(LocalFiniteEndHomCategory.ParentMethods)
+    projection = projections[finite_provider]
+
+    assert projection.provider == finite_provider
+    assert projection.role == "homset_parent"
+    assert projection.runtime_class == (
+        "tests.fixtures.invariant_core.provider_roles.homsets."
+        "LocalFiniteEndHomCategory.parent_class"
+    )
+    assert projection.provider_mro == (
+        finite_provider,
+        "sage.categories.finite_monoids.FiniteMonoids.ParentMethods",
+        "tests.fixtures.invariant_core.provider_roles.homsets."
+        "LocalEndHomCategory.ParentMethods",
+        "sage.categories.homsets.Homsets.Endset.ParentMethods",
+        "sage.categories.monoids.Monoids.ParentMethods",
+        "sage.categories.finite_semigroups.FiniteSemigroups.ParentMethods",
+        "sage.categories.semigroups.Semigroups.ParentMethods",
+        "sage.categories.magmas.Magmas.Unital.ParentMethods",
+        "sage.categories.magmas.Magmas.ParentMethods",
+        "sage.categories.finite_sets.FiniteSets.ParentMethods",
+        "tests.fixtures.invariant_core.provider_roles.homsets."
+        "StandaloneHomCategory.ParentMethods",
+        "sage.categories.homsets.Homsets.ParentMethods",
+        "sage.categories.sets_cat.Sets.ParentMethods",
         "sage.categories.objects.Objects.ParentMethods",
     )

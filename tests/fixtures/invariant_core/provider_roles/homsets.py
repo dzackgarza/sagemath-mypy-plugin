@@ -1,16 +1,26 @@
 from __future__ import annotations
 
-from typing import Any, cast, final
+from typing import Any, Protocol, cast, final
 
 import sage.all  # type: ignore[import-untyped] # noqa: F401
 from sage.categories.category_singleton import Category_singleton  # type: ignore[import-untyped]
+from sage.categories.category_with_axiom import CategoryWithAxiom_singleton  # type: ignore[import-untyped]
 from sage.categories.homsets import Homsets as SageHomsets  # type: ignore[import-untyped]
 from sage.categories.homsets import HomsetsCategory  # type: ignore[import-untyped]
 from sage.categories.objects import Objects  # type: ignore[import-untyped]
 from sage.misc.constant_function import ConstantFunction  # type: ignore[import-untyped]
+from sage.misc.lazy_import import LazyImport  # type: ignore[import-untyped]
 from sage.structure.dynamic_class import DynamicMetaclass  # type: ignore[import-untyped]
 
 from tests.fixtures.invariant_core.local_wrapper import LocalCategoryBase
+
+
+class _HomsetsWithEndset(Protocol):
+    def Endset(self) -> object: ...
+
+
+def _sage_homsets_endset() -> object:
+    return cast(_HomsetsWithEndset, SageHomsets()).Endset()
 
 
 class TopCategory(LocalCategoryBase):
@@ -116,3 +126,43 @@ class StandaloneHomCategory(LocalHomsetsBase):
     class ElementMethods:
         def local_hom_element(self) -> int:
             return 2
+
+    Endset = LazyImport(
+        "tests.fixtures.invariant_core.provider_roles.homsets",
+        "LocalEndHomCategory",
+    )
+
+
+class LocalEndHomCategory(CategoryWithAxiom_singleton):
+    _base_category_class_and_axiom = (StandaloneHomCategory, "Endset")
+
+    def extra_super_categories(self) -> list[object]:
+        return [_sage_homsets_endset()]
+
+    class ParentMethods:
+        def local_end_hom_parent(self) -> int:
+            return 3
+
+    class ElementMethods:
+        def local_end_hom_element(self) -> int:
+            return 4
+
+    Finite = LazyImport(
+        "tests.fixtures.invariant_core.provider_roles.homsets",
+        "LocalFiniteEndHomCategory",
+    )
+
+
+class LocalFiniteEndHomCategory(CategoryWithAxiom_singleton):
+    _base_category_class_and_axiom = (LocalEndHomCategory, "Finite")
+
+    def extra_super_categories(self) -> list[object]:
+        return [LocalEndHomCategory()]
+
+    class ParentMethods:
+        def local_finite_end_hom_parent(self) -> int:
+            return 5
+
+    class ElementMethods:
+        def local_finite_end_hom_element(self) -> int:
+            return 6

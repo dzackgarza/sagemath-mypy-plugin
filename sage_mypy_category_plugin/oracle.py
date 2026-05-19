@@ -146,17 +146,29 @@ def provider_projections_for_categories(
                 if projection is not None:
                     _record_provider_projection(projections, projection)
         projections = _supported_provider_projections(projections)
-        for (role, provider), runtime_class in _RUNTIME_CLASS_BY_PROVIDER_ROLE.items():
-            if provider not in projections:
-                _record_provider_projection(
-                    projections,
-                    _provider_projection_from_runtime_class(
-                        role=role,
-                        provider=provider,
-                        runtime_class=runtime_class,
-                    ),
-                )
+        _record_discovered_runtime_provider_projections(projections)
         return projections
+
+
+def _record_discovered_runtime_provider_projections(
+    projections: dict[str, ProviderProjection],
+) -> None:
+    while pending_records := tuple(
+        (role, provider, runtime_class)
+        for (role, provider), runtime_class in _RUNTIME_CLASS_BY_PROVIDER_ROLE.items()
+        if provider not in projections
+    ):
+        for role, provider, runtime_class in pending_records:
+            if provider in projections:
+                continue
+            _record_provider_projection(
+                projections,
+                _provider_projection_from_runtime_class(
+                    role=role,
+                    provider=provider,
+                    runtime_class=runtime_class,
+                ),
+            )
 
 
 def _supported_provider_projections(
