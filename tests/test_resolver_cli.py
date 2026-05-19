@@ -32,6 +32,24 @@ AXIOM_FIXTURE_MODULE = "tests.fixtures.invariant_core.axioms"
 NESTED_AXIOM_CATEGORY = f"{AXIOM_FIXTURE_MODULE}.AxiomRootCategory.Finite"
 NESTED_AXIOM_PROVIDER = f"{NESTED_AXIOM_CATEGORY}.ParentMethods"
 AXIOM_ROOT_PROVIDER = f"{AXIOM_FIXTURE_MODULE}.AxiomRootCategory.ParentMethods"
+CATEGORY_SPECS_LIKE_PACKAGE = (
+    "tests.fixtures.invariant_core.category_specs_like.rings"
+)
+CATEGORY_SPECS_LIKE_ROOT_PROVIDER = (
+    f"{CATEGORY_SPECS_LIKE_PACKAGE}._RingObjectMethods"
+)
+CATEGORY_SPECS_LIKE_COMMUTATIVE_PROVIDER = (
+    f"{CATEGORY_SPECS_LIKE_PACKAGE}.subcategories."
+    "commutative._CommutativeRings.ParentMethods"
+)
+CATEGORY_SPECS_LIKE_NAMESPACE_PROVIDER = (
+    f"{CATEGORY_SPECS_LIKE_PACKAGE}.namespace_subcategories."
+    "commutative._NamespaceCommutativeRings.ParentMethods"
+)
+CATEGORY_SPECS_LIKE_BASE_DEPENDENT_PROVIDER = (
+    f"{CATEGORY_SPECS_LIKE_PACKAGE}.namespace_subcategories."
+    "commutative._BaseDependentConstruction.ParentMethods"
+)
 
 
 def test_resolver_writes_parent_projection_manifest_for_diamond_fixture(
@@ -212,6 +230,84 @@ def test_resolver_accepts_nested_axiom_category_fullname(tmp_path: Path) -> None
     assert (
         f"{AXIOM_FIXTURE_MODULE}.AxiomRootCategory"
         not in manifest.source_module_by_module
+    )
+
+
+def test_resolver_discovers_category_classes_from_package(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "sage-category-package-projections.json"
+
+    resolver.main(
+        [
+            "--output",
+            str(manifest_path),
+            "--role",
+            "parent",
+            "--package",
+            CATEGORY_SPECS_LIKE_PACKAGE,
+        ]
+    )
+
+    manifest = load_manifest(manifest_path)
+    commutative_projection = manifest.projection_by_provider[
+        CATEGORY_SPECS_LIKE_COMMUTATIVE_PROVIDER
+    ]
+
+    assert CATEGORY_SPECS_LIKE_ROOT_PROVIDER in manifest.projection_by_provider
+    assert commutative_projection.provider_mro == (
+        CATEGORY_SPECS_LIKE_COMMUTATIVE_PROVIDER,
+        CATEGORY_SPECS_LIKE_ROOT_PROVIDER,
+    )
+
+
+def test_resolver_discovers_category_classes_in_namespace_subpackages(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "sage-category-namespace-package-projections.json"
+
+    resolver.main(
+        [
+            "--output",
+            str(manifest_path),
+            "--role",
+            "parent",
+            "--package",
+            CATEGORY_SPECS_LIKE_PACKAGE,
+        ]
+    )
+
+    manifest = load_manifest(manifest_path)
+    namespace_projection = manifest.projection_by_provider[
+        CATEGORY_SPECS_LIKE_NAMESPACE_PROVIDER
+    ]
+
+    assert namespace_projection.provider_mro == (
+        CATEGORY_SPECS_LIKE_NAMESPACE_PROVIDER,
+        CATEGORY_SPECS_LIKE_ROOT_PROVIDER,
+    )
+
+
+def test_resolver_package_discovery_excludes_non_nullary_category_classes(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "sage-category-package-nullary-projections.json"
+
+    resolver.main(
+        [
+            "--output",
+            str(manifest_path),
+            "--role",
+            "parent",
+            "--package",
+            CATEGORY_SPECS_LIKE_PACKAGE,
+        ]
+    )
+
+    manifest = load_manifest(manifest_path)
+
+    assert CATEGORY_SPECS_LIKE_NAMESPACE_PROVIDER in manifest.projection_by_provider
+    assert (
+        CATEGORY_SPECS_LIKE_BASE_DEPENDENT_PROVIDER
+        not in manifest.projection_by_provider
     )
 
 

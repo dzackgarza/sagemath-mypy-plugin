@@ -219,6 +219,18 @@ def test_root_parent_projection_keeps_only_provider_classes() -> None:
     )
 
 
+def test_descendant_projection_preserves_supercategory_runtime_class_identity() -> None:
+    top_category = TopCategory.an_instance()
+    top_parent_class = top_category.parent_class
+
+    provider_projections_for_categories(
+        ("tests.fixtures.invariant_core.diamond_runtime.BottomCategory",),
+        roles=("parent",),
+    )
+
+    assert TopCategory.an_instance().parent_class is top_parent_class
+
+
 def test_tracing_observes_make_named_class() -> None:
     provider = "tests.fixtures.invariant_core.diamond_runtime.BottomCategory.ParentMethods"
 

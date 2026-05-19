@@ -638,10 +638,8 @@ def _invalidate_named_class_cache(
     category: SageCategory,
     role_projection: RoleProjection,
 ) -> None:
-    all_categories = (category, *category.all_super_categories(proper=True))
-    for current_category in all_categories:
-        if isinstance(current_category.__dict__, dict):
-            current_category.__dict__.pop(role_projection.runtime_attr, None)
+    if isinstance(category.__dict__, dict):
+        category.__dict__.pop(role_projection.runtime_attr, None)
 
 
 def _provider_fullname_or_none(

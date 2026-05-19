@@ -3,9 +3,12 @@ from __future__ import annotations
 from argparse import ArgumentParser
 from collections.abc import Iterable
 from hashlib import sha256
+from inspect import Parameter, signature
 from importlib import import_module
 from pathlib import Path
+from pkgutil import walk_packages
 from sys import version_info
+from types import ModuleType
 from typing import Sequence, cast, get_args
 
 from mypy.version import __version__ as MYPY_VERSION
@@ -127,6 +130,104 @@ def write_projection_manifest(
     return manifest
 
 
+def discover_category_fullnames(package_names: Sequence[str]) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            fullname
+            for module in _import_package_modules(package_names)
+            for fullname in _category_fullnames_defined_in_module(module)
+        )
+    )
+
+
+def _import_package_modules(package_names: Sequence[str]) -> tuple[ModuleType, ...]:
+    module_by_name: dict[str, ModuleType] = {}
+    for package_name in package_names:
+        package = import_module(package_name)
+        module_by_name[package.__name__] = package
+        for module_name in _package_module_names(package):
+            module_by_name[module_name] = import_module(module_name)
+    return tuple(module_by_name.values())
+
+
+def _package_module_names(package: ModuleType) -> tuple[str, ...]:
+    package_paths = getattr(package, "__path__", None)
+    if package_paths is None:
+        return ()
+
+    walk_package_names = tuple(
+        module_info.name
+        for module_info in walk_packages(
+            package_paths,
+            prefix=f"{package.__name__}.",
+        )
+    )
+    filesystem_names = _filesystem_package_module_names(
+        package,
+        package_paths=package_paths,
+    )
+    return tuple(dict.fromkeys((*walk_package_names, *filesystem_names)))
+
+
+def _filesystem_package_module_names(
+    package: ModuleType,
+    *,
+    package_paths: Iterable[str],
+) -> tuple[str, ...]:
+    module_names: list[str] = []
+    for package_path in package_paths:
+        package_root = Path(package_path)
+        if not package_root.is_dir():
+            continue
+        for module_path in sorted(package_root.rglob("*.py")):
+            if module_path.name == "__init__.py":
+                continue
+            module_names.append(
+                ".".join(
+                    (
+                        package.__name__,
+                        *module_path.relative_to(package_root)
+                        .with_suffix("")
+                        .parts,
+                    )
+                )
+            )
+    return tuple(module_names)
+
+
+def _category_fullnames_defined_in_module(module: ModuleType) -> tuple[str, ...]:
+    from sage.categories.category import Category  # type: ignore[import-untyped]
+
+    return tuple(
+        f"{candidate.__module__}.{candidate.__qualname__}"
+        for candidate in vars(module).values()
+        if (
+            isinstance(candidate, type)
+            and candidate.__module__ == module.__name__
+            and issubclass(candidate, Category)
+            and _is_nullary_category_factory(candidate)
+        )
+    )
+
+
+def _is_nullary_category_factory(candidate: type[object]) -> bool:
+    init_signature = signature(candidate.__init__)
+    required_parameters = tuple(
+        parameter
+        for parameter in tuple(init_signature.parameters.values())[1:]
+        if (
+            parameter.default is Parameter.empty
+            and parameter.kind
+            in (
+                Parameter.POSITIONAL_ONLY,
+                Parameter.POSITIONAL_OR_KEYWORD,
+                Parameter.KEYWORD_ONLY,
+            )
+        )
+    )
+    return not required_parameters
+
+
 def _resolver_argument_parser() -> ArgumentParser:
     parser = ArgumentParser(
         prog="sage_mypy_category_plugin.resolver",
@@ -137,8 +238,17 @@ def _resolver_argument_parser() -> ArgumentParser:
     )
     parser.add_argument(
         "category_fullnames",
-        nargs="+",
+        nargs="*",
         help="Fully-qualified category factory classes to resolve.",
+    )
+    parser.add_argument(
+        "--package",
+        action="append",
+        default=[],
+        help=(
+            "Import a module or package tree and discover category classes "
+            "defined in it. Pass multiple times for multiple roots."
+        ),
     )
     parser.add_argument(
         "--role",
@@ -357,14 +467,24 @@ def _relative_to_cwd(path: Path) -> Path:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _resolver_argument_parser()
     args = parser.parse_args(argv)
+    if not args.category_fullnames and not args.package:
+        parser.error("provide at least one category fullname or --package")
     roles: tuple[ProviderRole, ...] = (
         ("parent",)
         if not args.role
         else tuple(cast(ProviderRole, role) for role in args.role)
     )
+    category_fullnames = tuple(
+        dict.fromkeys(
+            (
+                *discover_category_fullnames(tuple(args.package)),
+                *args.category_fullnames,
+            )
+        )
+    )
     write_projection_manifest(
         output=Path(args.output),
-        category_fullnames=list(args.category_fullnames),
+        category_fullnames=category_fullnames,
         roles=roles,
         concrete_parent_fullnames=list(args.concrete_parent),
         generated_by=args.generated_by,
