@@ -423,6 +423,7 @@ def _concrete_parent_module_names(
             *concrete_parent.runtime_mro,
             concrete_parent.category_class,
             *concrete_parent.parent_provider_mro,
+            *concrete_parent.element_runtime_mro,
             *concrete_parent.element_provider_mro,
         ):
             module_name = _importable_module_name_or_none(fullname)
@@ -474,6 +475,7 @@ def _external_runtime_class_fullnames(
         fullnames.extend(concrete_parent.runtime_mro)
         if concrete_parent.element_runtime_class is not None:
             fullnames.append(concrete_parent.element_runtime_class)
+        fullnames.extend(concrete_parent.element_runtime_mro)
     return tuple(
         fullname
         for fullname in dict.fromkeys(fullnames)

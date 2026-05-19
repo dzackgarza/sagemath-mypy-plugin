@@ -477,6 +477,9 @@ def test_resolver_concrete_parent_records_own_provider_projections(
     assert manifest.external_runtime_class_by_fullname[
         "sage.structure.parent.Parent"
     ].static_signature_source == "untyped_external"
+    assert manifest.external_runtime_class_by_fullname[
+        "sage.structure.element.Element"
+    ].static_signature_source == "untyped_external"
     assert record.parent_provider_mro[0] in manifest.projection_by_provider
     assert record.element_provider_mro[0] in manifest.projection_by_provider
     assert "sage.categories.examples.semigroups" in manifest.source_module_by_module

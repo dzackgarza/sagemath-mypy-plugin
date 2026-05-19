@@ -242,6 +242,12 @@ def _manifest_payload() -> dict[str, Any]:
                 sha256="2" * 64,
                 mtime_ns=1_789_000_000_000_000_003,
             ),
+            SourceModuleRecord(
+                module="sage.structure.element",
+                path="sage/structure/element.pyx",
+                sha256="3" * 64,
+                mtime_ns=1_789_000_000_000_000_004,
+            ),
         ),
         concrete_parents=(
             ConcreteParentRecord(
@@ -264,6 +270,12 @@ def _manifest_payload() -> dict[str, Any]:
                 element_runtime_class=(
                     "sage.categories.examples.semigroups."
                     "LeftZeroSemigroup_with_category.element_class"
+                ),
+                element_runtime_mro=(
+                    "sage.categories.examples.semigroups."
+                    "LeftZeroSemigroup_with_category.element_class",
+                    "sage.categories.examples.semigroups.LeftZeroSemigroup.Element",
+                    "sage.structure.element.Element",
                 ),
                 element_provider_mro=(
                     "tests.fixtures.invariant_core.diamond_runtime."
@@ -321,6 +333,12 @@ def test_manifest_round_trips_projection_records(tmp_path: Path) -> None:
             path="sage/structure/parent.pyx",
             sha256="2" * 64,
             mtime_ns=1_789_000_000_000_000_003,
+        ),
+        "sage.structure.element": SourceModuleRecord(
+            module="sage.structure.element",
+            path="sage/structure/element.pyx",
+            sha256="3" * 64,
+            mtime_ns=1_789_000_000_000_000_004,
         ),
     }
     assert loaded.concrete_parent_by_class == {
@@ -1132,6 +1150,21 @@ def test_manifest_semantic_digest_tracks_projection_changes() -> None:
     mutated_manifest = ProjectionManifest.model_validate(mutated_payload)
 
     assert base_manifest.semantic_projection_digest != mutated_manifest.semantic_projection_digest
+
+
+def test_manifest_semantic_digest_tracks_concrete_element_runtime_mro() -> None:
+    base_manifest = ProjectionManifest.model_validate(_manifest_payload())
+    mutated_payload = base_manifest.model_dump(mode="json")
+    mutated_payload["concrete_parents"][0]["element_runtime_mro"] = (
+        "sage.categories.examples.semigroups.LeftZeroSemigroup_with_category."
+        "element_class",
+        "sage.categories.examples.semigroups.LeftZeroSemigroup.Element",
+    )
+    mutated_manifest = ProjectionManifest.model_validate(mutated_payload)
+
+    assert base_manifest.semantic_projection_digest != (
+        mutated_manifest.semantic_projection_digest
+    )
 
 
 def test_manifest_semantic_digest_tracks_named_class_trace_changes() -> None:

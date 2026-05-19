@@ -338,6 +338,18 @@ class ProjectionManifest(BaseModel):
                     },
                 )
             if (
+                concrete_parent.element_runtime_class is None
+                and concrete_parent.element_runtime_mro
+            ):
+                raise PydanticCustomError(
+                    "concrete_parent_graph_mismatch",
+                    "element runtime MRO requires an element runtime class",
+                    {
+                        "concrete_class": concrete_parent.concrete_class,
+                        "field": "element_runtime_class",
+                    },
+                )
+            if (
                 concrete_parent.element_runtime_class is not None
                 and not concrete_parent.element_provider_mro
             ):
@@ -347,6 +359,32 @@ class ProjectionManifest(BaseModel):
                     {
                         "concrete_class": concrete_parent.concrete_class,
                         "field": "element_provider_mro",
+                    },
+                )
+            if (
+                concrete_parent.element_runtime_class is not None
+                and not concrete_parent.element_runtime_mro
+            ):
+                raise PydanticCustomError(
+                    "concrete_parent_graph_mismatch",
+                    "element runtime class requires an element runtime MRO",
+                    {
+                        "concrete_class": concrete_parent.concrete_class,
+                        "field": "element_runtime_mro",
+                    },
+                )
+            if (
+                concrete_parent.element_runtime_mro
+                and concrete_parent.element_runtime_mro[0]
+                != concrete_parent.element_runtime_class
+            ):
+                raise PydanticCustomError(
+                    "concrete_parent_graph_mismatch",
+                    "concrete parent element runtime MRO must start with its "
+                    "runtime class",
+                    {
+                        "concrete_class": concrete_parent.concrete_class,
+                        "field": "element_runtime_mro",
                     },
                 )
 
@@ -609,6 +647,7 @@ class ProjectionManifest(BaseModel):
                         record.category_class,
                         record.parent_provider_mro,
                         record.element_runtime_class,
+                        record.element_runtime_mro,
                         record.element_provider_mro,
                     )
                     for record in sorted(
@@ -726,6 +765,7 @@ def _semantic_fullnames(manifest: ProjectionManifest) -> tuple[str, ...]:
                 *concrete_parent.runtime_mro,
                 concrete_parent.category_class,
                 *concrete_parent.parent_provider_mro,
+                *concrete_parent.element_runtime_mro,
                 *concrete_parent.element_provider_mro,
             )
         )

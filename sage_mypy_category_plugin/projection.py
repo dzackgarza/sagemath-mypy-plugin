@@ -120,6 +120,7 @@ class ConcreteParentRecord(BaseModel):
     category_class: StrictStr
     parent_provider_mro: tuple[StrictStr, ...]
     element_runtime_class: StrictStr | None = None
+    element_runtime_mro: tuple[StrictStr, ...] = ()
     element_provider_mro: tuple[StrictStr, ...] = ()
 
     @field_validator(
@@ -137,6 +138,7 @@ class ConcreteParentRecord(BaseModel):
     @field_validator(
         "runtime_mro",
         "parent_provider_mro",
+        "element_runtime_mro",
         "element_provider_mro",
     )
     @classmethod

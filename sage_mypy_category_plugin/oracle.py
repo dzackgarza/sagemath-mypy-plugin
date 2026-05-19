@@ -563,6 +563,9 @@ def _concrete_parent_record(parent: SageConcreteParent) -> ConcreteParentRecord:
         category_class=_class_fullname(type(category)),
         parent_provider_mro=parent_provider_mro,
         element_runtime_class=_class_fullname(element_runtime_class),
+        element_runtime_mro=tuple(
+            _class_fullname(base) for base in element_runtime_class.__mro__
+        ),
         element_provider_mro=element_provider_mro,
     )
 

@@ -997,6 +997,12 @@ def _left_zero_semigroup_concrete_parent_manifest() -> ProjectionManifest:
                 sha256="1" * 64,
                 mtime_ns=1_789_000_000_000_000_001,
             ),
+            SourceModuleRecord(
+                module="sage.structure.element",
+                path="sage/structure/element.pyx",
+                sha256="2" * 64,
+                mtime_ns=1_789_000_000_000_000_002,
+            ),
         ),
         concrete_parents=(
             ConcreteParentRecord(
@@ -1018,9 +1024,21 @@ def _left_zero_semigroup_concrete_parent_manifest() -> ProjectionManifest:
                     "sage.categories.examples.semigroups."
                     "LeftZeroSemigroup_with_category.element_class"
                 ),
+                element_runtime_mro=(
+                    "sage.categories.examples.semigroups."
+                    "LeftZeroSemigroup_with_category.element_class",
+                    "sage.structure.element.Element",
+                ),
                 element_provider_mro=(
                     "sage.categories.semigroups.Semigroups.ElementMethods",
                 ),
+            ),
+        ),
+        external_runtime_classes=(
+            ExternalRuntimeClassRecord(
+                runtime_class="sage.structure.element.Element",
+                module="sage.structure.element",
+                static_signature_source="untyped_external",
             ),
         ),
     )

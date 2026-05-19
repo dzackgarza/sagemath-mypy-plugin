@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from sage_mypy_category_plugin.imports import import_fullname
 from sage_mypy_category_plugin.oracle import RoleProjection
 from sage_mypy_category_plugin.oracle import concrete_parent_records_for_factories
 from sage_mypy_category_plugin.oracle import provider_projections_for_categories
@@ -592,6 +593,11 @@ def test_parameterized_projection_uses_sage_runtime_named_class_identity() -> No
 
 
 def test_concrete_parent_record_matches_sage_initialized_category() -> None:
+    concrete_class = import_fullname(
+        "sage.categories.examples.semigroups.LeftZeroSemigroup"
+    )
+    assert isinstance(concrete_class, type)
+    parent = concrete_class()
     records = concrete_parent_records_for_factories(
         ("sage.categories.examples.semigroups.LeftZeroSemigroup",),
     )
@@ -613,6 +619,10 @@ def test_concrete_parent_record_matches_sage_initialized_category() -> None:
         "sage.categories.examples.semigroups.LeftZeroSemigroup_with_category."
         "element_class"
     )
+    assert record.element_runtime_mro == tuple(
+        _class_fullname(base) for base in parent.element_class.__mro__
+    )
+    assert "sage.structure.element.Element" in record.element_runtime_mro
     assert record.element_provider_mro[:2] == (
         "sage.categories.semigroups.Semigroups.ElementMethods",
         "sage.categories.magmas.Magmas.ElementMethods",
