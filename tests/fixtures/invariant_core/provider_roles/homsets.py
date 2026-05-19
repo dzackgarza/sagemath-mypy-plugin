@@ -66,6 +66,29 @@ class LocalHomsetsBase(_SingletonClasscallMixin, SageHomsets):
     pass
 
 
+class SharedHomsetParentMethods:
+    def shared_homset_parent(self) -> int:
+        return 1
+
+
+class SharedStandaloneHomCategory(LocalHomsetsBase):
+    def super_categories(self) -> list[object]:
+        return [Objects()]
+
+    ParentMethods = cast(type[SageHomsets.ParentMethods], SharedHomsetParentMethods)
+
+
+class SharedHomsetProviderCategory(LocalCategoryBase):
+    def super_categories(self) -> list[object]:
+        return [Objects()]
+
+    class Homsets(HomsetsCategory):
+        def super_categories(self) -> list[object]:
+            return [SharedStandaloneHomCategory()]
+
+        ParentMethods = cast(type[SageHomsets.ParentMethods], SharedHomsetParentMethods)
+
+
 class StandaloneHomCategory(LocalHomsetsBase):
     def super_categories(self) -> list[object]:
         return [Objects()]

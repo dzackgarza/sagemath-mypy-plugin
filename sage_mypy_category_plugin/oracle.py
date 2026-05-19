@@ -659,6 +659,32 @@ def _provider_fullname_or_none(
     return provider_fullname
 
 
+def _record_named_class_trace(
+    *,
+    role: ProviderRole,
+    provider: str,
+    runtime_class: type[object],
+    trace: NamedClassTrace,
+) -> None:
+    existing_trace = _NAMED_CLASS_TRACES_BY_PROVIDER.get((role, provider))
+    if existing_trace is not None:
+        assert (
+            existing_trace.runtime_class == trace.runtime_class
+            and existing_trace.runtime_bases == trace.runtime_bases
+            and existing_trace.runtime_mro == trace.runtime_mro
+            and existing_trace.runtime_attr == trace.runtime_attr
+            and existing_trace.provider_attr == trace.provider_attr
+        ), (
+            f"{provider} cannot be projected for {role}: Sage traced "
+            "multiple distinct runtime named classes for the same provider "
+            f"({existing_trace.runtime_class} and {trace.runtime_class})"
+        )
+
+    _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role][runtime_class] = provider
+    _RUNTIME_CLASS_BY_PROVIDER_ROLE[(role, provider)] = runtime_class
+    _NAMED_CLASS_TRACES_BY_PROVIDER[(role, provider)] = trace
+
+
 def _static_category_type(category: SageCategory) -> type[object]:
     category_type = type(category)
     if category_type.__name__.endswith("_with_category"):
@@ -747,9 +773,12 @@ def _trace_make_named_class(
                 runtime_attr=name,
                 provider_attr=method_provider,
             )
-            _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role][runtime_class] = provider
-            _RUNTIME_CLASS_BY_PROVIDER_ROLE[(role, provider)] = runtime_class
-            _NAMED_CLASS_TRACES_BY_PROVIDER[(role, provider)] = trace
+            _record_named_class_trace(
+                role=role,
+                provider=provider,
+                runtime_class=runtime_class,
+                trace=trace,
+            )
         return runtime_class
 
     Category._make_named_class = traced_make_named_class  # type: ignore[assignment]

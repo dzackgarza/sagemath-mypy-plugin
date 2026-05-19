@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import sage.all  # type: ignore[import-untyped] # noqa: F401
 from sage.categories.homsets import Homsets  # type: ignore[import-untyped]
 from sage.categories.objects import Objects  # type: ignore[import-untyped]
@@ -8,6 +10,7 @@ from sage.categories.sets_cat import Sets  # type: ignore[import-untyped]
 from sage_mypy_category_plugin.oracle import provider_projections_for_categories
 from tests.fixtures.invariant_core.provider_roles.homsets import (
     BottomCategory,
+    SharedHomsetProviderCategory,
     TopCategory,
 )
 
@@ -150,3 +153,13 @@ def test_homset_element_projection_matches_sage_runtime_mro() -> None:
         "TopCategory.Homsets.ElementMethods",
         "sage.categories.sets_cat.Sets.ElementMethods",
     )
+
+
+def test_homset_projection_rejects_shared_provider_with_distinct_runtime_mros() -> None:
+    category = SharedHomsetProviderCategory
+
+    with pytest.raises(AssertionError):
+        provider_projections_for_categories(
+            (f"{category.__module__}.{category.__qualname__}",),
+            roles=("homset_parent",),
+        )
