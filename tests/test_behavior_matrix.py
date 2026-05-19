@@ -354,9 +354,15 @@ def test_real_sage_category_behavior_matrix_uses_standard_mypy_rules(
 
     valid_path = REAL_CATEGORIES_ROOT / "finite_small_groups_valid.py"
     invalid_path = REAL_CATEGORIES_ROOT / "finite_small_groups_invalid.py"
+    final_path = REAL_CATEGORIES_ROOT / "finite_small_groups_final_violation.py"
     sources = (
         BuildSource(str(valid_path), FINITE_SMALL_GROUPS_VALID, None),
         BuildSource(str(invalid_path), FINITE_SMALL_GROUPS_INVALID, None),
+        BuildSource(
+            str(final_path),
+            "tests.real_categories.finite_small_groups_final_violation",
+            None,
+        ),
     )
 
     with_plugin = _run_mypy_with_sources(
@@ -370,23 +376,39 @@ def test_real_sage_category_behavior_matrix_uses_standard_mypy_rules(
         tmp_path,
     )
 
-    valid_filename = valid_path.name  # "finite_small_groups_valid.py"
-    invalid_filename = invalid_path.name  # "finite_small_groups_invalid.py"
-    valid_errors = tuple(e for e in with_plugin.errors if valid_filename in e)
-    invalid_errors_on = tuple(e for e in with_plugin.errors if invalid_filename in e)
-    valid_errors_off = tuple(e for e in without_plugin.errors if valid_filename in e)
-    invalid_errors_off = tuple(e for e in without_plugin.errors if invalid_filename in e)
+    valid_fn = valid_path.name   # "finite_small_groups_valid.py"
+    invalid_fn = invalid_path.name  # "finite_small_groups_invalid.py"
+    final_fn = final_path.name   # "finite_small_groups_final_violation.py"
+    valid_errors = tuple(e for e in with_plugin.errors if valid_fn in e)
+    invalid_errors_on = tuple(e for e in with_plugin.errors if invalid_fn in e)
+    valid_errors_off = tuple(e for e in without_plugin.errors if valid_fn in e)
+    invalid_errors_off = tuple(e for e in without_plugin.errors if invalid_fn in e)
+    final_errors_on = tuple(e for e in with_plugin.errors if final_fn in e)
+    final_errors_off = tuple(e for e in without_plugin.errors if final_fn in e)
 
+    # Plugin on + valid: no errors (provider MRO projected, @override resolves)
     assert not valid_errors, (
         f"Expected no errors for valid code with plugin; got: {valid_errors}"
     )
+    # Plugin off + valid: mypy cannot see real Sage provider class as base
     assert any("no base method was found" in e for e in valid_errors_off), (
         "Expected valid code to fail without plugin (real Sage provider MRO invisible)"
     )
+    # Plugin on + invalid (nonexistent method @override): still fails
     assert any("no base method was found" in e for e in invalid_errors_on), (
         "Expected invalid @override to still fail with plugin on"
     )
     assert any("no base method was found" in e for e in invalid_errors_off)
+    # Plugin on + @final violation: mypy catches the final override because it
+    # sees KleinFourGroups.ParentMethods as the actual base via MRO projection
+    assert any("Cannot override final attribute" in e for e in final_errors_on), (
+        f"Expected @final violation with plugin on; got: {final_errors_on}"
+    )
+    # Plugin off + @final violation: no errors at all because mypy cannot see
+    # KleinFourGroups.ParentMethods as a base — the method is just a new definition
+    assert not final_errors_off, (
+        f"Expected no errors without plugin (parent MRO invisible); got: {final_errors_off}"
+    )
 
 
 def _write_plugin_config(tmp_path: Path) -> Path:
