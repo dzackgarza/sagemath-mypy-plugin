@@ -79,6 +79,57 @@ def test_generated_stubs_support_manifest_projected_annotation_behavior(
     assert any("[return-value]" in error for error in without_plugin.errors)
 
 
+def test_generated_stubs_define_sibling_provider_bases_before_dependents(
+    tmp_path: Path,
+) -> None:
+    manifest = _sets_subobjects_manifest()
+    stub_root = tmp_path / "generated-stubs"
+    source_modules = write_generated_stub_tree(stub_root, manifest)
+    plugin_manifest = manifest.model_copy(update={"source_modules": source_modules})
+    manifest_path = tmp_path / "manifest.json"
+    config_path = tmp_path / "mypy.ini"
+    consumer_path = tmp_path / "consumer.py"
+    manifest_path.write_text(plugin_manifest.model_dump_json())
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+    consumer_path.write_text(
+        "\n".join(
+            (
+                "from __future__ import annotations",
+                "from sage.categories.sets_cat import Sets",
+                "",
+                "def subobject_parent(",
+                "    provider: Sets.Subobjects.ParentMethods,",
+                ") -> Sets.Subquotients.ParentMethods:",
+                "    return provider",
+                "",
+            )
+        )
+    )
+
+    generated_source = (stub_root / "sage/categories/sets_cat.pyi").read_text()
+    with_plugin = _run_mypy(
+        consumer_path,
+        mypy_path_entries=(stub_root,),
+        config_path=config_path,
+    )
+
+    assert generated_source.index("class Subquotients:") < generated_source.index(
+        "class Subobjects:"
+    )
+    assert with_plugin.errors == []
+
+
 def test_generated_stubs_reproduce_provider_tree_from_manifest() -> None:
     manifest = _sets_cartesian_products_manifest()
 
@@ -655,6 +706,73 @@ def _sets_cartesian_products_manifest() -> ProjectionManifest:
                 mtime_ns=1_789_000_000_000_000_001,
             ),
         ),
+    )
+
+
+def _sets_subobjects_manifest() -> ProjectionManifest:
+    base_manifest = _sets_cartesian_products_manifest()
+    return base_manifest.model_copy(
+        update={
+            "projections": (
+                *base_manifest.projections,
+                ProviderProjection(
+                    provider=(
+                        "sage.categories.sets_cat."
+                        "Sets.Subobjects.ParentMethods"
+                    ),
+                    role="parent",
+                    runtime_class=(
+                        "sage.categories.sets_cat.Sets.Subobjects.parent_class"
+                    ),
+                    runtime_bases=(
+                        "sage.categories.sets_cat.Sets.Subquotients.parent_class",
+                    ),
+                    runtime_mro=(
+                        "sage.categories.sets_cat.Sets.Subobjects.parent_class",
+                        "sage.categories.sets_cat.Sets.Subquotients.parent_class",
+                        "sage.categories.sets_cat.Sets.parent_class",
+                        "sage.categories.objects.Objects.parent_class",
+                        "builtins.object",
+                    ),
+                    provider_bases=(
+                        "sage.categories.sets_cat."
+                        "Sets.Subquotients.ParentMethods",
+                    ),
+                    provider_mro=(
+                        "sage.categories.sets_cat."
+                        "Sets.Subobjects.ParentMethods",
+                        "sage.categories.sets_cat."
+                        "Sets.Subquotients.ParentMethods",
+                        "sage.categories.sets_cat.Sets.ParentMethods",
+                        "sage.categories.objects.Objects.ParentMethods",
+                    ),
+                ),
+                ProviderProjection(
+                    provider=(
+                        "sage.categories.sets_cat."
+                        "Sets.Subquotients.ParentMethods"
+                    ),
+                    role="parent",
+                    runtime_class=(
+                        "sage.categories.sets_cat.Sets.Subquotients.parent_class"
+                    ),
+                    runtime_bases=("sage.categories.sets_cat.Sets.parent_class",),
+                    runtime_mro=(
+                        "sage.categories.sets_cat.Sets.Subquotients.parent_class",
+                        "sage.categories.sets_cat.Sets.parent_class",
+                        "sage.categories.objects.Objects.parent_class",
+                        "builtins.object",
+                    ),
+                    provider_bases=("sage.categories.sets_cat.Sets.ParentMethods",),
+                    provider_mro=(
+                        "sage.categories.sets_cat."
+                        "Sets.Subquotients.ParentMethods",
+                        "sage.categories.sets_cat.Sets.ParentMethods",
+                        "sage.categories.objects.Objects.ParentMethods",
+                    ),
+                ),
+            ),
+        }
     )
 
 

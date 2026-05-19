@@ -18,6 +18,8 @@ type ProviderMethodMap = dict[
     tuple[str, tuple[str, ...]],
     tuple[ProviderMethodRecord, ...],
 ]
+type StubOrder = dict[tuple[str, tuple[str, ...]], int]
+METHOD_PROVIDER_NAMES = frozenset(("ParentMethods", "ElementMethods"))
 
 
 def generated_stub_sources(
@@ -44,12 +46,14 @@ def generated_stub_sources(
     for module_name, qualname in provider_methods:
         module_tree = module_trees.setdefault(module_name, {})
         _add_qualname(module_tree, qualname)
+    stub_order = _stub_order(manifest, source_modules=source_modules)
 
     stub_sources = {
         Path(*module_name.split(".")).with_suffix(".pyi"): _stub_source(
             tree,
             module_name=module_name,
             provider_methods=provider_methods,
+            stub_order=stub_order,
         )
         for module_name, tree in sorted(module_trees.items())
         if not _is_preserved_source_module(module_name, preserved_prefixes)
@@ -176,6 +180,35 @@ def _manifest_stub_fullnames(manifest: ProjectionManifest) -> tuple[str, ...]:
     for record in manifest.concrete_parents:
         fullnames.append(record.concrete_class)
     return tuple(dict.fromkeys(fullnames))
+
+
+def _stub_order(
+    manifest: ProjectionManifest,
+    *,
+    source_modules: tuple[str, ...],
+) -> StubOrder:
+    order: StubOrder = {}
+    for fullname in _provider_fullnames_in_dependency_order(manifest):
+        module_name, qualname = _source_module_and_qualname(
+            fullname,
+            source_modules=source_modules,
+        )
+        for prefix_length in range(1, len(qualname) + 1):
+            order.setdefault((module_name, qualname[:prefix_length]), len(order))
+    return order
+
+
+def _provider_fullnames_in_dependency_order(
+    manifest: ProjectionManifest,
+) -> tuple[str, ...]:
+    ordered_fullnames: list[str] = []
+    seen_fullnames: set[str] = set()
+    for projection in manifest.projections:
+        for fullname in reversed(projection.provider_mro):
+            if fullname not in seen_fullnames:
+                ordered_fullnames.append(fullname)
+                seen_fullnames.add(fullname)
+    return tuple(ordered_fullnames)
 
 
 def _provider_methods_by_owner(
@@ -319,11 +352,13 @@ def _stub_source(
     *,
     module_name: str,
     provider_methods: ProviderMethodMap,
+    stub_order: StubOrder,
 ) -> str:
     body_lines = _stub_lines(
         tree,
         module_name=module_name,
         provider_methods=provider_methods,
+        stub_order=stub_order,
     )
     if _module_uses_self_return(module_name, provider_methods):
         return "\n".join(("from typing import Self", "", *body_lines)) + "\n"
@@ -347,13 +382,19 @@ def _stub_lines(
     *,
     module_name: str,
     provider_methods: ProviderMethodMap,
+    stub_order: StubOrder,
     qualname: tuple[str, ...] = (),
     indent: int = 0,
 ) -> tuple[str, ...]:
     lines: list[str] = []
     for name, child in sorted(
         tree.items(),
-        key=lambda item: (item[0] not in {"ParentMethods", "ElementMethods"}, item[0]),
+        key=lambda item: _stub_sort_key(
+            item[0],
+            module_name=module_name,
+            qualname=qualname,
+            stub_order=stub_order,
+        ),
     ):
         nested_qualname = (*qualname, name)
         methods = provider_methods.get((module_name, nested_qualname), ())
@@ -369,6 +410,7 @@ def _stub_lines(
                     child,
                     module_name=module_name,
                     provider_methods=provider_methods,
+                    stub_order=stub_order,
                     qualname=nested_qualname,
                     indent=indent + 1,
                 )
@@ -376,6 +418,23 @@ def _stub_lines(
         elif not methods:
             lines.append(f"{'    ' * (indent + 1)}...")
     return tuple(lines)
+
+
+def _stub_sort_key(
+    name: str,
+    *,
+    module_name: str,
+    qualname: tuple[str, ...],
+    stub_order: StubOrder,
+) -> tuple[bool, int, str]:
+    nested_qualname = (*qualname, name)
+    if name in METHOD_PROVIDER_NAMES:
+        return (False, 0, name)
+    return (
+        True,
+        stub_order.get((module_name, nested_qualname), len(stub_order)),
+        name,
+    )
 
 
 def _write_package_markers(output_root: Path, package_dir: Path) -> None:
