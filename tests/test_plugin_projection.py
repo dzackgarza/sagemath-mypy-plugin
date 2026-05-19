@@ -692,9 +692,15 @@ def test_plugin_projects_nested_axiom_typeinfo_mro_from_manifest(
         NESTED_AXIOM_PROVIDER,
         "builtins.object",
     )
+    assert tuple(base.type.fullname for base in baseline_axiom_parent_info.bases) == (
+        "builtins.object",
+    )
     assert tuple(info.fullname for info in axiom_parent_info.mro) == (
         *projections[NESTED_AXIOM_PROVIDER].provider_mro,
         "builtins.object",
+    )
+    assert tuple(base.type.fullname for base in axiom_parent_info.bases) == (
+        projections[NESTED_AXIOM_PROVIDER].provider_bases
     )
 
 
@@ -775,9 +781,15 @@ def test_plugin_projects_linked_axiom_typeinfo_mro_from_manifest(
         LINKED_AXIOM_PROVIDER,
         "builtins.object",
     )
+    assert tuple(base.type.fullname for base in baseline_linked_parent_info.bases) == (
+        "builtins.object",
+    )
     assert tuple(info.fullname for info in linked_parent_info.mro) == (
         *projections[LINKED_AXIOM_PROVIDER].provider_mro,
         "builtins.object",
+    )
+    assert tuple(base.type.fullname for base in linked_parent_info.bases) == (
+        projections[LINKED_AXIOM_PROVIDER].provider_bases
     )
 
 
@@ -980,25 +992,43 @@ def test_plugin_projects_sage_provider_typeinfo_mros_from_source_modules(
         *axiom_projections[COMMUTATIVE_RINGS_PROVIDER].provider_mro,
         "builtins.object",
     )
+    assert tuple(base.type.fullname for base in commutative_info.bases) == (
+        axiom_projections[COMMUTATIVE_RINGS_PROVIDER].provider_bases
+    )
     assert tuple(info.fullname for info in parent_info.mro) == (
         *cartesian_projections[FUNCTORIAL_CARTESIAN_PARENT_PROVIDER].provider_mro,
         "builtins.object",
+    )
+    assert tuple(base.type.fullname for base in parent_info.bases) == (
+        cartesian_projections[FUNCTORIAL_CARTESIAN_PARENT_PROVIDER].provider_bases
     )
     assert tuple(info.fullname for info in element_info.mro) == (
         *cartesian_projections[FUNCTORIAL_CARTESIAN_ELEMENT_PROVIDER].provider_mro,
         "builtins.object",
     )
+    assert tuple(base.type.fullname for base in element_info.bases) == (
+        cartesian_projections[FUNCTORIAL_CARTESIAN_ELEMENT_PROVIDER].provider_bases
+    )
     assert tuple(info.fullname for info in tensor_parent_info.mro) == (
         *tensor_projections[FUNCTORIAL_TENSOR_PARENT_PROVIDER].provider_mro,
         "builtins.object",
+    )
+    assert tuple(base.type.fullname for base in tensor_parent_info.bases) == (
+        tensor_projections[FUNCTORIAL_TENSOR_PARENT_PROVIDER].provider_bases
     )
     assert tuple(info.fullname for info in modules_parent_info.mro) == (
         *parameterized_projections[PARAMETERIZED_MODULES_PROVIDER].provider_mro,
         "builtins.object",
     )
+    assert tuple(base.type.fullname for base in modules_parent_info.bases) == (
+        parameterized_projections[PARAMETERIZED_MODULES_PROVIDER].provider_bases
+    )
     assert tuple(info.fullname for info in vector_spaces_parent_info.mro) == (
         *parameterized_projections[PARAMETERIZED_VECTOR_SPACES_PROVIDER].provider_mro,
         "builtins.object",
+    )
+    assert tuple(base.type.fullname for base in vector_spaces_parent_info.bases) == (
+        parameterized_projections[PARAMETERIZED_VECTOR_SPACES_PROVIDER].provider_bases
     )
 
 
