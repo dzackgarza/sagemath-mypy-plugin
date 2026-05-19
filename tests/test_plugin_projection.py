@@ -1973,3 +1973,520 @@ def _importable_module_name(fullname: str) -> str:
             continue
         return module_name
     raise AssertionError(f"Could not find importable module for {fullname!r}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 5 mutation proof helpers and tests (5A–5G)
+#
+# Each test proves: provider_mro mutations (truncation and reordering) propagate
+# exactly to TypeInfo.mro.  This is the structural invariant: the plugin writes
+# what the manifest says, no more and no less.  A corrupted manifest therefore
+# produces a detectable, quantifiably wrong TypeInfo graph.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _with_corrupted_provider_mro(
+    projections: dict[str, ProviderProjection],
+    target: str,
+    corrupted_mro: tuple[str, ...],
+) -> dict[str, ProviderProjection]:
+    """Return projections dict with target's provider_mro replaced.
+
+    Retains only provider_bases entries still present in corrupted_mro[1:],
+    preserving the schema invariant provider_bases ⊆ provider_mro[1:].
+    """
+    original = projections[target]
+    return {
+        **projections,
+        target: original.model_copy(
+            update={
+                "provider_mro": corrupted_mro,
+                "provider_bases": tuple(
+                    b for b in original.provider_bases if b in corrupted_mro[1:]
+                ),
+            }
+        ),
+    }
+
+
+def _write_mutation_manifest_and_config(
+    tmp_path: Path,
+    projections: dict[str, ProviderProjection],
+    source_modules: tuple["SourceModuleRecord", ...],
+    label: str,
+    *,
+    unsupported_providers: tuple["UnsupportedProviderRecord", ...] = (),
+) -> Path:
+    """Write a manifest and plugin config for a mutation test; return config path."""
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=tuple(projections.values()),
+        unsupported_providers=unsupported_providers,
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            tuple(projections.values()),
+            source_modules=source_modules,
+        ),
+        source_modules=source_modules,
+    )
+    manifest_path = tmp_path / f"mutation-{label}.json"
+    config_path = tmp_path / f"mutation-{label}.ini"
+    write_manifest(manifest_path, manifest)
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "ignore_missing_imports = True",
+                "",
+                "[sage-mypy-category-plugin]",
+                f"manifest = {manifest_path}",
+                "",
+            )
+        )
+    )
+    return config_path
+
+
+def test_phase5A_nested_axiom_provider_mro_mutations_are_structurally_detectable(
+    tmp_path: Path,
+) -> None:
+    """Phase 5A mutation proof: corrupted provider_mro propagates to TypeInfo.mro.
+
+    Truncating the last projected base and reordering two intermediate bases
+    each produce a TypeInfo.mro that differs from the oracle-correct projection
+    for AxiomRootCategory.Finite.ParentMethods.
+    """
+    projections = _provider_projections(NESTED_AXIOM_FULLNAMES, roles=("parent",))
+    oracle_mro = projections[NESTED_AXIOM_PROVIDER].provider_mro
+    stub_root = tmp_path / "stubs"
+    source_modules = _write_projected_provider_stubs(
+        stub_root, projections=tuple(projections.values())
+    )
+
+    def _extract_mro(corrupted_mro: tuple[str, ...], label: str) -> tuple[str, ...]:
+        corrupted = _with_corrupted_provider_mro(projections, NESTED_AXIOM_PROVIDER, corrupted_mro)
+        config_path = _write_mutation_manifest_and_config(
+            tmp_path, corrupted, source_modules, label
+        )
+        result = _build_fixture(
+            config_path,
+            tmp_path,
+            fixture_path=AXIOM_FIXTURE_PATH,
+            fixture_module=AXIOM_FIXTURE_MODULE,
+            mypy_path_entries=(REPO_ROOT, stub_root),
+        )
+        axiom_cat = result.files[AXIOM_FIXTURE_MODULE].names["AxiomRootCategory"].node
+        assert isinstance(axiom_cat, TypeInfo)
+        axiom_finite = _inner_typeinfo(axiom_cat, "Finite")
+        axiom_parent = _inner_typeinfo(axiom_finite, "ParentMethods")
+        return tuple(info.fullname for info in axiom_parent.mro)
+
+    oracle_typeinfo_mro = (*oracle_mro, "builtins.object")
+
+    # Truncation: remove last base (sage.categories.objects.Objects.ParentMethods)
+    truncated_mro = oracle_mro[:-1]
+    truncated_typeinfo_mro = _extract_mro(truncated_mro, "5a-truncated")
+    assert truncated_typeinfo_mro != oracle_typeinfo_mro, (
+        f"Truncated provider_mro must produce a different TypeInfo.mro; "
+        f"got {truncated_typeinfo_mro!r} vs oracle {oracle_typeinfo_mro!r}"
+    )
+    assert len(truncated_typeinfo_mro) < len(oracle_typeinfo_mro), (
+        f"Truncated TypeInfo.mro must be shorter than oracle; "
+        f"got {truncated_typeinfo_mro!r}"
+    )
+
+    # Reordering: swap positions [1] and [2] (FiniteSets.PM ↔ AxiomRootCategory.PM)
+    reordered_mro = (oracle_mro[0], oracle_mro[2], oracle_mro[1], *oracle_mro[3:])
+    reordered_typeinfo_mro = _extract_mro(reordered_mro, "5a-reordered")
+    assert reordered_typeinfo_mro != oracle_typeinfo_mro, (
+        f"Reordered provider_mro must produce a different TypeInfo.mro; "
+        f"got {reordered_typeinfo_mro!r} vs oracle {oracle_typeinfo_mro!r}"
+    )
+    assert reordered_typeinfo_mro == (*reordered_mro, "builtins.object"), (
+        f"Reordered TypeInfo.mro must exactly reflect the manifest MRO; "
+        f"got {reordered_typeinfo_mro!r}"
+    )
+
+
+def test_phase5B_linked_axiom_provider_mro_mutations_are_structurally_detectable(
+    tmp_path: Path,
+) -> None:
+    """Phase 5B mutation proof: corrupted provider_mro propagates to TypeInfo.mro.
+
+    Truncating and reordering the linked axiom provider's MRO each produce a
+    TypeInfo.mro that differs from the oracle-correct projection for
+    LinkedFiniteAxiomCategory.ParentMethods.
+    """
+    projections = _provider_projections(LINKED_AXIOM_FULLNAMES, roles=("parent",))
+    oracle_mro = projections[LINKED_AXIOM_PROVIDER].provider_mro
+    stub_root = tmp_path / "stubs"
+    source_modules = _write_projected_provider_stubs(
+        stub_root, projections=tuple(projections.values())
+    )
+    fixture_sources = (
+        (LINKED_AXIOM_ROOT_PATH, LINKED_AXIOM_ROOT_MODULE),
+        (LINKED_AXIOM_FINITE_PATH, LINKED_AXIOM_FINITE_MODULE),
+    )
+
+    def _extract_mro(corrupted_mro: tuple[str, ...], label: str) -> tuple[str, ...]:
+        corrupted = _with_corrupted_provider_mro(projections, LINKED_AXIOM_PROVIDER, corrupted_mro)
+        config_path = _write_mutation_manifest_and_config(
+            tmp_path, corrupted, source_modules, label
+        )
+        result = _build_fixture(
+            config_path,
+            tmp_path,
+            fixture_sources=fixture_sources,
+            mypy_path_entries=(REPO_ROOT, stub_root),
+        )
+        linked_cat = result.files[LINKED_AXIOM_FINITE_MODULE].names[
+            "LinkedFiniteAxiomCategory"
+        ].node
+        assert isinstance(linked_cat, TypeInfo)
+        linked_parent = _inner_typeinfo(linked_cat, "ParentMethods")
+        return tuple(info.fullname for info in linked_parent.mro)
+
+    oracle_typeinfo_mro = (*oracle_mro, "builtins.object")
+
+    # Truncation: remove last base (sage.categories.objects.Objects.ParentMethods)
+    truncated_mro = oracle_mro[:-1]
+    truncated_typeinfo_mro = _extract_mro(truncated_mro, "5b-truncated")
+    assert truncated_typeinfo_mro != oracle_typeinfo_mro, (
+        f"Truncated provider_mro must produce a different TypeInfo.mro; "
+        f"got {truncated_typeinfo_mro!r}"
+    )
+    assert len(truncated_typeinfo_mro) < len(oracle_typeinfo_mro)
+
+    # Reordering: swap positions [1] and [2] (FiniteSets.PM ↔ LinkedAxiomRootCategory.PM)
+    reordered_mro = (oracle_mro[0], oracle_mro[2], oracle_mro[1], *oracle_mro[3:])
+    reordered_typeinfo_mro = _extract_mro(reordered_mro, "5b-reordered")
+    assert reordered_typeinfo_mro != oracle_typeinfo_mro, (
+        f"Reordered provider_mro must produce a different TypeInfo.mro; "
+        f"got {reordered_typeinfo_mro!r}"
+    )
+    assert reordered_typeinfo_mro == (*reordered_mro, "builtins.object")
+
+
+def test_phase5C_cartesian_products_provider_mro_mutations_are_structurally_detectable(
+    tmp_path: Path,
+) -> None:
+    """Phase 5C mutation proof: corrupted CartesianProducts provider_mro propagates.
+
+    Truncating and reordering Sets.CartesianProducts.ParentMethods.provider_mro
+    each produce a TypeInfo.mro that differs from the oracle-correct projection.
+    """
+    projections = _provider_projections(
+        (FUNCTORIAL_CARTESIAN_CATEGORY,), roles=("parent", "element")
+    )
+    oracle_mro = projections[FUNCTORIAL_CARTESIAN_PARENT_PROVIDER].provider_mro
+    stub_root = tmp_path / "stubs"
+    source_modules = _write_projected_provider_stubs(
+        stub_root, projections=tuple(projections.values())
+    )
+    consumer_path = tmp_path / "cartesian_consumer.py"
+    consumer_path.write_text(
+        "\n".join(
+            (
+                "from sage.categories.sets_cat import Sets",
+                "Sets.CartesianProducts.ParentMethods",
+                "",
+            )
+        )
+    )
+
+    def _extract_mro(corrupted_mro: tuple[str, ...], label: str) -> tuple[str, ...]:
+        corrupted = _with_corrupted_provider_mro(
+            projections, FUNCTORIAL_CARTESIAN_PARENT_PROVIDER, corrupted_mro
+        )
+        config_path = _write_mutation_manifest_and_config(
+            tmp_path, corrupted, source_modules, label
+        )
+        result = _build_fixture(
+            config_path,
+            tmp_path,
+            fixture_sources=((consumer_path, "cartesian_consumer"),),
+            mypy_path_entries=(stub_root,),
+        )
+        sets_info = result.files["sage.categories.sets_cat"].names["Sets"].node
+        assert isinstance(sets_info, TypeInfo)
+        cp_info = _inner_typeinfo(sets_info, "CartesianProducts")
+        parent_info = _inner_typeinfo(cp_info, "ParentMethods")
+        return tuple(info.fullname for info in parent_info.mro)
+
+    oracle_typeinfo_mro = (*oracle_mro, "builtins.object")
+
+    # Truncation: remove last base (sage.categories.objects.Objects.ParentMethods)
+    truncated_mro = oracle_mro[:-1]
+    truncated_typeinfo_mro = _extract_mro(truncated_mro, "5c-truncated")
+    assert truncated_typeinfo_mro != oracle_typeinfo_mro, (
+        f"Truncated provider_mro must produce a different TypeInfo.mro; "
+        f"got {truncated_typeinfo_mro!r}"
+    )
+    assert len(truncated_typeinfo_mro) < len(oracle_typeinfo_mro)
+
+    # Reordering: swap positions [1] and [2] (Sets.PM ↔ Objects.PM)
+    reordered_mro = (oracle_mro[0], oracle_mro[2], oracle_mro[1], *oracle_mro[3:])
+    reordered_typeinfo_mro = _extract_mro(reordered_mro, "5c-reordered")
+    assert reordered_typeinfo_mro != oracle_typeinfo_mro, (
+        f"Reordered provider_mro must produce a different TypeInfo.mro; "
+        f"got {reordered_typeinfo_mro!r}"
+    )
+    assert reordered_typeinfo_mro == (*reordered_mro, "builtins.object")
+
+
+def test_phase5D_tensor_products_provider_mro_mutations_are_structurally_detectable(
+    tmp_path: Path,
+) -> None:
+    """Phase 5D mutation proof: corrupted TensorProducts provider_mro propagates.
+
+    Truncating and reordering Modules.TensorProducts.ParentMethods.provider_mro
+    each produce a TypeInfo.mro that differs from the oracle-correct projection.
+    """
+    projections = _provider_projections(
+        (FUNCTORIAL_TENSOR_CATEGORY,), roles=("parent",)
+    )
+    oracle_mro = projections[FUNCTORIAL_TENSOR_PARENT_PROVIDER].provider_mro
+    stub_root = tmp_path / "stubs"
+    source_modules = _write_projected_provider_stubs(
+        stub_root, projections=tuple(projections.values())
+    )
+    consumer_path = tmp_path / "tensor_consumer.py"
+    consumer_path.write_text(
+        "\n".join(
+            (
+                "from sage.categories.modules import Modules",
+                "Modules.TensorProducts.ParentMethods",
+                "",
+            )
+        )
+    )
+
+    def _extract_mro(corrupted_mro: tuple[str, ...], label: str) -> tuple[str, ...]:
+        corrupted = _with_corrupted_provider_mro(
+            projections, FUNCTORIAL_TENSOR_PARENT_PROVIDER, corrupted_mro
+        )
+        config_path = _write_mutation_manifest_and_config(
+            tmp_path, corrupted, source_modules, label
+        )
+        result = _build_fixture(
+            config_path,
+            tmp_path,
+            fixture_sources=((consumer_path, "tensor_consumer"),),
+            mypy_path_entries=(stub_root,),
+        )
+        modules_info = result.files["sage.categories.modules"].names["Modules"].node
+        assert isinstance(modules_info, TypeInfo)
+        tp_info = _inner_typeinfo(modules_info, "TensorProducts")
+        parent_info = _inner_typeinfo(tp_info, "ParentMethods")
+        return tuple(info.fullname for info in parent_info.mro)
+
+    oracle_typeinfo_mro = (*oracle_mro, "builtins.object")
+
+    # Truncation: remove last base
+    truncated_mro = oracle_mro[:-1]
+    truncated_typeinfo_mro = _extract_mro(truncated_mro, "5d-truncated")
+    assert truncated_typeinfo_mro != oracle_typeinfo_mro, (
+        f"Truncated provider_mro must produce a different TypeInfo.mro; "
+        f"got {truncated_typeinfo_mro!r}"
+    )
+    assert len(truncated_typeinfo_mro) < len(oracle_typeinfo_mro)
+
+    # Reordering: swap positions [1] and [2] (Modules.PM ↔ Bimodules.PM)
+    reordered_mro = (oracle_mro[0], oracle_mro[2], oracle_mro[1], *oracle_mro[3:])
+    reordered_typeinfo_mro = _extract_mro(reordered_mro, "5d-reordered")
+    assert reordered_typeinfo_mro != oracle_typeinfo_mro, (
+        f"Reordered provider_mro must produce a different TypeInfo.mro; "
+        f"got {reordered_typeinfo_mro!r}"
+    )
+    assert reordered_typeinfo_mro == (*reordered_mro, "builtins.object")
+
+
+def test_phase5E_parameterized_provider_mro_mutations_are_structurally_detectable(
+    tmp_path: Path,
+) -> None:
+    """Phase 5E mutation proof: corrupted Modules.ParentMethods provider_mro propagates.
+
+    Truncating and reordering the parameterized Modules.ParentMethods.provider_mro
+    each produce a TypeInfo.mro that differs from the oracle-correct projection.
+    """
+    projections = _provider_projections(PARAMETERIZED_CATEGORY_FULLNAMES, roles=("parent",))
+    oracle_mro = projections[PARAMETERIZED_MODULES_PROVIDER].provider_mro
+    stub_root = tmp_path / "stubs"
+    source_modules = _write_projected_provider_stubs(
+        stub_root, projections=tuple(projections.values())
+    )
+    consumer_path = tmp_path / "param_consumer.py"
+    consumer_path.write_text(
+        "\n".join(
+            (
+                "from sage.categories.modules import Modules",
+                "Modules.ParentMethods",
+                "",
+            )
+        )
+    )
+
+    def _extract_mro(corrupted_mro: tuple[str, ...], label: str) -> tuple[str, ...]:
+        corrupted = _with_corrupted_provider_mro(
+            projections, PARAMETERIZED_MODULES_PROVIDER, corrupted_mro
+        )
+        config_path = _write_mutation_manifest_and_config(
+            tmp_path, corrupted, source_modules, label
+        )
+        result = _build_fixture(
+            config_path,
+            tmp_path,
+            fixture_sources=((consumer_path, "param_consumer"),),
+            mypy_path_entries=(stub_root,),
+        )
+        modules_info = result.files["sage.categories.modules"].names["Modules"].node
+        assert isinstance(modules_info, TypeInfo)
+        parent_info = _inner_typeinfo(modules_info, "ParentMethods")
+        return tuple(info.fullname for info in parent_info.mro)
+
+    oracle_typeinfo_mro = (*oracle_mro, "builtins.object")
+
+    # Truncation: remove last base
+    truncated_mro = oracle_mro[:-1]
+    truncated_typeinfo_mro = _extract_mro(truncated_mro, "5e-truncated")
+    assert truncated_typeinfo_mro != oracle_typeinfo_mro, (
+        f"Truncated provider_mro must produce a different TypeInfo.mro; "
+        f"got {truncated_typeinfo_mro!r}"
+    )
+    assert len(truncated_typeinfo_mro) < len(oracle_typeinfo_mro)
+
+    # Reordering: swap positions [1] and [2] (Bimodules.PM ↔ RightModules.PM)
+    reordered_mro = (oracle_mro[0], oracle_mro[2], oracle_mro[1], *oracle_mro[3:])
+    reordered_typeinfo_mro = _extract_mro(reordered_mro, "5e-reordered")
+    assert reordered_typeinfo_mro != oracle_typeinfo_mro, (
+        f"Reordered provider_mro must produce a different TypeInfo.mro; "
+        f"got {reordered_typeinfo_mro!r}"
+    )
+    assert reordered_typeinfo_mro == (*reordered_mro, "builtins.object")
+
+
+def test_phase5F_homset_provider_mro_mutations_are_structurally_detectable(
+    tmp_path: Path,
+) -> None:
+    """Phase 5F mutation proof: corrupted homset provider_mro propagates to TypeInfo.mro.
+
+    Truncating and reordering BottomCategory.Homsets.ParentMethods.provider_mro
+    each produce a TypeInfo.mro that differs from the oracle-correct projection.
+    """
+    homset_bottom_parent_provider = (
+        f"{HOMSET_ROLES_MODULE}.BottomCategory.Homsets.ParentMethods"
+    )
+    projections, unsupported_providers = _provider_projections_with_unsupported(
+        HOMSET_ROLES_FULLNAMES,
+        roles=("homset_parent", "homset_element"),
+    )
+    oracle_mro = projections[homset_bottom_parent_provider].provider_mro
+    stub_root = tmp_path / "stubs"
+    _write_visible_sage_provider_stubs(stub_root)
+
+    def _extract_mro(corrupted_mro: tuple[str, ...], label: str) -> tuple[str, ...]:
+        corrupted = _with_corrupted_provider_mro(
+            projections, homset_bottom_parent_provider, corrupted_mro
+        )
+        config_path = _write_mutation_manifest_and_config(
+            tmp_path,
+            corrupted,
+            source_modules=(),
+            label=label,
+            unsupported_providers=unsupported_providers,
+        )
+        result = _build_fixture(
+            config_path,
+            tmp_path,
+            fixture_path=HOMSET_ROLES_PATH,
+            fixture_module=HOMSET_ROLES_MODULE,
+            mypy_path_entries=(REPO_ROOT, stub_root),
+        )
+        homsets_info = _nested_typeinfo(
+            result,
+            module=HOMSET_ROLES_MODULE,
+            outer="BottomCategory",
+            inner="Homsets",
+        )
+        parent_info = _inner_typeinfo(homsets_info, "ParentMethods")
+        return tuple(info.fullname for info in parent_info.mro)
+
+    oracle_typeinfo_mro = (*oracle_mro, "builtins.object")
+
+    # Truncation: remove last base (sage.categories.objects.Objects.ParentMethods)
+    truncated_mro = oracle_mro[:-1]
+    truncated_typeinfo_mro = _extract_mro(truncated_mro, "5f-truncated")
+    assert truncated_typeinfo_mro != oracle_typeinfo_mro, (
+        f"Truncated provider_mro must produce a different TypeInfo.mro; "
+        f"got {truncated_typeinfo_mro!r}"
+    )
+    assert len(truncated_typeinfo_mro) < len(oracle_typeinfo_mro)
+
+    # Reordering: swap positions [1] and [2]
+    # (TopCategory.Homsets.PM ↔ sage.categories.homsets.Homsets.PM)
+    reordered_mro = (oracle_mro[0], oracle_mro[2], oracle_mro[1], *oracle_mro[3:])
+    reordered_typeinfo_mro = _extract_mro(reordered_mro, "5f-reordered")
+    assert reordered_typeinfo_mro != oracle_typeinfo_mro, (
+        f"Reordered provider_mro must produce a different TypeInfo.mro; "
+        f"got {reordered_typeinfo_mro!r}"
+    )
+    assert reordered_typeinfo_mro == (*reordered_mro, "builtins.object")
+
+
+def test_phase5G_morphism_provider_mro_mutations_are_structurally_detectable(
+    tmp_path: Path,
+) -> None:
+    """Phase 5G mutation proof: corrupted morphism provider_mro propagates to TypeInfo.mro.
+
+    Truncating and reordering BottomCategory.MorphismMethods.provider_mro each produce
+    a TypeInfo.mro that differs from the oracle-correct projection.  All providers are
+    source-based fixture classes; no Sage external stubs are required.
+    """
+    bottom_morphism_provider = f"{PROVIDER_ROLES_MODULE}.BottomCategory.MorphismMethods"
+    projections = _provider_projections(PROVIDER_ROLES_FULLNAMES, roles=("morphism",))
+    oracle_mro = projections[bottom_morphism_provider].provider_mro
+
+    def _extract_mro(corrupted_mro: tuple[str, ...], label: str) -> tuple[str, ...]:
+        corrupted = _with_corrupted_provider_mro(
+            projections, bottom_morphism_provider, corrupted_mro
+        )
+        config_path = _write_mutation_manifest_and_config(
+            tmp_path, corrupted, source_modules=(), label=label
+        )
+        result = _build_fixture(
+            config_path,
+            tmp_path,
+            fixture_path=PROVIDER_ROLES_PATH,
+            fixture_module=PROVIDER_ROLES_MODULE,
+            mypy_path_entries=(REPO_ROOT,),
+        )
+        bottom_info = _nested_typeinfo(
+            result,
+            module=PROVIDER_ROLES_MODULE,
+            outer="BottomCategory",
+            inner="MorphismMethods",
+        )
+        return tuple(info.fullname for info in bottom_info.mro)
+
+    oracle_typeinfo_mro = (*oracle_mro, "builtins.object")
+
+    # Truncation: remove last base (TopCategory.MorphismMethods)
+    truncated_mro = oracle_mro[:-1]
+    truncated_typeinfo_mro = _extract_mro(truncated_mro, "5g-truncated")
+    assert truncated_typeinfo_mro != oracle_typeinfo_mro, (
+        f"Truncated provider_mro must produce a different TypeInfo.mro; "
+        f"got {truncated_typeinfo_mro!r}"
+    )
+    assert len(truncated_typeinfo_mro) < len(oracle_typeinfo_mro)
+
+    # Reordering: swap positions [1] and [2] (RightCategory.MM ↔ LeftCategory.MM)
+    reordered_mro = (oracle_mro[0], oracle_mro[2], oracle_mro[1], *oracle_mro[3:])
+    reordered_typeinfo_mro = _extract_mro(reordered_mro, "5g-reordered")
+    assert reordered_typeinfo_mro != oracle_typeinfo_mro, (
+        f"Reordered provider_mro must produce a different TypeInfo.mro; "
+        f"got {reordered_typeinfo_mro!r}"
+    )
+    assert reordered_typeinfo_mro == (*reordered_mro, "builtins.object")

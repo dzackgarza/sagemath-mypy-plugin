@@ -93,24 +93,41 @@ existed only on the `main` branch pre-rewrite. They are not present in this bran
 
 ### Self-returning descriptors in generated stubs
 
-`ProviderMethodRecord` tracks only plain instance methods that return `Self`.
-Methods declared as `@classmethod`, `@staticmethod`, or `@property` that also
-return `Self` are not captured in the manifest and therefore not explicitly
-typed in generated stubs.
+`ProviderMethodRecord` tracks only plain instance methods (`FunctionType`) that
+return `Self`. Methods declared as `@classmethod`, `@staticmethod`, `@property`,
+or Sage's `@cached_method` that also return `Self` are not captured in the
+manifest and therefore not explicitly typed in generated stubs.
+
+**Descriptors affected**:
+
+- `@classmethod`, `@staticmethod`, `@property` — not modelled as plain instance
+  methods; the stub generator would need a `kind` field on `ProviderMethodRecord`
+  to emit the correct decorator.
+- `@cached_method` (Sage's `sage.misc.cachefunc.CachedMethod`) — a Cython
+  `cdef class` whose `_cachedfunc` attribute is not exposed to Python.
+  `_direct_provider_function_or_none` cannot inspect it without a fragile
+  descriptor call (`member.__get__(sentinel, type).f`).  Empirically, Sage's own
+  `@cached_method` members in external provider classes (e.g.
+  `Sets.ParentMethods.an_element`) carry no `Self` return annotation, so they
+  would pass through `_returns_typing_self` uncaptured regardless.
 
 **Impact**: If a Sage external category's provider class (one not in the
-configured `packages`) declares a `@classmethod` or `@property` returning
-`Self`, and a consumer's provider class overrides it with `@override`, mypy
-may not detect the override correctly from the stub.
+configured `packages`) declares a descriptor method returning `Self`, and a
+consumer's provider class overrides it with `@override`, mypy may not detect
+the override correctly from the stub.
 
 **Scope**: Narrow. The stubs are only for external Sage runtime classes, not
 for source-based provider classes (which mypy reads directly). The structural
-MRO invariant is unaffected.
+MRO invariant is unaffected.  The `@override` behavior matrix tests (including
+tests of `@classmethod`, `@staticmethod`, and `@property` overrides) pass
+because those tests use source-based fixture providers, which mypy reads
+directly rather than through stubs.
 
 **Migration path**: Add a `kind` field to `ProviderMethodRecord` with values
-`instance`, `classmethod`, `staticmethod`, `property`. Extend
-`_direct_provider_function_or_none` to unwrap these descriptors. Update the
-stub generator to emit the appropriate decorator in the `.pyi` file.
+`instance`, `classmethod`, `staticmethod`, `property`, `cached_method`. Extend
+`_direct_provider_function_or_none` to unwrap these descriptors (for
+`@cached_method`: call `member.__get__(sentinel, type(sentinel)).f`). Update
+the stub generator to emit the appropriate decorator in the `.pyi` file.
 
 ## Test Surface State
 

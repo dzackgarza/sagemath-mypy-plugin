@@ -716,6 +716,32 @@ def _provider_class_for_projection(
 
 
 def _direct_provider_function_or_none(member: object) -> FunctionType | None:
+    """Return the underlying FunctionType for a provider class member, or None.
+
+    Only plain instance methods (FunctionType) are handled.  Decorated members
+    are deliberately excluded:
+
+    - ``@classmethod`` / ``@staticmethod`` / ``@property`` — not modelled as
+      instance methods; a ``kind`` field on ``ProviderMethodRecord`` (instance,
+      classmethod, staticmethod, property) would be needed to emit the correct
+      decorator in the generated stub.
+
+    - ``@cached_method`` (``sage.misc.cachefunc.CachedMethod``) — Cython
+      ``cdef class`` whose ``_cachedfunc`` attribute is private (not exposed to
+      Python).  The underlying function can be retrieved via the descriptor
+      protocol (``member.__get__(dummy_instance, cls).f``), but this approach is
+      fragile and creates a live caller object as a side-effect.  Empirically,
+      Sage's own ``@cached_method`` members in external provider classes (e.g.
+      ``Sets.ParentMethods.an_element``) carry no ``Self`` return annotation, so
+      they would not be captured by ``_returns_typing_self`` even if unwrapped.
+      The gap has no observable impact today.
+
+    Migration path: when a Sage external provider method decorated with
+    ``@cached_method`` and annotated ``-> Self`` must be tracked, extend this
+    function to call ``member.__get__(sentinel_instance, type(sentinel_instance))``
+    and read ``.f`` from the returned caller.  Update ``ProviderMethodRecord``
+    with a ``kind`` field and update the stub generator accordingly.
+    """
     if isinstance(member, FunctionType):
         return member
     return None
