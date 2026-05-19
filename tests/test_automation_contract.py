@@ -464,3 +464,107 @@ def test_consumer_mypy_preserves_sage_category_source_modules(
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+# ---------------------------------------------------------------------------
+# CONTRACT.md sentinel checks — automated enforcement of banned patterns
+# ---------------------------------------------------------------------------
+
+PLUGIN_PACKAGE = REPO_ROOT / "sage_mypy_category_plugin"
+
+
+def _rg_count(pattern: str, path: Path) -> list[str]:
+    """Return lines from ripgrep that match pattern in path, or [] if none."""
+    result = subprocess.run(
+        ("rg", "-n", "--no-heading", pattern, str(path)),
+        capture_output=True,
+        text=True,
+    )
+    return [line for line in result.stdout.splitlines() if line.strip()]
+
+
+def test_contract_no_diagnostic_filter_functions_in_plugin_package() -> None:
+    """CONTRACT.md I2/BP2: plugin must not filter mypy diagnostics.
+
+    Any function named _filter* in the plugin package would indicate a suppression
+    path. Only registered suppressions in GOALS.md are permitted, and those must be
+    implemented without broad filter functions.
+    """
+    hits = _rg_count(r"def _filter", PLUGIN_PACKAGE)
+    assert hits == [], (
+        "Found diagnostic filter function(s) in plugin package — "
+        "CONTRACT.md I2 forbids filtering mypy diagnostics:\n"
+        + "\n".join(hits)
+    )
+
+
+def test_contract_no_sage_categories_namespace_strings_in_plugin_package() -> None:
+    """CONTRACT.md I3/BP1: plugin must not hardcode 'sage.categories.' as a string.
+
+    Resolution logic must use runtime introspection, not string matching on
+    namespace prefixes.
+    """
+    hits = _rg_count(r'"sage\.categories\.', PLUGIN_PACKAGE)
+    assert hits == [], (
+        "Found hardcoded 'sage.categories.' string in plugin package — "
+        "CONTRACT.md I3 forbids namespace-specific string matching:\n"
+        + "\n".join(hits)
+    )
+
+
+def test_contract_no_consumer_namespace_strings_in_plugin_package() -> None:
+    """CONTRACT.md I3/BP1: plugin must not hardcode 'category_specs' or any
+    consumer package name as a string.
+    """
+    hits = _rg_count(r'"category_specs', PLUGIN_PACKAGE)
+    assert hits == [], (
+        "Found hardcoded 'category_specs' string in plugin package — "
+        "CONTRACT.md I3 forbids consumer namespace hardcoding:\n"
+        + "\n".join(hits)
+    )
+
+
+def test_contract_no_banned_broad_hooks_in_plugin() -> None:
+    """CONTRACT.md BP7: the plugin core must only register the three approved hooks.
+
+    get_function_hook, get_method_hook, get_attribute_hook, and get_base_class_hook
+    may only appear with explicit justification in GOALS.md Suppression Registry.
+    """
+    plugin_file = PLUGIN_PACKAGE / "plugin.py"
+    hits = _rg_count(
+        r"get_function_hook|get_method_hook|get_attribute_hook|get_base_class_hook",
+        plugin_file,
+    )
+    assert hits == [], (
+        "Found banned broad hook(s) in plugin.py — "
+        "CONTRACT.md BP7 restricts hooks to get_customize_class_mro_hook, "
+        "get_additional_deps, and report_config_data:\n"
+        + "\n".join(hits)
+    )
+
+
+def test_contract_fixtures_use_local_wrapper_not_direct_sage_category() -> None:
+    """CONTRACT.md BP2: test fixtures for third-party namespace tests must inherit
+    from a local wrapper base, not from sage.categories.category.Category directly.
+
+    Fixtures that inherit from Sage Category directly pass Sage's runtime
+    introspection even when the plugin's namespace handling is completely broken,
+    producing false greens. The local_wrapper.py itself is exempt — it IS the
+    permitted wrapper base.
+    """
+    fixtures_dir = REPO_ROOT / "tests" / "fixtures"
+    hits = _rg_count(r"class \w+\(Category\)", fixtures_dir)
+    # The only permitted Category base in fixture code is the local cat wrapper
+    # (tests.fixtures.invariant_core.category_specs_like.cat.Category), not the
+    # bare Sage Category. Filter out lines that import from the local cat package.
+    direct_sage_hits = [
+        line
+        for line in hits
+        if "category_specs_like" not in line
+    ]
+    assert direct_sage_hits == [], (
+        "Found fixture class(es) inheriting directly from Category — "
+        "CONTRACT.md BP2: use LocalCategoryBase or the category_specs_like "
+        "local Category wrapper instead:\n"
+        + "\n".join(direct_sage_hits)
+    )
