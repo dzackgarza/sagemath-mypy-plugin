@@ -169,6 +169,19 @@ consumer-mypy manifest *args:
   #!/usr/bin/env bash
   set -euo pipefail
   args=({{args}})
+  mypy_args=()
+  targets=()
+  for arg in "${args[@]}"; do
+    if [[ "$arg" == -* ]]; then
+      mypy_args+=("$arg")
+    else
+      targets+=("$arg")
+    fi
+  done
+  if [[ "${#targets[@]}" -eq 0 ]]; then
+    targets=(category_specs)
+  fi
+  mypy_targets=()
   repo_root="${PWD}"
   consumer_root="${SAGE_MYPY_CONSUMER_ROOT:-/home/dzack/research}"
   consumer_package="${consumer_root}/category_specs"
@@ -202,4 +215,14 @@ consumer-mypy manifest *args:
   export PYTHONPATH="${repo_root}:${consumer_root}${PYTHONPATH:+:${PYTHONPATH}}"
   export MYPYPATH="${stub_root}${MYPYPATH:+:${MYPYPATH}}"
   cd "$consumer_root"
-  sage -python -m mypy --config-file "$config_path" category_specs "${args[@]}"
+  for target in "${targets[@]}"; do
+    path_target="${target//./\/}"
+    if [[ -d "$path_target" ]]; then
+      mypy_targets+=("$path_target")
+    elif [[ -f "${path_target}.py" ]]; then
+      mypy_targets+=("${path_target}.py")
+    else
+      mypy_targets+=("$target")
+    fi
+  done
+  sage -python -m mypy --config-file "$config_path" "${mypy_targets[@]}" "${mypy_args[@]}"
