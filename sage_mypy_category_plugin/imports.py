@@ -8,16 +8,18 @@ def import_fullname(fullname: str) -> object:
     module, qualname = import_module_and_qualname(fullname)
     current: object = module
     for name in qualname:
-        assert hasattr(current, name), (
-            f"{fullname!r} references missing attribute {name!r} on {current!r}"
-        )
+        if not hasattr(current, name):
+            raise AttributeError(
+                f"{fullname!r} references missing attribute {name!r} on {current!r}"
+            )
         current = getattr(current, name)
     return current
 
 
 def import_module_and_qualname(fullname: str) -> tuple[ModuleType, tuple[str, ...]]:
     parts = fullname.split(".")
-    assert len(parts) >= 2, f"Expected fully-qualified name, got {fullname!r}"
+    if len(parts) < 2:
+        raise ValueError(f"Expected fully-qualified name, got {fullname!r}")
 
     for split_index in range(len(parts), 0, -1):
         module_name = ".".join(parts[:split_index])
