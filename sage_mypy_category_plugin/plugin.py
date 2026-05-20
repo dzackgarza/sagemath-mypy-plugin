@@ -423,22 +423,31 @@ def _generate_and_cache(config: PluginConfig) -> tuple[ProjectionManifest, Path]
 
 
 def _add_generated_stubs_to_mypy_path(options: Options, *, stub_root: Path) -> None:
-    """Ensure mypy can see generated stubs without requiring MYPYPATH.
+    """Prepend stub_root to options.mypy_path.
 
-    Mutates options.mypy_path in-place during plugin initialization so callers
-    that reuse Options see the generated stub root. CLI runs must also declare
-    the stub root in config before mypy starts, since mypy computes import
-    search paths before constructing plugins.
+    Under mypy 2.0.x (compiled via mypyc), build_inner() calls
+    compute_search_paths() before load_plugins(), so plugin.__init__ runs
+    after search_paths is already frozen.  Python-level patches to
+    FindModuleCache or SearchPaths have no effect on compiled C code.
+
+    The production path is:
+      - write_consumer_config.py emits  mypy_path = {cache_dir}/stubs  in
+        mypy.ini, so compute_search_paths() includes stub_root before any
+        plugin code runs.
+      - Tests that call build() directly pre-seed stub_root in
+        mypy_path_entries so compute_search_paths() sees it the same way.
+
+    This function mutates options.mypy_path for the test/API-caller path
+    where stub_root is already declared in mypy_path_entries, ensuring
+    deduplication and correct ordering.  The consumer-config production path
+    does not need this mutation (stub_root reaches search_paths through the
+    config file), but having it present does not cause errors.
     """
     stub_root_str = str(stub_root.resolve())
     if options.mypy_path is None:
         options.mypy_path = []
     else:
-        options.mypy_path = [
-            existing_path
-            for existing_path in options.mypy_path
-            if existing_path != stub_root_str
-        ]
+        options.mypy_path = [p for p in options.mypy_path if p != stub_root_str]
     options.mypy_path.insert(0, stub_root_str)
 
 
