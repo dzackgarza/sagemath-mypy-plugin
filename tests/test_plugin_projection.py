@@ -1414,6 +1414,36 @@ def test_plugin_fails_clearly_for_invalid_manifest_schema(tmp_path: Path) -> Non
     ]
 
 
+def test_plugin_passthrough_when_no_config_section(tmp_path: Path) -> None:
+    """Plugin listed in [mypy] plugins but no [sage-mypy-category-plugin] section.
+
+    Proves that an unconfigured plugin is a safe no-op: no CompileError, no
+    projections, no stubs.  Needed so global mypy configs can list the plugin
+    without requiring every project to configure it.
+    """
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+            )
+        )
+    )
+    options = Options()
+    options.config_file = str(config_path)
+
+    plugin = SageCategoryProjectionPlugin(options)
+
+    # Passthrough: no projections, no manifest path, no stubs
+    assert plugin._projection_by_provider == {}
+    assert plugin._manifest_path is None
+    assert plugin._manifest.projections == ()
+    assert plugin.get_customize_class_mro_hook("any.fullname") is None
+    assert plugin.report_config_data(None) == {"passthrough": "true"}  # type: ignore[arg-type]
+
+
 def test_plugin_generates_manifest_from_packages_config(tmp_path: Path) -> None:
     """Phase 1A: plugin init with 'packages' config auto-generates manifest + stubs."""
     cache_dir = tmp_path / "sage-category-cache"

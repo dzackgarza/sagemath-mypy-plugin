@@ -47,6 +47,19 @@ class SageCategoryProjectionPlugin(Plugin):
         super().__init__(options)
         config = _read_plugin_config(options)
 
+        if not config.packages and config.debug_manifest is None:
+            # Passthrough: plugin is listed in [mypy] plugins but has no
+            # [sage-mypy-category-plugin] section or packages configured.
+            # No generation, no projection, no stubs.
+            self._manifest = ProjectionManifest.model_construct(
+                projections=(), source_modules=[]
+            )
+            self._manifest_path: Path | None = None
+            self._manifest_digest = ""
+            self._projection_by_provider: dict[str, ProviderProjection] = {}
+            self._source_modules: tuple[str, ...] = ()
+            return
+
         if config.debug_manifest is not None:
             self._manifest = _load_manifest_for_plugin(config.debug_manifest)
             self._manifest_path = config.debug_manifest
@@ -112,6 +125,9 @@ class SageCategoryProjectionPlugin(Plugin):
         ]
 
     def report_config_data(self, ctx: ReportConfigContext) -> dict[str, str]:
+        if self._manifest_path is None:
+            # Passthrough: no projection configured.
+            return {"passthrough": "true"}
         return {
             "manifest_path": str(self._manifest_path),
             "manifest_digest": self._manifest_digest,
@@ -235,7 +251,12 @@ def _read_plugin_config(options: Options) -> PluginConfig:
         raise CompileError([f"Could not read {config_path}"])
 
     if not parser.has_section(CONFIG_SECTION):
-        raise CompileError([f"Missing [{CONFIG_SECTION}] section in {config_path}"])
+        # No plugin config section present: passthrough mode.
+        # The plugin is listed in [mypy] plugins but has no configuration.
+        # Return empty config so __init__ skips generation and projection.
+        # This is not a silent fallback (I4): there is no strict mode to
+        # enforce and no configured packages to project.
+        return PluginConfig()
 
     has_manifest = parser.has_option(CONFIG_SECTION, "manifest")
     has_packages = parser.has_option(CONFIG_SECTION, "packages")
