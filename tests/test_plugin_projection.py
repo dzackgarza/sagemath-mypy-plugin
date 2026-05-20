@@ -1499,6 +1499,177 @@ def test_plugin_regenerates_from_clean_cache(tmp_path: Path) -> None:
     assert (cache_dir / "projection-manifest.json").is_file()
 
 
+def test_plugin_reuses_cache_on_second_init_without_regenerating(tmp_path: Path) -> None:
+    """Phase 7 E2: when the cached manifest is fresh, the plugin reuses it verbatim.
+
+    The manifest file must NOT be rewritten on a cache hit.  We verify this by
+    capturing the mtime_ns of the manifest file immediately after the first init
+    and asserting that it is unchanged after the second init.
+
+    Additionally the ``semantic_projection_digest`` must be identical across both
+    initialisations — proving the same projection graph was loaded both times.
+    """
+    cache_dir = tmp_path / "sage-category-cache"
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                "[sage-mypy-category-plugin]",
+                "packages = tests.fixtures.invariant_core.diamond_runtime",
+                "roles = parent",
+                f"cache_dir = {cache_dir}",
+                "",
+            )
+        )
+    )
+    options = Options()
+    options.config_file = str(config_path)
+    options.ignore_missing_imports = True
+
+    # First init — cold cache, manifest is generated.
+    plugin1 = SageCategoryProjectionPlugin(options)
+    manifest_path = cache_dir / "projection-manifest.json"
+    assert manifest_path.is_file()
+    mtime_after_first_init = manifest_path.stat().st_mtime_ns
+    digest_after_first_init = plugin1._manifest.semantic_projection_digest
+
+    # Second init — cache is fresh; manifest must not be rewritten.
+    plugin2 = SageCategoryProjectionPlugin(options)
+    mtime_after_second_init = manifest_path.stat().st_mtime_ns
+
+    assert mtime_after_second_init == mtime_after_first_init, (
+        "Manifest was rewritten on cache hit — plugin regenerated unnecessarily"
+    )
+    assert plugin2._manifest.semantic_projection_digest == digest_after_first_init, (
+        "semantic_projection_digest changed across cache-hit inits — projection graph drifted"
+    )
+
+
+def test_plugin_detects_stale_source_and_regenerates_in_packages_mode(
+    tmp_path: Path,
+) -> None:
+    """Phase 7 E3: mutating a source file triggers cache invalidation and regeneration.
+
+    When a provider source file's mtime_ns changes after the manifest was generated,
+    ``_try_load_cached_manifest`` must detect the staleness and return None, causing
+    the plugin to regenerate the manifest without raising a CompileError.
+
+    The test bumps the fixture source file's mtime by 1 ns to simulate a save, then
+    restores it in a try/finally to leave the repo directory unmodified.
+    """
+    import os
+
+    cache_dir = tmp_path / "sage-category-cache"
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                "[sage-mypy-category-plugin]",
+                "packages = tests.fixtures.invariant_core.diamond_runtime",
+                "roles = parent",
+                f"cache_dir = {cache_dir}",
+                "",
+            )
+        )
+    )
+    options = Options()
+    options.config_file = str(config_path)
+    options.ignore_missing_imports = True
+
+    # First init — cold cache, manifest generated.
+    SageCategoryProjectionPlugin(options)
+    manifest_path = cache_dir / "projection-manifest.json"
+    assert manifest_path.is_file()
+    mtime_after_first_init = manifest_path.stat().st_mtime_ns
+
+    # Identify a tracked source module (the fixture package __init__ or first .py).
+    manifest = load_manifest(manifest_path)
+    tracked_paths = [
+        Path(record.path)
+        for record in manifest.source_modules
+        if Path(record.path).suffix == ".py" and Path(record.path).exists()
+    ]
+    assert tracked_paths, "Manifest must track at least one .py source module"
+    source_to_touch = tracked_paths[0]
+    original_stat = source_to_touch.stat()
+    original_atime = original_stat.st_atime_ns
+    original_mtime = original_stat.st_mtime_ns
+
+    # Bump mtime_ns by 1 ns — simulates a file save without changing content.
+    try:
+        os.utime(
+            source_to_touch,
+            ns=(original_atime, original_mtime + 1),
+        )
+
+        # Second init — stale source detected → manifest regenerated.
+        SageCategoryProjectionPlugin(options)
+        mtime_after_second_init = manifest_path.stat().st_mtime_ns
+
+        assert mtime_after_second_init > mtime_after_first_init, (
+            "Manifest mtime did not advance after stale-source regeneration — "
+            "plugin failed to detect the source mutation and regenerate"
+        )
+    finally:
+        # Restore the original mtime so the repo is not dirtied.
+        os.utime(source_to_touch, ns=(original_atime, original_mtime))
+
+
+def test_plugin_recovers_from_corrupt_cache_in_packages_mode(tmp_path: Path) -> None:
+    """Phase 7 E6: a corrupted cache manifest triggers regeneration, not a hard failure.
+
+    When the cached ``projection-manifest.json`` contains invalid JSON or fails
+    Pydantic validation, ``_try_load_cached_manifest`` logs to stderr and returns
+    None.  The plugin then runs full generation and writes a valid replacement.
+    No ``CompileError`` should be raised.
+    """
+    cache_dir = tmp_path / "sage-category-cache"
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                "[sage-mypy-category-plugin]",
+                "packages = tests.fixtures.invariant_core.diamond_runtime",
+                "roles = parent",
+                f"cache_dir = {cache_dir}",
+                "",
+            )
+        )
+    )
+    options = Options()
+    options.config_file = str(config_path)
+    options.ignore_missing_imports = True
+
+    # First init — generates valid cache.
+    SageCategoryProjectionPlugin(options)
+    manifest_path = cache_dir / "projection-manifest.json"
+    assert manifest_path.is_file()
+
+    # Corrupt the manifest with invalid JSON.
+    manifest_path.write_text("{ this is not valid JSON !!!")
+
+    # Second init — corrupt manifest detected → graceful regeneration → no CompileError.
+    plugin_after_recovery = SageCategoryProjectionPlugin(options)
+
+    # The manifest must now be a valid, loadable file again.
+    recovered_manifest = load_manifest(manifest_path)
+    assert recovered_manifest.projections, (
+        "Recovered manifest must contain projections after regeneration from corrupt cache"
+    )
+    assert plugin_after_recovery._manifest.semantic_projection_digest == (
+        recovered_manifest.semantic_projection_digest
+    ), "Plugin's loaded manifest must match the regenerated manifest on disk"
+
+
 def test_plugin_prepends_generated_stub_root_to_mypy_path(tmp_path: Path) -> None:
     cache_dir = tmp_path / "sage-category-cache"
     preexisting_path = tmp_path / "existing-mypy-path"
