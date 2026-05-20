@@ -3,7 +3,7 @@
 ## Current branch: `rewrite/invariant-core`
 
 All phases from `finishing-work.md` in the vault are complete as of commit `b8d9a39`.
-186 tests pass across all 7 suites.
+187 tests pass across all 7 suites.
 
 ### Phase completion status
 
@@ -57,3 +57,10 @@ addressed: two were already fixed, one required `_returns_typing_self` to handle
 The consumer `just consumer-mypy` run produces 1219 errors in 165 files — these are
 real mypy type errors in the `category_specs` consumer codebase, not plugin errors.
 The plugin is not responsible for fixing consumer code type errors.
+
+**Passthrough mode** (commit `af7becf`): when `plugins = sage_mypy_category_plugin.plugin`
+is listed in a mypy config but no `[sage-mypy-category-plugin]` section is present, the
+plugin initializes in passthrough mode (no generation, no projection, no CompileError).
+This makes global QC mypy configs that list the plugin generically work without errors.
+CONTRACT invariant I4 is not violated: passthrough fires only when no config section is
+present (and therefore no packages are configured), so there is no strict mode to enforce.
