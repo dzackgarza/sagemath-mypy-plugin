@@ -212,6 +212,12 @@ def _lookup_typeinfos(
         typeinfos.append(typeinfo)
 
     if missing_names:
+        if not ctx.api.final_iteration:
+            # Symbols may not be registered yet on this analysis pass —
+            # defer so mypy reprocesses this class definition after more
+            # TypeInfos are available.
+            ctx.api.defer()
+            return None
         ctx.api.fail(
             "Sage category provider projection for "
             f"{projection_fullname!r} cannot be applied because {projection_field} "
