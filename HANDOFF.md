@@ -18,6 +18,7 @@ All phases from `finishing-work.md` in the vault are complete as of commit `b8d9
 | 6 | Generated stubs under plugin ownership | Done |
 | 7 | Consumer end-to-end proof (E1-E6) | Done |
 | 8 | Mutation and anti-reward-hacking suite | Done |
+| 9 | Correctness argument and maintainability proof (`SPEC.md`) | Done |
 
 ### Phase 7 acceptance tests (all in `tests/test_plugin_projection.py`)
 
