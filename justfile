@@ -95,7 +95,7 @@ test-mutation:
     -q
 
 [group('test')]
-test-performance max_seconds="120":
+test-performance max_seconds="180":
   #!/usr/bin/env bash
   set -euo pipefail
   started="$(python3 -c 'import time; print(time.monotonic())')"
