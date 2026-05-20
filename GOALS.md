@@ -151,6 +151,17 @@ All surfaces are tested with the conjunction matrix:
 | Consumer (renamed package) | GREEN | `test_renamed_consumer_package_behavioral_invariant_holds` |
 | Mutation: ghost provider_bases | GREEN | `test_false_provider_base_reference_is_detected_by_plugin` |
 | Mutation: ghost provider_mro | GREEN | `test_false_provider_mro_entry_is_detected_by_plugin` |
+| Mutation: axiom provider_mro truncation/reordering | GREEN | `test_phase5A_nested_axiom_provider_mro_mutations_are_structurally_detectable` |
+| Mutation: linked axiom provider_mro truncation/reordering | GREEN | `test_phase5B_linked_axiom_provider_mro_mutations_are_structurally_detectable` |
+| Mutation: CartesianProducts provider_mro | GREEN | `test_phase5C_cartesian_products_provider_mro_mutations_are_structurally_detectable` |
+| Mutation: TensorProducts provider_mro | GREEN | `test_phase5D_tensor_products_provider_mro_mutations_are_structurally_detectable` |
+| Mutation: parameterized provider_mro | GREEN | `test_phase5E_parameterized_provider_mro_mutations_are_structurally_detectable` |
+| Mutation: homset provider_mro | GREEN | `test_phase5F_homset_provider_mro_mutations_are_structurally_detectable` |
+| Mutation: morphism provider_mro | GREEN | `test_phase5G_morphism_provider_mro_mutations_are_structurally_detectable` |
+| Cache: fresh generation | GREEN | `test_plugin_generates_manifest_from_packages_config` |
+| Cache: hit (no regeneration) | GREEN | `test_plugin_reuses_cache_on_second_init_without_regenerating` |
+| Cache: stale source → regeneration | GREEN | `test_plugin_detects_stale_source_and_regenerates_in_packages_mode` |
+| Cache: corrupt manifest → recovery | GREEN | `test_plugin_recovers_from_corrupt_cache_in_packages_mode` |
 | Self-returning classmethods in stubs | KNOWN LIMITATION | See Known Limitations above |
 
 ## Non-Goals
