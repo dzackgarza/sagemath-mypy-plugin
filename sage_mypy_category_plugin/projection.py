@@ -152,6 +152,7 @@ class ProviderMethodRecord(BaseModel):
     provider: StrictStr
     name: StrictStr
     return_type: ProviderMethodReturnType
+    params: tuple[str, ...] = ()
 
     @field_validator("provider")
     @classmethod

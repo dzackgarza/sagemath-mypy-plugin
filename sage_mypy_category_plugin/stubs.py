@@ -567,10 +567,11 @@ def _stub_lines(
         else:
             lines.append(f"{class_indent}class {name}:")
         method_indent = "    " * (indent + 1)
-        lines.extend(
-            f"{method_indent}def {method.name}(self) -> {method.return_type}: ..."
-            for method in methods
-        )
+        for method in methods:
+            param_str = ", ".join(("self", *method.params))
+            lines.append(
+                f"{method_indent}def {method.name}({param_str}) -> {method.return_type}: ..."
+            )
         if child:
             lines.extend(
                 _stub_lines(
