@@ -398,12 +398,10 @@ def _deduplicate_provider_method_records(
         existing_record = record_by_key.get(key)
         assert existing_record is None or (
             existing_record.return_type == record.return_type
-            and existing_record.params == record.params
         ), (
             "conflicting provider method records for "
             f"{record.provider}.{record.name}: "
-            f"({existing_record.return_type!r}, {existing_record.params!r}) vs "
-            f"({record.return_type!r}, {record.params!r})"
+            f"{existing_record.return_type!r} vs {record.return_type!r}"
         )
         record_by_key[key] = record
     return tuple(record_by_key[key] for key in sorted(record_by_key))
