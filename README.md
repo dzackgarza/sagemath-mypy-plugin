@@ -34,7 +34,7 @@ in the Sage Python environment, together with the Sage-version sidecar stubs:
 
 ```bash
 sage -python -m pip install -e .
-sage -python -m pip install "git+https://github.com/dzackgarza/sage-stubs@bb6ded461f8e7cb0239e12685cdff162a38a19c6"
+sage -python -m pip install "git+https://github.com/dzackgarza/sage-stubs@030a8485c09e19432aa7b80dc354911b032e999a"
 ```
 
 Verify that the installed mypy version matches the pinned version:
