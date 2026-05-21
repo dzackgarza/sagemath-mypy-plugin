@@ -27,6 +27,7 @@ from sage_mypy_category_plugin.plugin import (
     CONFIG_SECTION,
     SageCategoryProjectionPlugin,
     _normalize_role_name,
+    _source_modules_stale_reason,
 )
 from sage_mypy_category_plugin.projection import ProviderProjection, ProviderRole
 from sage_mypy_category_plugin.stubs import write_generated_stub_tree
@@ -1270,6 +1271,53 @@ def test_plugin_reports_semantic_manifest_config_data(tmp_path: Path) -> None:
         refreshed_manifest.source_module_digest
     )
     assert manifest.source_module_by_module == {FIXTURE_MODULE: DIAMOND_SOURCE_MODULE}
+
+
+def test_stale_reason_detects_missing_file(tmp_path: Path) -> None:
+    """_source_modules_stale_reason returns the 'file is missing' diagnostic.
+
+    The plugin debug-manifest path regenerates stubs before validation, so the
+    file-missing branch cannot be exercised via the full plugin init.  The
+    detection function itself is the owned unit; test it directly.
+    """
+    missing_path = tmp_path / "gone.py"
+    # Never created — simulates a deleted source file.
+    record = SourceModuleRecord(
+        module="some.source.module",
+        path=str(missing_path),
+        sha256="a" * 64,
+        mtime_ns=1_000_000_000,
+    )
+    reason = _source_modules_stale_reason((record,))
+    assert reason == (
+        "Stale Sage category source module metadata for "
+        "some.source.module: file is missing"
+    ), reason
+
+
+def test_stale_reason_detects_mtime_mismatch(tmp_path: Path) -> None:
+    """_source_modules_stale_reason returns the mtime_ns-mismatch diagnostic.
+
+    The sha256-mismatch branch is exercised through the full plugin integration
+    test (test_plugin_fails_clearly_for_stale_source_module_metadata).  The
+    mtime_ns branch is only reachable when the file exists but has been touched;
+    testing it directly against the detection function keeps the integration test
+    fast and the unit test precise.
+    """
+    source_path = tmp_path / "source.py"
+    source_path.write_text("x = 1\n")
+    real_mtime_ns = source_path.stat().st_mtime_ns
+    stale_mtime_ns = real_mtime_ns - 1  # one nanosecond behind
+    record = SourceModuleRecord(
+        module="some.source.module",
+        path=str(source_path),
+        sha256="a" * 64,
+        mtime_ns=stale_mtime_ns,
+    )
+    reason = _source_modules_stale_reason((record,))
+    assert reason is not None
+    assert "mtime_ns mismatch" in reason, reason
+    assert "some.source.module" in reason, reason
 
 
 def test_plugin_fails_clearly_for_stale_source_module_metadata(
