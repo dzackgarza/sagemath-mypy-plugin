@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import subprocess
+import tomllib
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_PACKAGE = REPO_ROOT / "sage_mypy_category_plugin"
+SAGE_STUBS_COMMIT = "c99550bc405620b9b8f25e1890f25dd88fecc241"
 
 
 def test_justfile_exposes_final_state_validation_recipes() -> None:
@@ -80,6 +82,19 @@ def test_readme_documents_only_package_mode_user_config() -> None:
     assert "mypy_path = .mypy_cache/sage-category-plugin/stubs" not in readme
     assert "packages =" in readme
     assert "sage-stubs" in readme
+
+
+def test_sidecar_install_paths_pin_exact_sage_stubs_commit() -> None:
+    project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    sidecar_extra = project["project"]["optional-dependencies"]["sage10_7"]
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    justfile = (REPO_ROOT / "justfile").read_text(encoding="utf-8")
+
+    expected_url = f"git+https://github.com/dzackgarza/sage-stubs@{SAGE_STUBS_COMMIT}"
+
+    assert sidecar_extra == [f"sage-stubs @ {expected_url}"]
+    assert expected_url in readme
+    assert expected_url in justfile
 
 
 def test_plugin_init_does_not_generate_or_expose_upstream_sage_stubs() -> None:
