@@ -1533,6 +1533,50 @@ def test_plugin_fails_clearly_for_invalid_role_config(tmp_path: Path) -> None:
     )
 
 
+def test_plugin_config_parser_strips_inline_comments(tmp_path: Path) -> None:
+    """_parse_multiline_option must strip inline # comments from config values.
+
+    Inline comments are documented as valid in the [sage-mypy-category-plugin]
+    section.  If stripping were broken, the package or role string would include
+    the comment text and discovery / role parsing would fail.
+    """
+    cache_dir = tmp_path / "cache"
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                f"[{CONFIG_SECTION}]",
+                "packages =",
+                # Inline comment after the package name — must be stripped.
+                "    tests.fixtures.invariant_core.diamond_runtime  # diamond fixture",
+                "roles =",
+                "    parent  # the parent provider role",
+                f"cache_dir = {cache_dir}",
+                "",
+            )
+        )
+    )
+    options = Options()
+    options.config_file = str(config_path)
+
+    # The plugin must start without error: comments are stripped, package and
+    # role names are clean.  If the package string retained " # diamond fixture",
+    # discover_category_fullnames would fail or return empty and raise CompileError.
+    plugin = SageCategoryProjectionPlugin(options)
+    assert FIXTURE_MODULE in plugin._source_modules, (
+        "diamond_runtime fixture must appear as a source module — "
+        "comment stripping likely failed if the plugin raised CompileError above"
+    )
+    # parent role only — element/homset providers must not appear in projections.
+    assert all(
+        ".ParentMethods" in provider or ".parent_class" in provider
+        for provider in plugin._projection_by_provider
+    ), "Only parent-role providers expected when roles = parent"
+
+
 def test_plugin_passthrough_when_no_config_section(tmp_path: Path) -> None:
     """Plugin listed in [mypy] plugins but no [sage-mypy-category-plugin] section.
 
