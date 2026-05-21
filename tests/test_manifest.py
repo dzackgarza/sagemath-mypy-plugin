@@ -1111,6 +1111,36 @@ def test_manifest_rejects_malformed_concrete_parent_fullnames(
             },
             "element_runtime_class",
         ),
+        # element_runtime_mro present but element_runtime_class absent — the
+        # element_provider_mro must also be cleared to isolate this branch from
+        # the "element_provider_mro requires element_runtime_class" check above.
+        (
+            {
+                "element_runtime_class": None,
+                "element_provider_mro": (),
+                "element_runtime_mro": (
+                    "sage.categories.examples.semigroups."
+                    "LeftZeroSemigroup_with_category.element_class",
+                    "sage.categories.examples.semigroups.LeftZeroSemigroup.Element",
+                    "sage.structure.element.Element",
+                ),
+            },
+            "element_runtime_class",
+        ),
+        # element_runtime_class present but element_runtime_mro absent.
+        ({"element_runtime_mro": ()}, "element_runtime_mro"),
+        # element_runtime_mro present but does not start with element_runtime_class.
+        (
+            {
+                "element_runtime_mro": (
+                    "sage.categories.examples.semigroups.LeftZeroSemigroup.Element",
+                    "sage.categories.examples.semigroups."
+                    "LeftZeroSemigroup_with_category.element_class",
+                    "sage.structure.element.Element",
+                ),
+            },
+            "element_runtime_mro",
+        ),
     ),
 )
 def test_manifest_rejects_incoherent_concrete_parent_records(
