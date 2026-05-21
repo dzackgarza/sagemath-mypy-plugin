@@ -1,135 +1,196 @@
-# Sage MyPy Category Plugin
+# sage-mypy-category-plugin
 
-A MyPy plugin that enables proper `@override` checking for Sage's dynamic category method system.
+A mypy plugin that projects Sage category provider-class MROs into mypy's
+TypeInfo graph, enabling standard mypy inheritance checks (`@override`,
+`@final`, abstract methods, signature compatibility) on Sage category
+provider classes.
 
-## Overview
+## The problem
 
-This plugin addresses the issue where MyPy's `@override` checker (from `typing.override`) fails to work correctly with Sage's dynamically constructed class hierarchy. In Sage, method containers like `ParentMethods`, `ElementMethods`, etc., are dynamically generated based on category relationships, but MyPy only sees the static source definitions.
+Sage builds its category hierarchy at runtime via `Category._make_named_class`.
+When a category `C` is instantiated, Sage creates named classes
+(`parent_class`, `element_class`, …) whose MROs are derived by C3 linearisation
+of the corresponding inner classes (`ParentMethods`, `ElementMethods`, …) across
+the full super-category chain. This MRO is not written in any source file;
+mypy cannot see it. Without the plugin, every `@override` annotation on a
+provider method fails with "no base method was found."
 
-The plugin works by intercepting MyPy's class MRO calculation and splicing in the appropriate ancestor method containers as static bases, allowing MyPy's `@override` checking to function properly.
+## How it works
+
+At plugin initialisation, the plugin imports the configured category packages
+under the Sage Python interpreter, introspects the live runtime MROs of every
+provider named class, projects them back to source provider classes, and writes
+a validated manifest. During the mypy analysis pass, `get_customize_class_mro_hook`
+rewrites each provider's `TypeInfo.bases` and `TypeInfo.mro` to match the
+manifest projection. Mypy's ordinary inheritance rules then apply correctly.
+
+The formal correctness argument is in [SPEC.md](SPEC.md).
+Non-negotiable invariants and banned patterns are in [CONTRACT.md](CONTRACT.md).
 
 ## Installation
 
-### From Source
+The plugin requires Sage Python and a pinned mypy version. Install from source
+in the Sage Python environment:
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd sage-mypy-plugin
-
-# Install in development mode
-pip install -e .
+sage -python -m pip install -e .
 ```
 
-### Using Sage's Python
-
-If you're working within a Sage environment:
+Verify that the installed mypy version matches the pinned version:
 
 ```bash
-sage -pip install -e .
+just test-supported-mypy
 ```
 
-## Usage
+## Configuration
 
-To enable the plugin, add it to your MyPy configuration:
-
-### Global Configuration (`~/.mypy.ini`)
+Add a `[sage-mypy-category-plugin]` section to your `mypy.ini` (or equivalent
+config file):
 
 ```ini
 [mypy]
 plugins = sage_mypy_category_plugin.plugin
-ignore_missing_imports = True
+
+[sage-mypy-category-plugin]
+packages =
+    my_category_package
+    another.category.package
+
+roles =
+    parent
+    element
+    subcategory
+    morphism
+    homset_parent
+    homset_element
+
+cache_dir = .mypy_cache/sage-category-plugin
+strict = true
 ```
 
-### Per-Project Configuration (`mypy.ini` or `setup.cfg`)
+### Options
 
-```ini
-[mypy]
-plugins = sage_mypy_category_plugin.plugin
-ignore_missing_imports = True
-```
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `packages` | yes (or `manifest`) | — | Python package names to scan for Sage category classes. The plugin imports each package under Sage Python at startup. |
+| `roles` | no | `parent` | Provider roles to project. Available: `parent`, `element`, `subcategory`, `morphism`, `homset_parent`, `homset_element`. |
+| `cache_dir` | no | `.mypy_cache/sage-category-plugin` | Directory for the generated manifest and stubs. Relative paths are resolved from the config file's directory. |
+| `strict` | no | `false` | If `true`, any projection failure (missing TypeInfo, MRO mismatch) causes a hard mypy error instead of a warning. |
+| `manifest` | debug only | — | Path to a pre-generated manifest JSON. Bypasses plugin-owned generation. Not for production use. |
 
-### Command Line
+### Running mypy
 
 ```bash
-mypy --plugin=sage_mypy_category_plugin.plugin your_file.py
+sage -python -m mypy --config-file mypy.ini my_category_package
 ```
 
-### Bundled Sage interop stubs
+No external pre-generation step is required. The plugin generates and caches
+the manifest and stubs during the first mypy run.
 
-The distribution bundles a narrow PEP 561 stub-only payload under
-`sage-stubs`, so installing the package also installs the Sage interop stubs
-for MyPy automatically. No separate `MYPYPATH` setup is required after
-installation.
+## Cache lifecycle
 
-The bundled stubs intentionally stay small and only cover the Sage interfaces
-this project consumes directly, such as:
+The plugin caches the manifest and generated stubs in `cache_dir`:
 
-- `sage.categories.category`
-- `sage.categories.category_with_axiom`
-- `sage.categories.homsets`
-- `sage.misc.abstract_method`
-- `sage.misc.cachefunc`
-- `sage.misc.lazy_import`
-- `sage.structure.category_object`
-- `sage.structure.parent`
-- `sage.sets.condition_set`
+```
+cache_dir/
+    manifest.json          ← projection manifest (validated Pydantic model)
+    stubs/                 ← generated .pyi stubs for Sage's external runtime providers
+        sage/
+            categories/
+                ...
+```
 
-When working directly from a source checkout without installing the package,
-make sure the repository root is on MyPy's package search path (for example by
-putting the repo on `PYTHONPATH`) so MyPy can see the top-level `sage-stubs/`
-directory.
+**What triggers regeneration:**
 
-## Configuration Options
+- The manifest is absent or unreadable.
+- The Sage version in the manifest does not match the running Sage.
+- The mypy version is outside the manifest's `[mypy_min_version, mypy_max_version]` range.
+- The SHA-256 digest of any source module tracked in the manifest has changed.
+- The `report_config_data` hook detects a manifest digest change (mypy's incremental-mode mechanism).
 
-The plugin can be configured via the `[sage-mypy-category-plugin]` section in your MyPy config file:
+**What does not trigger regeneration:**
+
+- Mypy incremental-mode `.mypy_cache` changes (mypy manages those separately).
+- Changes to files outside the configured `packages`.
+
+## Failure modes
+
+| Failure | Symptom | Cause | Fix |
+|---------|---------|-------|-----|
+| Missing `[sage-mypy-category-plugin]` section | `CompileError: Missing section` | Config file does not have the plugin section | Add `[sage-mypy-category-plugin]` to `mypy.ini` |
+| Neither `packages` nor `manifest` specified | `CompileError: must specify either 'manifest' or 'packages'` | Config section is present but empty | Add `packages = ...` |
+| Provider TypeInfo not found | `Sage category provider projection … references missing symbols` | A projected provider class is not visible to mypy (missing stub or source) | Ensure all `packages` are on `MYPYPATH` or are source roots; check that the cache stubs were generated |
+| MRO mismatch after projection | `Sage category provider MRO mismatch: expected … observed …` | TypeInfo lookup succeeded but mypy resolved a different order | Usually indicates a stale manifest; delete `cache_dir` and rerun |
+| Sage runtime import error | `CompileError: ...` during plugin `__init__` | A package in `packages` cannot be imported under Sage Python | Verify the package is installed and importable: `sage -python -c "import my_package"` |
+| Manifest validation error | `ValidationError: …` | The cached manifest is corrupted or was written by an incompatible plugin version | Delete `cache_dir` and rerun |
+
+## Debugging
+
+**Inspect the generated manifest:**
+
+```bash
+python -m json.tool .mypy_cache/sage-category-plugin/manifest.json | head -100
+```
+
+**Regenerate the manifest manually (CLI resolver):**
+
+```bash
+just generate-manifest \
+    --packages my_category_package \
+    --roles parent element \
+    --output .mypy_cache/sage-category-plugin/manifest.json
+```
+
+**Use a pre-generated manifest for debugging:**
 
 ```ini
 [sage-mypy-category-plugin]
-strict = false
-representative.MyCategory = SomeRepresentative, AnotherRepresentative
+manifest = /path/to/manifest.json
 ```
 
-- `strict`: When enabled, the plugin will report errors for unresolved projections and missing type information (default: false)
-- `representative.*`: Configure category representatives for parameterized categories
+This bypasses plugin-owned generation and uses the specified file directly.
+Useful for bisecting manifest vs. projection issues.
 
-## How It Works
+**Run only the behavior test matrix:**
 
-The plugin implements a `get_customize_class_mro_hook` that:
+```bash
+just test-behavior
+```
 
-1. Identifies Sage category method containers (classes ending in `ParentMethods`, `ElementMethods`, etc.)
-2. Uses Sage's introspection API to determine the correct static base classes for these method containers
-3. Splices these base classes into the MRO (Method Resolution Order) before the final `object` entry
-4. This allows MyPy's `@override` checker to walk the correct inheritance chain
+**Run the mutation proof suite:**
+
+```bash
+just test-mutation
+```
+
+## Sage and mypy version pinning
+
+The plugin pins mypy at the version shipped with the Sage Python environment.
+The manifest records the Sage version and git revision at generation time,
+plus `mypy_min_version`/`mypy_max_version` bounds. Running with a different
+mypy version triggers manifest regeneration (or a hard error if the new version
+is outside the supported range).
+
+To verify pinning:
+
+```bash
+just test-supported-mypy
+```
 
 ## Development
 
-### Running Tests
-
 ```bash
-# Using justfile
-just test
-
-# Or directly with pytest
-python -m pytest
+just test            # run all test batches in parallel
+just test-structural # oracle/projection/MRO tests only
+just test-behavior   # behavior matrix (plugin on/off × valid/invalid)
+just test-mutation   # mutation proof suite
+just release-check   # performance gate + version pin + mutation suite
+just typecheck       # mypy on the plugin source itself
 ```
 
-### Building
+## Design references
 
-```bash
-python -m build
-```
-
-## Requirements
-
-- Python >= 3.10
-- MyPy >= 1.0
-- SageMath (for the introspection components)
-
-## License
-
-This project does not currently specify a license. Please check with the maintainers for licensing information before use.
-
-## Acknowledgments
-
-This plugin was developed to support MyPy type checking in SageMath development environments, particularly for verifying `@override` annotations in category method containers.
+- [SPEC.md](SPEC.md) — formal correctness argument
+- [CONTRACT.md](CONTRACT.md) — non-negotiable invariants and banned patterns
+- [AGENTS.md](AGENTS.md) — repository rules for agents
+- [GOALS.md](GOALS.md) — historical scope and suppression rationale

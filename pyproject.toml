@@ -1,30 +1,21 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=80"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "sage-mypy-category-plugin"
-version = "0.3.0"
-description = "Mypy plugin for Sage's dynamic category method system"
-requires-python = ">=3.10"
+version = "0.0.0"
+description = "Invariant-core rewrite for Sage category provider MRO projection into mypy."
+requires-python = ">=3.12"
 dependencies = [
-    "mypy>=1.0",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=7",
+    "mypy==2.0.0",
+    "packaging>=24,<27",
+    "pydantic>=2.12,<3",
 ]
 
 [tool.setuptools.packages.find]
-where = ["."]
+include = ["sage_mypy_category_plugin*"]
 
-[tool.setuptools.data-files]
-"sage-stubs" = ["sage-stubs/__init__.pyi"]
-"sage-stubs/categories" = ["sage-stubs/categories/*.pyi"]
-"sage-stubs/misc" = ["sage-stubs/misc/*.pyi"]
-"sage-stubs/modules" = ["sage-stubs/modules/*.pyi"]
-"sage-stubs/sets" = ["sage-stubs/sets/*.pyi"]
-"sage-stubs/structure" = ["sage-stubs/structure/*.pyi"]
-"sage-stubs/tensor" = ["sage-stubs/tensor/*.pyi"]
-"sage-stubs/tensor/modules" = ["sage-stubs/tensor/modules/*.pyi"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

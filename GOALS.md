@@ -78,85 +78,91 @@ relationship AND there is no stub-based workaround. Every suppression must:
 
 ## Suppression Registry
 
-Every active suppression in the codebase must be listed here.
+**Current branch (`rewrite/invariant-core`): no active suppressions.**
 
-### `_filter_postbind_method_assign_errors`
+The invariant-core rewrite removed all diagnostic filter functions. The
+`test_contract_no_diagnostic_filter_functions_in_plugin_package` sentinel in
+`tests/test_automation_contract.py` enforces this: any `_filter*` function
+added to the plugin package will fail CI.
 
-- **File**: `sage_mypy_category_plugin/plugin.py`, line 1060
-- **Suppresses**: `[assignment]` and "Cannot assign to a method" on postbind
-  method container aliases (e.g. `Category.ParentMethods = SomeHelper`).
-- **What mypy doesn't know**: That `ParentMethods = SomeAlias` is a valid
-  covariant re-assignment of a method container class attribute — Sage's
-  category hierarchy guarantees that `SomeAlias` is a subtype of the original
-  `ParentMethods`.
-- **Target resolution**: Teach mypy that method container class attributes are
-  covariant. Inject the subtype relationship into `info.mro` or use
-  `get_attribute_hook` to surface the correct type.
-- **Migration path**: Implement method-container covariance tracking, then
-  remove `_filter_postbind_method_assign_errors`. The covariant assignment
-  test (`test_covariant_container_assignment`) is the RED test for this.
+Previous suppressions (`_filter_postbind_method_assign_errors`,
+`_filter_bound_helper_non_method_errors`, `_filter_constructors_no_redef_errors`)
+existed only on the `main` branch pre-rewrite. They are not present in this branch.
 
-### `_filter_bound_helper_non_method_errors`
+## Known Limitations
 
-- **File**: `sage_mypy_category_plugin/plugin.py`, line 1040
-- **Suppresses**: `@final cannot be used with non-method functions` and
-  `"abstractmethod" used with a non-method` on helper alias assignments.
-- **What mypy doesn't know**: That `ParentMethods.f = final_alias` is
-  semantically a method binding — the alias carries `@final`/`@abstractmethod`
-  semantics that apply to the target method.
-- **Target resolution**: Teach mypy that the target of a helper alias binding
-  IS a method, not a module-level function. Apply the decorator semantics
-  (`is_final`, `abstract_status`) to the target Var rather than the alias.
-  The `_copy_helper_flags` function partially does this already for some cases;
-  the suppression handles the remaining error-site filtering.
-- **Migration path**: Complete `_copy_helper_flags` coverage for all decorator
-  semantics so mypy doesn't fire the error in the first place. Remove the
-  suppression.
+### Self-returning descriptors in generated stubs
 
-### `_filter_constructors_no_redef_errors`
+`ProviderMethodRecord` tracks only plain instance methods (`FunctionType`) that
+return `Self`. Methods declared as `@classmethod`, `@staticmethod`, `@property`,
+or Sage's `@cached_method` that also return `Self` are not captured in the
+manifest and therefore not explicitly typed in generated stubs.
 
-- **File**: `sage_mypy_category_plugin/plugin.py`, line 1089
-- **Suppresses**: `[no-redef]` on the Sage pattern where a category defines
-  both a nested `Constructors` collector class and an instance method named
-  `Constructors`.
-- **What mypy doesn't know**: That Sage intentionally exposes both names: the
-  nested class is the collector implementation, while the method is the public
-  zero-argument category selector.
-- **Target resolution**: Model the selector method without creating a duplicate
-  static class/method binding in mypy's symbol table, or move this pattern into
-  a stub/semantic hook that avoids the `[no-redef]` diagnostic.
-- **Migration path**: Keep the suppression line-scoped to classes that define
-  both forms, and remove it once the constructor selector is represented without
-  a duplicate definition.
+**Descriptors affected**:
+
+- `@classmethod`, `@staticmethod`, `@property` — not modelled as plain instance
+  methods; the stub generator would need a `kind` field on `ProviderMethodRecord`
+  to emit the correct decorator.
+- `@cached_method` (Sage's `sage.misc.cachefunc.CachedMethod`) — a Cython
+  `cdef class` whose `_cachedfunc` attribute is not exposed to Python.
+  `_direct_provider_function_or_none` cannot inspect it without a fragile
+  descriptor call (`member.__get__(sentinel, type).f`).  Empirically, Sage's own
+  `@cached_method` members in external provider classes (e.g.
+  `Sets.ParentMethods.an_element`) carry no `Self` return annotation, so they
+  would pass through `_returns_typing_self` uncaptured regardless.
+
+**Impact**: If a Sage external category's provider class (one not in the
+configured `packages`) declares a descriptor method returning `Self`, and a
+consumer's provider class overrides it with `@override`, mypy may not detect
+the override correctly from the stub.
+
+**Scope**: Narrow. The stubs are only for external Sage runtime classes, not
+for source-based provider classes (which mypy reads directly). The structural
+MRO invariant is unaffected.  The `@override` behavior matrix tests (including
+tests of `@classmethod`, `@staticmethod`, and `@property` overrides) pass
+because those tests use source-based fixture providers, which mypy reads
+directly rather than through stubs.
+
+**Migration path**: Add a `kind` field to `ProviderMethodRecord` with values
+`instance`, `classmethod`, `staticmethod`, `property`, `cached_method`. Extend
+`_direct_provider_function_or_none` to unwrap these descriptors (for
+`@cached_method`: call `member.__get__(sentinel, type(sentinel)).f`). Update
+the stub generator to emit the appropriate decorator in the `.pyi` file.
 
 ## Test Surface State
 
-All surfaces are tested with the conjunction pattern:
-`(plugin on/off) × (valid/invalid usage)` asserting on mypy exit code and
-error output.
+All surfaces are tested with the conjunction matrix:
+`(plugin on/off) × (valid/invalid usage)`.
 
-| Surface | Status | Resolution path |
+| Surface | Status | Test |
 |---|---|---|
-| `ParentMethods @override` | GREEN | MRO injection (teach) |
-| `ElementMethods @override` | GREEN | MRO injection (teach) |
-| `SubcategoryMethods @override` | GREEN | MRO injection (teach), covered by local-wrapper conjunction test |
-| `MorphismMethods @override` | GREEN | MRO injection (teach), covered by local-wrapper conjunction test |
-| `@cached_method` decorator typing | GREEN | Bundled `sage.misc.cachefunc.cached_method` stub preserves the decorated callable type; plugin does not suppress arbitrary untyped decorators |
-| `Constructors()` zero-arg | GREEN | Hook resolves instance method vs class and filters only the matching no-redef collision |
-| `FunctorialConstructionCategory()` zero-arg | GREEN | Sage-like category constructor signatures accept classcall-supplied category arguments |
-| Construction selector class attribute | GREEN | Materialize category construction class attributes as zero-arg selector methods (teach) |
-| Construction extra-super method containers | GREEN | Sage-native projection: parameterized construction categories instantiate through their owner category, then `super_categories()`/`parent_class.__bases__` contributes base-category `ParentMethods`/`ElementMethods`; narrow Sage interop stubs cover Python-base construction methods such as `CartesianProductsCategory.ParentMethods.__init_extra__` |
-| Static extra-super method containers | GREEN | Static fallback reads `extra_super_categories()` return expressions, including `self.base_category().Axiom()` selector calls, and injects provider method containers when runtime projection cannot import the fixture |
-| Projected duplicate final provider conflicts | GREEN | Skip projected method-container bases that would duplicate retained final names, then materialize only non-conflicting `self.<name>` references used by the current class body |
-| `__classcall_private__` kwargs | GREEN | Sage-like category constructor signatures surface classcall-only `dispatch` keyword, including local category classes not named `*Category` |
-| Operator `__contains__`/`__ne__` | GREEN | Inject dunders into TypeInfo (teach) |
-| Covariant return narrowing | GREEN | Declare subtype in MRO (teach), including transitive semantic bases |
-| Value-dependent completion self return | GREEN | Declare self-return result container in MRO (teach) |
-| `_with_axiom` attribute | GREEN | Inject attribute into SubcategoryMethods TypeInfo (teach) |
-| Method-container receiver self surfaces | RED | Teach mypy that `self` inside `ParentMethods`, `ElementMethods`, and `SubcategoryMethods` is the runtime parent/element/category receiver, not only the nested provider class. Direct nested containers, same-module alias providers, static axiom-base chains, runtime receiver bases, concrete/imported receiver classes referenced in method bodies, body-referenced receiver methods such as `is_subcategory`, `SubcategoryMethods.base_category()`, selector-owned construction aliases, static `super_categories()` peer providers, and `Parent` runtime methods now pass. The latest live `category_specs` proof no longer reports the prior `tensor_power`, `Hom`, `change_ring`, `subposet`, or `modules/subcategories/free.py` no-base override failures, but it still fails overall. Remaining no-base override diagnostics are `sets/subcategories/image.py:_an_element_`, `sets/subcategories/real_set.py:__iter__`, `sets/subcategories/real_set.py:_an_element_`, and `sets/subcategories/uncountable.py:is_countable/is_uncountable`; runtime inspection found `_an_element_` on `sage.structure.parent.Parent`, `__iter__` on concrete Sage `ImageSubobject`/`RealSet` classes, and no inspected Sage/category_specs base for `is_uncountable`, so these need separate TDD slices or category_specs signoff before plugin behavior changes. Remaining non-no-base receiver-adjacent errors include construction return mismatches, redundant casts, final-selector conflicts, and category selector return types. |
-| Covariant container assignment | SUPPRESSED | Replace with covariance teaching (see registry) |
-| Postbind assignment (helper aliases) | SUPPRESSED | Replace with covariance teaching (see registry) |
-| Helper non-method decorator errors | SUPPRESSED | Complete `_copy_helper_flags` (see registry) |
+| `ParentMethods @override` | GREEN | `test_behavior_matrix_uses_standard_mypy_inheritance_rules` |
+| `ElementMethods @override` | GREEN | `test_non_parent_role_behavior_matrix_uses_standard_mypy_inheritance_rules` |
+| `SubcategoryMethods @override` | GREEN | `test_non_parent_role_behavior_matrix_uses_standard_mypy_inheritance_rules` |
+| `MorphismMethods @override` | GREEN | `test_non_parent_role_behavior_matrix_uses_standard_mypy_inheritance_rules` |
+| `Homsets.ParentMethods @override` | GREEN | `test_non_parent_role_behavior_matrix_uses_standard_mypy_inheritance_rules` |
+| `Homsets.ElementMethods @override` | GREEN | `test_non_parent_role_behavior_matrix_uses_standard_mypy_inheritance_rules` |
+| Axiom category providers | GREEN | `test_local_axiom_behavior_matrix_uses_standard_mypy_rules`, `test_nested_sage_provider_behavior_matrix_uses_standard_mypy_rules` |
+| Linked axiom categories | GREEN | `test_linked_axiom_projection_matches_sage_runtime_mro` |
+| Functorial construction providers | GREEN | `test_nested_sage_provider_behavior_matrix_uses_standard_mypy_rules` |
+| Parameterized category providers | GREEN | `test_nested_sage_provider_behavior_matrix_uses_standard_mypy_rules` |
+| `@final` violation | GREEN | `test_real_sage_category_behavior_matrix_uses_standard_mypy_rules` |
+| Override signature mismatch | GREEN | `test_real_sage_category_behavior_matrix_uses_standard_mypy_rules` |
+| Consumer (renamed package) | GREEN | `test_renamed_consumer_package_behavioral_invariant_holds` |
+| Mutation: ghost provider_bases | GREEN | `test_false_provider_base_reference_is_detected_by_plugin` |
+| Mutation: ghost provider_mro | GREEN | `test_false_provider_mro_entry_is_detected_by_plugin` |
+| Mutation: axiom provider_mro truncation/reordering | GREEN | `test_phase5A_nested_axiom_provider_mro_mutations_are_structurally_detectable` |
+| Mutation: linked axiom provider_mro truncation/reordering | GREEN | `test_phase5B_linked_axiom_provider_mro_mutations_are_structurally_detectable` |
+| Mutation: CartesianProducts provider_mro | GREEN | `test_phase5C_cartesian_products_provider_mro_mutations_are_structurally_detectable` |
+| Mutation: TensorProducts provider_mro | GREEN | `test_phase5D_tensor_products_provider_mro_mutations_are_structurally_detectable` |
+| Mutation: parameterized provider_mro | GREEN | `test_phase5E_parameterized_provider_mro_mutations_are_structurally_detectable` |
+| Mutation: homset provider_mro | GREEN | `test_phase5F_homset_provider_mro_mutations_are_structurally_detectable` |
+| Mutation: morphism provider_mro | GREEN | `test_phase5G_morphism_provider_mro_mutations_are_structurally_detectable` |
+| Cache: fresh generation | GREEN | `test_plugin_generates_manifest_from_packages_config` |
+| Cache: hit (no regeneration) | GREEN | `test_plugin_reuses_cache_on_second_init_without_regenerating` |
+| Cache: stale source → regeneration | GREEN | `test_plugin_detects_stale_source_and_regenerates_in_packages_mode` |
+| Cache: corrupt manifest → recovery | GREEN | `test_plugin_recovers_from_corrupt_cache_in_packages_mode` |
+| Self-returning classmethods in stubs | KNOWN LIMITATION | See Known Limitations above |
 
 ## Non-Goals
 
