@@ -3,7 +3,7 @@
 ## Current branch: `rewrite/invariant-core`
 
 All phases from `finishing-work.md` in the vault are complete as of commit `b8d9a39`.
-187 tests pass across all 7 suites.
+216 tests pass across all 7 suites (as of `a14e40a`).
 
 ### Phase completion status
 
@@ -47,6 +47,23 @@ Self-returning descriptors (`@classmethod`, `@staticmethod`, `@property`, `@cach
 in external Sage runtime provider classes are not tracked in `ProviderMethodRecord` stubs.
 Empirically, no Sage `@cached_method` in `ParentMethods` carries a `Self` annotation, so
 no `@override` breakage occurs in practice. Migration path documented in GOALS.md.
+
+### Test coverage additions (post-PR-open)
+
+Coverage gaps closed in the `a05f047`–`a14e40a` commit range:
+
+- `_validate_mypy_interval` both branches (inverted interval + current outside range)
+- `_validate_projection_graph` duplicate unsupported providers, concrete parents, external
+  source modules, provider methods
+- `_validate_projection_graph` concrete parent cross-field coherence (all 7 cases)
+- `_source_modules_stale_reason` file-missing and mtime_ns-mismatch branches
+- `_normalize_role_name` full variant mapping contract
+- `_returns_typing_self` actual `typing.Self` object form (Python ≥ 3.11)
+- `ProviderMethodRecord._validate_method_signature` non-identifier names
+- `import_module_and_qualname` / `import_fullname` boundary error paths
+- `_generate_and_cache` "no categories found" error path
+- `_parse_multiline_option` inline-comment stripping
+- Plugin invalid role config error reporting
 
 ### Open items
 
