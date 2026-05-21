@@ -77,6 +77,15 @@ def test_readme_documents_only_package_mode_user_config() -> None:
     assert "sage-stubs" in readme
 
 
+def test_plugin_init_does_not_generate_or_expose_upstream_sage_stubs() -> None:
+    plugin_source = (PLUGIN_PACKAGE / "plugin.py").read_text(encoding="utf-8")
+
+    assert "write_generated_stub_tree" not in plugin_source
+    assert "_generate_and_write_stubs" not in plugin_source
+    assert "_add_generated_stubs_to_mypy_path" not in plugin_source
+    assert "cache_dir/stubs" not in plugin_source
+
+
 # ---------------------------------------------------------------------------
 # CONTRACT.md sentinel checks — automated enforcement of banned patterns
 # ---------------------------------------------------------------------------

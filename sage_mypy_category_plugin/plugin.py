@@ -4,11 +4,8 @@ import sys
 from configparser import ConfigParser
 from dataclasses import dataclass, field
 from hashlib import sha256
-from importlib.util import find_spec
 from pathlib import Path
-from site import getsitepackages, getusersitepackages
-from sysconfig import get_paths
-from typing import Callable, Sequence
+from typing import Callable
 
 from mypy.errors import CompileError
 from mypy.nodes import MypyFile, TypeInfo
@@ -63,17 +60,6 @@ class SageCategoryProjectionPlugin(Plugin):
         if config.debug_manifest is not None:
             self._manifest = _load_manifest_for_plugin(config.debug_manifest)
             self._manifest_path = config.debug_manifest
-            if self._manifest.source_modules:
-                _generate_and_write_stubs(
-                    self._manifest,
-                    manifest_path=self._manifest_path,
-                    stub_root=_stub_root_for_manifest(self._manifest_path),
-                )
-                _add_generated_stubs_to_mypy_path(
-                    options,
-                    stub_root=_stub_root_for_manifest(self._manifest_path),
-                )
-                self._manifest = load_manifest(self._manifest_path)
         else:
             self._manifest, self._manifest_path = _generate_and_cache(config)
             self._manifest = load_manifest(self._manifest_path)
@@ -404,110 +390,10 @@ def _generate_and_cache(config: PluginConfig) -> tuple[ProjectionManifest, Path]
     return manifest, manifest_path
 
 
-def _add_generated_stubs_to_mypy_path(options: Options, *, stub_root: Path) -> None:
-    """Prepend a debug/runtime-alias stub root to options.mypy_path.
-
-    Under mypy 2.0.x (compiled via mypyc), build_inner() calls
-    compute_search_paths() before load_plugins(), so plugin.__init__ runs
-    after search_paths is already frozen.  Python-level patches to
-    FindModuleCache or SearchPaths have no effect on compiled C code.
-
-    Normal package-mode production does not call this function: upstream Sage
-    provider visibility must come from the installed Sage-version sidecar stubs,
-    not from cache_dir/stubs. This helper is retained for debug-manifest runs
-    that intentionally generate runtime alias stubs next to the manifest.
-    """
-    stub_root_str = str(stub_root.resolve())
-    if options.mypy_path is None:
-        options.mypy_path = []
-    else:
-        options.mypy_path = [p for p in options.mypy_path if p != stub_root_str]
-    options.mypy_path.insert(0, stub_root_str)
-
-
-def _generate_and_write_stubs(
-    manifest: ProjectionManifest,
-    *,
-    manifest_path: Path,
-    stub_root: Path,
-) -> None:
-    """Generate stubs and update the manifest on disk. Used for debug manifest path."""
-    from sage_mypy_category_plugin.stubs import write_generated_stub_tree
-
-    stub_root.mkdir(parents=True, exist_ok=True)
-    stub_source_modules = write_generated_stub_tree(
-        stub_root,
-        manifest,
-        preserved_source_module_prefixes=_preserved_source_module_prefixes(
-            manifest,
-            manifest_path=manifest_path,
-        ),
-    )
-    updated = manifest.model_copy(update={"source_modules": stub_source_modules})
-    write_manifest(manifest_path, updated)
-
-
 def _resolve_cache_dir(config: PluginConfig) -> Path:
     if config.cache_dir is not None:
         return config.cache_dir
     return Path(DEFAULT_CACHE_DIR)
-
-
-def _stub_root_for_manifest(manifest_path: Path) -> Path:
-    return manifest_path.parent / "stubs"
-
-
-def _preserved_source_module_prefixes(
-    manifest: ProjectionManifest,
-    *,
-    manifest_path: Path,
-) -> tuple[str, ...]:
-    preserved: dict[str, None] = {}
-    for record in manifest.source_modules:
-        record_path = Path(record.path).resolve()
-        try:
-            spec = find_spec(record.module)
-        except ModuleNotFoundError:
-            continue
-        if spec is None or spec.origin is None:
-            continue
-        spec_path = Path(spec.origin).resolve()
-        if spec_path != record_path:
-            continue
-        if spec_path.suffix not in {".py", ".pyi", ".so"}:
-            continue
-        if _is_site_package_path(spec_path):
-            continue
-        preserved[record.module] = None
-    return tuple(preserved)
-
-
-def _is_site_package_path(path: Path) -> bool:
-    resolved = path.resolve()
-    for root in _site_package_roots():
-        try:
-            resolved.relative_to(root)
-        except ValueError:
-            continue
-        return True
-    return False
-
-
-def _site_package_roots() -> tuple[Path, ...]:
-    candidates = (
-        *getsitepackages(),
-        getusersitepackages(),
-        get_paths().get("purelib", ""),
-        get_paths().get("platlib", ""),
-    )
-    roots: list[Path] = []
-    for candidate in candidates:
-        if not candidate:
-            continue
-        root = Path(candidate).resolve()
-        if root not in roots:
-            roots.append(root)
-    return tuple(roots)
 
 
 def _load_manifest_for_plugin(path: Path) -> ProjectionManifest:
