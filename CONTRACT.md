@@ -161,13 +161,36 @@ the Suppression Registry and a linked structural test.
 
 ### BP8. Requiring external generation steps
 
-The plugin must own its cache lifecycle. Users must not be required to:
+The plugin must own its manifest and stub generation lifecycle. Users must
+not be required to:
 - Run `just generate-manifest` before `sage -python -m mypy`
-- Set `MYPYPATH` manually for generated stubs
 - Use an external wrapper script
+- Set `MYPYPATH` via environment variable or external tooling
 
-The only user action is editing the `[sage-mypy-category-plugin]` section
-of `mypy.ini`.
+**Predeclared stub path is required and documented.** Under mypy 2.0.x
+(compiled via mypyc), `compute_search_paths()` runs before `load_plugins()`,
+so plugin `__init__` runs after search paths are already frozen. Python-level
+patches to `FindModuleCache` or `SearchPaths` have no effect on compiled C
+code. Therefore the generated stub directory must appear in `mypy_path` in
+the config file so that `compute_search_paths()` sees it before any plugin
+code runs.
+
+The correct config pattern is:
+
+```ini
+[mypy]
+plugins = sage_mypy_category_plugin.plugin
+mypy_path = .mypy_cache/sage-category-plugin/stubs
+
+[sage-mypy-category-plugin]
+packages = my_category_package
+cache_dir = .mypy_cache/sage-category-plugin
+```
+
+The plugin still owns generation: it produces the manifest and stubs during
+`__init__` on first run. The user only needs to declare the deterministic
+future stub path once in config. No manual generation, no wrapper, no
+environment variable.
 
 ### BP9. Using Any/object/empty provider bases as a success path
 

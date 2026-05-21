@@ -347,12 +347,11 @@ def test_real_sage_category_behavior_matrix_uses_standard_mypy_rules(
       plugin off + missing @override decorator  → no errors (parent invisible)
     """
     cache_dir = tmp_path / "sage-category-cache"
-    # The stub root must be declared in mypy_path BEFORE build() is called so
-    # that mypy can see the Sage system provider stubs that the plugin generates
-    # during plugin.__init__.  For local Python source files the stub root is
-    # not needed (they are found via REPO_ROOT), but Sage system providers
-    # (FiniteGroups.ParentMethods, Groups.ParentMethods, etc.) only exist in the
-    # generated stubs, so mypy must know the stub root upfront.
+    # Under mypy 2.0 (compiled via mypyc), compute_search_paths() runs before
+    # load_plugins(), so stub_root must appear in mypy_path in the config file
+    # upfront.  Sage system provider stubs (FiniteGroups.ParentMethods, etc.)
+    # are generated into stub_root during plugin.__init__; without this entry
+    # mypy cannot see them when resolving the provider TypeInfos.
     stub_root = cache_dir / "stubs"
     config_path = tmp_path / "mypy.ini"
     config_path.write_text(
@@ -360,6 +359,7 @@ def test_real_sage_category_behavior_matrix_uses_standard_mypy_rules(
             (
                 "[mypy]",
                 "plugins = sage_mypy_category_plugin.plugin",
+                f"mypy_path = {stub_root}",
                 "ignore_missing_imports = True",
                 "",
                 "[sage-mypy-category-plugin]",
@@ -496,6 +496,7 @@ def test_real_sage_category_identical_method_names_are_projected_independently(
             (
                 "[mypy]",
                 "plugins = sage_mypy_category_plugin.plugin",
+                f"mypy_path = {stub_root}",
                 "ignore_missing_imports = True",
                 "",
                 "[sage-mypy-category-plugin]",
@@ -703,7 +704,7 @@ def test_renamed_consumer_package_behavioral_invariant_holds(tmp_path: Path) -> 
       plugin on  + invalid code → "no base method was found" (genuine nonexistent method)
     """
     cache_dir = tmp_path / "sage-category-cache"
-    # stub_root must be pre-declared in mypy_path so Sage system provider stubs
+    # stub_root must be declared in mypy_path so Sage system provider stubs
     # (generated during plugin.__init__) are visible when mypy resolves TypeInfos.
     stub_root = cache_dir / "stubs"
     config_path = tmp_path / "mypy.ini"
@@ -712,6 +713,7 @@ def test_renamed_consumer_package_behavioral_invariant_holds(tmp_path: Path) -> 
             (
                 "[mypy]",
                 "plugins = sage_mypy_category_plugin.plugin",
+                f"mypy_path = {stub_root}",
                 "ignore_missing_imports = True",
                 "",
                 "[sage-mypy-category-plugin]",

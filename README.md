@@ -50,6 +50,7 @@ config file):
 ```ini
 [mypy]
 plugins = sage_mypy_category_plugin.plugin
+mypy_path = .mypy_cache/sage-category-plugin/stubs
 
 [sage-mypy-category-plugin]
 packages =
@@ -68,6 +69,14 @@ cache_dir = .mypy_cache/sage-category-plugin
 strict = true
 ```
 
+> **Why `mypy_path`?** Under mypy 2.0 (compiled via mypyc), mypy computes
+> its module search paths before loading plugins. The plugin generates stubs
+> during its first run and places them in `cache_dir/stubs`, but by the time
+> `plugin.__init__` runs, the search path is already frozen. Declaring the
+> stub directory in `mypy_path` upfront ensures mypy can see the generated
+> stubs. No manual generation step is required — the plugin produces the stubs
+> on first run.
+
 ### Options
 
 | Option | Required | Default | Description |
@@ -85,7 +94,9 @@ sage -python -m mypy --config-file mypy.ini my_category_package
 ```
 
 No external pre-generation step is required. The plugin generates and caches
-the manifest and stubs during the first mypy run.
+the manifest and stubs during the first mypy run. The `mypy_path` entry in
+`[mypy]` must point to `cache_dir/stubs` so that mypy's search path includes
+the generated stub directory (see the note above).
 
 ## Cache lifecycle
 
