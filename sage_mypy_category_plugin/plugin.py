@@ -76,9 +76,6 @@ class SageCategoryProjectionPlugin(Plugin):
                 self._manifest = load_manifest(self._manifest_path)
         else:
             self._manifest, self._manifest_path = _generate_and_cache(config)
-            _add_generated_stubs_to_mypy_path(
-                options, stub_root=_stub_root_for_manifest(self._manifest_path)
-            )
             self._manifest = load_manifest(self._manifest_path)
 
         _validate_source_module_metadata(self._manifest.source_modules)
@@ -374,7 +371,6 @@ def _generate_and_cache(config: PluginConfig) -> tuple[ProjectionManifest, Path]
         discover_category_fullnames,
         resolve_projection_manifest,
     )
-    from sage_mypy_category_plugin.stubs import write_generated_stub_tree
 
     cache_dir = _resolve_cache_dir(config)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -387,7 +383,8 @@ def _generate_and_cache(config: PluginConfig) -> tuple[ProjectionManifest, Path]
         if cached is not None:
             return cached, manifest_path
 
-    # Full generation: discover categories, resolve projections, write stubs.
+    # Full generation: discover categories and resolve projections. Upstream
+    # Sage provider visibility is supplied by the Sage-version sidecar stubs.
     category_fullnames = discover_category_fullnames(config.packages)
     if not category_fullnames:
         raise CompileError(
@@ -402,46 +399,23 @@ def _generate_and_cache(config: PluginConfig) -> tuple[ProjectionManifest, Path]
         roles=config.roles,
     )
 
-    stub_root = _stub_root_for_manifest(manifest_path)
-
-    stub_source_modules = write_generated_stub_tree(
-        stub_root,
-        manifest,
-        preserved_source_module_prefixes=_preserved_source_module_prefixes(
-            manifest,
-            manifest_path=manifest_path,
-        ),
-    )
-
-    # Update manifest with stub-augmented source modules
-    manifest = manifest.model_copy(
-        update={"source_modules": stub_source_modules}
-    )
     write_manifest(manifest_path, manifest)
 
     return manifest, manifest_path
 
 
 def _add_generated_stubs_to_mypy_path(options: Options, *, stub_root: Path) -> None:
-    """Prepend stub_root to options.mypy_path.
+    """Prepend a debug/runtime-alias stub root to options.mypy_path.
 
     Under mypy 2.0.x (compiled via mypyc), build_inner() calls
     compute_search_paths() before load_plugins(), so plugin.__init__ runs
     after search_paths is already frozen.  Python-level patches to
     FindModuleCache or SearchPaths have no effect on compiled C code.
 
-    The production path is:
-      - write_consumer_config.py emits  mypy_path = {cache_dir}/stubs  in
-        mypy.ini, so compute_search_paths() includes stub_root before any
-        plugin code runs.
-      - Tests that call build() directly pre-seed stub_root in
-        mypy_path_entries so compute_search_paths() sees it the same way.
-
-    This function mutates options.mypy_path for the test/API-caller path
-    where stub_root is already declared in mypy_path_entries, ensuring
-    deduplication and correct ordering.  The consumer-config production path
-    does not need this mutation (stub_root reaches search_paths through the
-    config file), but having it present does not cause errors.
+    Normal package-mode production does not call this function: upstream Sage
+    provider visibility must come from the installed Sage-version sidecar stubs,
+    not from cache_dir/stubs. This helper is retained for debug-manifest runs
+    that intentionally generate runtime alias stubs next to the manifest.
     """
     stub_root_str = str(stub_root.resolve())
     if options.mypy_path is None:

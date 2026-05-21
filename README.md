@@ -30,10 +30,11 @@ Non-negotiable invariants and banned patterns are in [CONTRACT.md](CONTRACT.md).
 ## Installation
 
 The plugin requires Sage Python and a pinned mypy version. Install from source
-in the Sage Python environment:
+in the Sage Python environment, together with the Sage-version sidecar stubs:
 
 ```bash
 sage -python -m pip install -e .
+sage -python -m pip install "git+https://github.com/dzackgarza/sage-stubs@c99550bc4056"
 ```
 
 Verify that the installed mypy version matches the pinned version:
@@ -50,7 +51,6 @@ config file):
 ```ini
 [mypy]
 plugins = sage_mypy_category_plugin.plugin
-mypy_path = .mypy_cache/sage-category-plugin/stubs
 
 [sage-mypy-category-plugin]
 packages =
@@ -69,13 +69,12 @@ cache_dir = .mypy_cache/sage-category-plugin
 strict = true
 ```
 
-> **Why `mypy_path`?** Under mypy 2.0 (compiled via mypyc), mypy computes
-> its module search paths before loading plugins. The plugin generates stubs
-> during its first run and places them in `cache_dir/stubs`, but by the time
-> `plugin.__init__` runs, the search path is already frozen. Declaring the
-> stub directory in `mypy_path` upfront ensures mypy can see the generated
-> stubs. No manual generation step is required — the plugin produces the stubs
-> on first run.
+> **Why sidecar stubs?** Under mypy 2.0 (compiled via mypyc), mypy computes
+> its module search paths before loading plugins. Upstream Sage provider
+> visibility therefore comes from the installed Sage-version `sage-stubs`
+> sidecar, not from stubs generated into the plugin cache during `plugin.__init__`.
+> Normal production configs should not declare `cache_dir/stubs` on
+> `mypy_path`.
 
 ### Options
 
@@ -83,7 +82,7 @@ strict = true
 |--------|----------|---------|-------------|
 | `packages` | yes (or `manifest`) | — | Python package names to scan for Sage category classes. The plugin imports each package under Sage Python at startup. |
 | `roles` | no | `parent` | Provider roles to project. Available: `parent`, `element`, `subcategory`, `morphism`, `homset_parent`, `homset_element`. |
-| `cache_dir` | no | `.mypy_cache/sage-category-plugin` | Directory for the generated manifest and stubs. Relative paths are resolved from the config file's directory. |
+| `cache_dir` | no | `.mypy_cache/sage-category-plugin` | Directory for the generated projection manifest. Relative paths are resolved from the config file's directory. |
 | `strict` | no | `false` | If `true`, any projection failure (missing TypeInfo, MRO mismatch) causes a hard mypy error instead of a warning. |
 | `manifest` | debug only | — | Path to a pre-generated manifest JSON. Bypasses plugin-owned generation. Not for production use. |
 
@@ -94,21 +93,16 @@ sage -python -m mypy --config-file mypy.ini my_category_package
 ```
 
 No external pre-generation step is required. The plugin generates and caches
-the manifest and stubs during the first mypy run. The `mypy_path` entry in
-`[mypy]` must point to `cache_dir/stubs` so that mypy's search path includes
-the generated stub directory (see the note above).
+the projection manifest during the first mypy run. Upstream Sage provider
+classes must be visible through the installed Sage-version sidecar stubs.
 
 ## Cache lifecycle
 
-The plugin caches the manifest and generated stubs in `cache_dir`:
+The plugin caches the projection manifest in `cache_dir`:
 
 ```
 cache_dir/
     manifest.json          ← projection manifest (validated Pydantic model)
-    stubs/                 ← generated .pyi stubs for Sage's external runtime providers
-        sage/
-            categories/
-                ...
 ```
 
 **What triggers regeneration:**
@@ -130,7 +124,7 @@ cache_dir/
 |---------|---------|-------|-----|
 | Missing `[sage-mypy-category-plugin]` section | `CompileError: Missing section` | Config file does not have the plugin section | Add `[sage-mypy-category-plugin]` to `mypy.ini` |
 | Neither `packages` nor `manifest` specified | `CompileError: must specify either 'manifest' or 'packages'` | Config section is present but empty | Add `packages = ...` |
-| Provider TypeInfo not found | `Sage category provider projection … references missing symbols` | A projected provider class is not visible to mypy (missing stub or source) | Ensure all `packages` are on `MYPYPATH` or are source roots; check that the cache stubs were generated |
+| Provider TypeInfo not found | `Sage category provider projection … references missing symbols` | A projected provider class is not visible to mypy (missing sidecar stub or source) | Ensure consumer `packages` are source roots/importable and the Sage-version `sage-stubs` sidecar is installed |
 | MRO mismatch after projection | `Sage category provider MRO mismatch: expected … observed …` | TypeInfo lookup succeeded but mypy resolved a different order | Usually indicates a stale manifest; delete `cache_dir` and rerun |
 | Sage runtime import error | `CompileError: ...` during plugin `__init__` | A package in `packages` cannot be imported under Sage Python | Verify the package is installed and importable: `sage -python -c "import my_package"` |
 | Manifest validation error | `ValidationError: …` | The cached manifest is corrupted or was written by an incompatible plugin version | Delete `cache_dir` and rerun |

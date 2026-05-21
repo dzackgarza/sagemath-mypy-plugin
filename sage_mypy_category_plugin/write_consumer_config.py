@@ -7,7 +7,6 @@ CONFIG_TEMPLATE = """[mypy]
 plugins = sage_mypy_category_plugin.plugin
 ignore_missing_imports = True
 explicit_package_bases = True
-mypy_path = {stub_dir}
 
 [sage-mypy-category-plugin]
 packages =
@@ -20,6 +19,7 @@ roles =
     homset_parent
     homset_element
 cache_dir = {cache_dir}
+strict = true
 """
 
 DEBUG_TEMPLATE = """[mypy]
@@ -45,10 +45,7 @@ def main() -> None:
             DEBUG_TEMPLATE.format(manifest=manifest, stub_dir=stub_dir)
         )
     else:
-        stub_dir = Path(cache_dir).resolve() / "stubs"
-        config_file.write_text(
-            CONFIG_TEMPLATE.format(cache_dir=cache_dir, stub_dir=stub_dir)
-        )
+        config_file.write_text(CONFIG_TEMPLATE.format(cache_dir=cache_dir))
 
 
 if __name__ == "__main__":

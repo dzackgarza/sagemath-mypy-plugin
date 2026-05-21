@@ -1644,7 +1644,7 @@ def test_plugin_fails_clearly_when_no_categories_found_in_packages(
 
 
 def test_plugin_generates_manifest_from_packages_config(tmp_path: Path) -> None:
-    """Phase 1A: plugin init with 'packages' config auto-generates manifest + stubs."""
+    """Package config auto-generates the production projection manifest."""
     cache_dir = tmp_path / "sage-category-cache"
     config_path = tmp_path / "mypy.ini"
     config_path.write_text(
@@ -1673,25 +1673,8 @@ def test_plugin_generates_manifest_from_packages_config(tmp_path: Path) -> None:
     manifest = json.loads(manifest_path.read_text())
     assert len(manifest["projections"]) == 4, "Diamond fixture has 4 categories"
 
-    # Stubs were generated — runtime alias stub embeds the projected diamond MRO
-    stub_root = cache_dir / "stubs"
-    assert stub_root.is_dir(), "Plugin should have generated stubs"
-    runtime_alias_stub = stub_root / "_sage_category_types.pyi"
-    assert runtime_alias_stub.is_file(), (
-        "Plugin should have generated _sage_category_types.pyi runtime alias stub"
-    )
-    # The runtime alias stub must encode BottomCategory's provider_mro, proving
-    # the full diamond MRO projection reached the stub layer.
-    bottom_alias = (
-        "tests_fixtures_invariant_core_diamond_runtime__BottomCategory__parent_class"
-    )
-    assert bottom_alias in runtime_alias_stub.read_text(), (
-        "_sage_category_types.pyi must contain BottomCategory runtime alias"
-    )
-
-    # mypy_path was mutated to include stub root
-    assert str(stub_root.resolve()) in options.mypy_path, (
-        "options.mypy_path should include stub root"
+    assert not (cache_dir / "stubs").exists(), (
+        "Production package mode must not generate upstream Sage stubs"
     )
 
     # Projections are loaded correctly
@@ -1731,7 +1714,7 @@ def test_plugin_regenerates_from_clean_cache(tmp_path: Path) -> None:
     # Cache was created
     assert cache_dir.is_dir()
     assert (cache_dir / "projection-manifest.json").is_file()
-    assert (cache_dir / "stubs").is_dir()
+    assert not (cache_dir / "stubs").exists()
 
     # Second init from same cache works (idempotency)
     _plugin2 = SageCategoryProjectionPlugin(options)
@@ -1909,7 +1892,7 @@ def test_plugin_recovers_from_corrupt_cache_in_packages_mode(tmp_path: Path) -> 
     ), "Plugin's loaded manifest must match the regenerated manifest on disk"
 
 
-def test_plugin_prepends_generated_stub_root_to_mypy_path(tmp_path: Path) -> None:
+def test_plugin_package_mode_preserves_existing_mypy_path(tmp_path: Path) -> None:
     cache_dir = tmp_path / "sage-category-cache"
     preexisting_path = tmp_path / "existing-mypy-path"
     preexisting_path.mkdir()
@@ -1935,11 +1918,8 @@ def test_plugin_prepends_generated_stub_root_to_mypy_path(tmp_path: Path) -> Non
 
     SageCategoryProjectionPlugin(options)
 
-    stub_root = cache_dir / "stubs"
-    assert options.mypy_path == [
-        str(stub_root.resolve()),
-        str(preexisting_path),
-    ]
+    assert options.mypy_path == [str(preexisting_path)]
+    assert not (cache_dir / "stubs").exists()
 
 
 def test_plugin_debug_manifest_still_works(tmp_path: Path) -> None:

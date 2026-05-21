@@ -91,12 +91,13 @@ existed only on the `main` branch pre-rewrite. They are not present in this bran
 
 ## Known Limitations
 
-### Self-returning descriptors in generated stubs
+### Self-returning descriptors in sidecar/debug stubs
 
 `ProviderMethodRecord` tracks only plain instance methods (`FunctionType`) that
 return `Self`. Methods declared as `@classmethod`, `@staticmethod`, `@property`,
 or Sage's `@cached_method` that also return `Self` are not captured in the
-manifest and therefore not explicitly typed in generated stubs.
+manifest and therefore are not explicitly typed in sidecar or debug-generated
+runtime alias stubs.
 
 **Descriptors affected**:
 
@@ -111,17 +112,16 @@ manifest and therefore not explicitly typed in generated stubs.
   `Sets.ParentMethods.an_element`) carry no `Self` return annotation, so they
   would pass through `_returns_typing_self` uncaptured regardless.
 
-**Impact**: If a Sage external category's provider class (one not in the
-configured `packages`) declares a descriptor method returning `Self`, and a
-consumer's provider class overrides it with `@override`, mypy may not detect
-the override correctly from the stub.
+**Impact**: If a Sage external category's provider class declares a descriptor
+method returning `Self`, and the installed Sage-version sidecar stub omits that
+descriptor shape, mypy may not detect the override correctly from the sidecar.
 
-**Scope**: Narrow. The stubs are only for external Sage runtime classes, not
-for source-based provider classes (which mypy reads directly). The structural
-MRO invariant is unaffected.  The `@override` behavior matrix tests (including
-tests of `@classmethod`, `@staticmethod`, and `@property` overrides) pass
-because those tests use source-based fixture providers, which mypy reads
-directly rather than through stubs.
+**Scope**: Narrow. The sidecar stubs are only for external Sage runtime
+providers, not for source-based provider classes (which mypy reads directly).
+The structural MRO invariant is unaffected.  The `@override` behavior matrix
+tests (including tests of `@classmethod`, `@staticmethod`, and `@property`
+overrides) pass because those tests use source-based fixture providers, which
+mypy reads directly rather than through stubs.
 
 **Migration path**: Add a `kind` field to `ProviderMethodRecord` with values
 `instance`, `classmethod`, `staticmethod`, `property`, `cached_method`. Extend
@@ -166,9 +166,10 @@ All surfaces are tested with the conjunction matrix:
 
 ## Non-Goals
 
-- **Completing the Sage stub package.** The bundled `sage-stubs/` is a narrow
-  interop layer covering only the interfaces this plugin consumes directly. A
-  comprehensive Sage type-stub package is out of scope.
+- **Completing all Sage type stubs.** The sidecar `sage-stubs` package is a
+  version-pinned interop layer for the Sage category/provider/interface modules
+  needed by this plugin's projection manifests. A comprehensive Sage type-stub
+  package remains out of scope.
 - **Type-checking Sage's own source code.** The plugin targets downstream
   consumers of Sage's category system (e.g. `category_specs/`), not Sage's
   internal Python implementation.

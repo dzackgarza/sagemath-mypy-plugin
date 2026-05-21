@@ -91,7 +91,8 @@ Assume:
 - **A1.** The manifest was generated from Sage runtime with the current source modules
   (source-digest parity enforced by `report_config_data`).
 - **A2.** Every provider in `provider_mro` is visible to mypy: either as a source
-  file under the configured packages, or as a generated stub produced by the plugin.
+  file under the configured packages, or as a Sage-version sidecar stub installed
+  before mypy computes module search paths.
 - **A3.** The plugin applies no diagnostic filtering and copies no method bodies.
 - **A4.** The mypy version is within `[mypy_min_version, mypy_max_version]` declared
   in the manifest.
@@ -141,8 +142,8 @@ named-class graph.
 Every TypeInfo in `provider_mro` must be reachable at analysis time.  
 The plugin's `get_additional_deps` declares cross-module ordering edges so that
 all base providers are analysed before their dependents.  
-The generated stubs (produced before the mypy analysis pass begins) make Sage's
-external runtime providers visible under a stable module path.  
+The installed `sage-stubs` sidecar makes Sage's external runtime providers
+visible under stable module paths before plugin initialization.  
 By A2, all TypeInfos are present; `_lookup_typeinfos` fails loud (via `ctx.api.fail`)
 rather than silently returning `None` if any are missing — no silent fallback is
 possible.
@@ -214,7 +215,8 @@ manifested values, keeping A1 true across incremental builds.
 | TypeInfo graph rewrite | `plugin.py:_customize_provider_mro` |
 | Fail-loud lookup | `plugin.py:_lookup_typeinfos` |
 | Symbol ordering edges | `plugin.py:get_additional_deps` |
-| Stub generation | `stubs.py` + `plugin.py:_generate_and_write_stubs` |
+| Upstream Sage provider visibility | installed Sage-version `sage-stubs` sidecar |
+| Debug/runtime alias stub generation | `stubs.py` + `plugin.py:_generate_and_write_stubs` |
 | Manifest validation tests | `tests/test_manifest.py` |
 | Structural MRO invariant tests | `tests/test_plugin_projection.py` |
 | Behavior matrix tests | `tests/test_behavior_matrix.py` |

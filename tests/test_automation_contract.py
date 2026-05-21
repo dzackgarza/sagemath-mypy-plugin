@@ -69,7 +69,7 @@ def test_generate_stubs_recipe_forwards_cli_arguments() -> None:
     assert "--preserve-source-module-prefix MODULE" in result.stdout
 
 
-def test_consumer_config_writer_declares_stub_root_on_mypy_path(tmp_path: Path) -> None:
+def test_consumer_config_writer_uses_plain_sidecar_config(tmp_path: Path) -> None:
     config_path = tmp_path / "mypy.ini"
     cache_dir = tmp_path / "sage-category-cache"
 
@@ -95,7 +95,6 @@ def test_consumer_config_writer_declares_stub_root_on_mypy_path(tmp_path: Path) 
             "plugins = sage_mypy_category_plugin.plugin",
             "ignore_missing_imports = True",
             "explicit_package_bases = True",
-            f"mypy_path = {cache_dir.resolve() / 'stubs'}",
             "",
             "[sage-mypy-category-plugin]",
             "packages =",
@@ -108,12 +107,13 @@ def test_consumer_config_writer_declares_stub_root_on_mypy_path(tmp_path: Path) 
             "    homset_parent",
             "    homset_element",
             f"cache_dir = {cache_dir}",
+            "strict = true",
             "",
         )
     )
 
 
-def test_consumer_debug_config_writer_declares_manifest_stub_root_on_mypy_path(
+def test_consumer_debug_config_writer_declares_manifest_alias_stub_root(
     tmp_path: Path,
 ) -> None:
     config_path = tmp_path / "mypy.ini"

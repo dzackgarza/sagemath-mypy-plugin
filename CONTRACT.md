@@ -161,36 +161,38 @@ the Suppression Registry and a linked structural test.
 
 ### BP8. Requiring external generation steps
 
-The plugin must own its manifest and stub generation lifecycle. Users must
+The plugin must own its manifest generation lifecycle. Users must
 not be required to:
 - Run `just generate-manifest` before `sage -python -m mypy`
 - Use an external wrapper script
 - Set `MYPYPATH` via environment variable or external tooling
+- Declare `cache_dir/stubs` in `mypy_path` so normal plugin execution can see
+  generated upstream Sage provider stubs
 
-**Predeclared stub path is required and documented.** Under mypy 2.0.x
-(compiled via mypyc), `compute_search_paths()` runs before `load_plugins()`,
-so plugin `__init__` runs after search paths are already frozen. Python-level
-patches to `FindModuleCache` or `SearchPaths` have no effect on compiled C
-code. Therefore the generated stub directory must appear in `mypy_path` in
-the config file so that `compute_search_paths()` sees it before any plugin
-code runs.
+**Upstream Sage visibility comes from the Sage-version sidecar stubs.** Under
+mypy 2.0.x (compiled via mypyc), `compute_search_paths()` runs before
+`load_plugins()`, so plugin `__init__` runs after search paths are already
+frozen. Normal production execution therefore must not rely on upstream Sage
+provider stubs generated into `cache_dir/stubs` during plugin initialization.
+Those provider modules must be supplied by the installed `sage-stubs` sidecar
+or by real source visible to mypy.
 
 The correct config pattern is:
 
 ```ini
 [mypy]
 plugins = sage_mypy_category_plugin.plugin
-mypy_path = .mypy_cache/sage-category-plugin/stubs
 
 [sage-mypy-category-plugin]
 packages = my_category_package
 cache_dir = .mypy_cache/sage-category-plugin
 ```
 
-The plugin still owns generation: it produces the manifest and stubs during
-`__init__` on first run. The user only needs to declare the deterministic
-future stub path once in config. No manual generation, no wrapper, no
-environment variable.
+The plugin still owns projection generation: it produces or refreshes the
+manifest during `__init__` on first run. No manual generation, no wrapper, no
+environment variable, and no cache-stub `mypy_path` entry are part of the
+production contract. Debug manifest/runtime-alias paths must be documented as
+non-production and may not be counted as release acceptance evidence.
 
 ### BP9. Using Any/object/empty provider bases as a success path
 

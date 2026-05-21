@@ -7,6 +7,7 @@ from tests.fixtures.invariant_core.local_wrapper import LocalCategoryBase
 
 
 class SignatureBaseCategory(LocalCategoryBase):
+    @override
     def super_categories(self) -> list[LocalCategoryBase]:
         return [BottomCategory.an_instance()]
 
@@ -16,6 +17,7 @@ class SignatureBaseCategory(LocalCategoryBase):
 
 
 class SignatureMismatchCategory(LocalCategoryBase):
+    @override
     def super_categories(self) -> list[LocalCategoryBase]:
         return [SignatureBaseCategory.an_instance()]
 

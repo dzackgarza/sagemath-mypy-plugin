@@ -9,6 +9,7 @@ from tests.fixtures.invariant_core.local_wrapper import LocalCategoryBase
 
 
 class InvalidDecoratedOverrideCategory(LocalCategoryBase):
+    @override
     def super_categories(self) -> list[LocalCategoryBase]:
         return [DecoratedBaseCategory.an_instance()]
 
