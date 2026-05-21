@@ -170,3 +170,15 @@ typecheck *args:
   export PYTHONPATH="${PWD}${PYTHONPATH:+:${PYTHONPATH}}"
   args=({{args}})
   sage -python -m mypy --config-file=/dev/null --ignore-missing-imports --explicit-package-bases sage_mypy_category_plugin tests/test_*.py "${args[@]}"
+
+[group('validate')]
+consumer-structural *args:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  consumer_root="${SAGE_MYPY_CONSUMER_ROOT:-/home/dzack/research}"
+  export PYTHONPATH="${PWD}:${consumer_root}${PYTHONPATH:+:${PYTHONPATH}}"
+  args=({{args}})
+  sage -python devtools/consumer_structural_canary.py \
+    --consumer-root "$consumer_root" \
+    --work-dir ".mypy_cache/sage-category-plugin-consumer-canary" \
+    "${args[@]}"

@@ -45,6 +45,9 @@ invariant holds. A clean or smaller consumer error count is not proof.
   `bases`/`mro` assertions against manifest projections.
 - `tests/test_behavior_matrix.py` and `tests/test_role_behavior_matrix.py`
   contain plugin on/off × valid/invalid behavior matrices.
+- `just consumer-structural` runs a retained structural canary against the real
+  `/home/dzack/research/category_specs` tree and compares representative
+  provider `TypeInfo.bases`/`mro` values to the plugin-generated manifest.
 - The nested `sage-stubs/` sidecar repository contains Sage 10.7 provider and
   interface shells used by real fixtures and `category_specs` projections.
 
@@ -55,9 +58,9 @@ invariant holds. A clean or smaller consumer error count is not proof.
   generated-upstream-stub validation must not remain release evidence.
 - Keep debug manifest and runtime-alias paths out of production acceptance.
   They may exist only as explicitly non-production diagnostics.
-- Add retained structural evidence for the real `/home/dzack/research/category_specs`
-  consumer: plugin boot, manifest/provider counts, missing TypeInfo/projection
-  failures, and representative provider `TypeInfo.bases`/`mro` audits.
+- Expand real `/home/dzack/research/category_specs` evidence beyond the current
+  retained canary where needed: negative injected consumer errors, broader
+  provider role coverage, and missing TypeInfo/projection triage.
 - Keep production lifecycle tests in the default and release validation matrix.
 - Run the contract sentinel greps, focused production/structural/behavior tests,
   mutation checks, sidecar visibility checks, and `just release-check`.

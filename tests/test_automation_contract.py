@@ -19,6 +19,7 @@ def test_justfile_exposes_final_state_validation_recipes() -> None:
     recipes = frozenset(result.stdout.split())
 
     assert {
+        "consumer-structural",
         "generate-manifest",
         "release-check",
         "test",
