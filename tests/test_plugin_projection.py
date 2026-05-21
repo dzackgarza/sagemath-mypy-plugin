@@ -795,7 +795,7 @@ def test_plugin_projects_linked_axiom_typeinfo_mro_from_manifest(
     )
 
 
-def test_plugin_reports_homset_external_provider_boundary(
+def test_plugin_accepts_sidecar_homset_external_provider_boundary(
     tmp_path: Path,
 ) -> None:
     projections, unsupported_providers = _provider_projections_with_unsupported(
@@ -837,18 +837,7 @@ def test_plugin_reports_homset_external_provider_boundary(
         fixture_module=HOMSET_ROLES_MODULE,
     )
 
-    assert _contains_error_fragment(
-        result,
-        "sage.categories.homsets.Homsets.ParentMethods",
-    )
-    assert _contains_error_fragment(
-        result,
-        "sage.categories.sets_cat.Sets.ParentMethods",
-    )
-    assert _contains_error_fragment(
-        result,
-        "sage.categories.sets_cat.Sets.ElementMethods",
-    )
+    assert result.errors == []
 
 
 def test_plugin_projects_sage_provider_typeinfo_mros_from_source_modules(

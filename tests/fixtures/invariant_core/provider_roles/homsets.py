@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any, Protocol, cast, final
 
 import sage.all  # type: ignore[import-untyped] # noqa: F401
+from sage.categories.category import Category  # type: ignore[import-untyped]
 from sage.categories.category_singleton import Category_singleton  # type: ignore[import-untyped]
 from sage.categories.category_with_axiom import CategoryWithAxiom_singleton  # type: ignore[import-untyped]
 from sage.categories.homsets import Homsets as SageHomsets  # type: ignore[import-untyped]
@@ -19,8 +21,8 @@ class _HomsetsWithEndset(Protocol):
     def Endset(self) -> object: ...
 
 
-def _sage_homsets_endset() -> object:
-    return cast(_HomsetsWithEndset, SageHomsets()).Endset()
+def _sage_homsets_endset() -> Category:
+    return cast(Category, cast(_HomsetsWithEndset, SageHomsets()).Endset())
 
 
 class TopCategory(LocalCategoryBase):
@@ -28,7 +30,7 @@ class TopCategory(LocalCategoryBase):
         return [Objects()]
 
     class Homsets(HomsetsCategory):
-        def extra_super_categories(self) -> list[object]:
+        def extra_super_categories(self) -> Sequence[Category]:
             return []
 
         class ParentMethods:
@@ -48,7 +50,7 @@ class BottomCategory(LocalCategoryBase):
         return category is TopCategory.an_instance()
 
     class Homsets(HomsetsCategory):
-        def extra_super_categories(self) -> list[object]:
+        def extra_super_categories(self) -> Sequence[Category]:
             return []
 
         class ParentMethods:
@@ -107,7 +109,7 @@ class RefinedSharedHomsetProviderCategory(LocalCategoryBase):
         return category is SharedHomsetProviderCategory.an_instance()
 
     class Homsets(HomsetsCategory):
-        def extra_super_categories(self) -> list[object]:
+        def extra_super_categories(self) -> Sequence[Category]:
             return []
 
         class ParentMethods:
@@ -127,16 +129,19 @@ class StandaloneHomCategory(LocalHomsetsBase):
         def local_hom_element(self) -> int:
             return 2
 
-    Endset = LazyImport(
-        "tests.fixtures.invariant_core.provider_roles.homsets",
-        "LocalEndHomCategory",
+    Endset = cast(
+        Any,
+        LazyImport(
+            "tests.fixtures.invariant_core.provider_roles.homsets",
+            "LocalEndHomCategory",
+        ),
     )
 
 
 class LocalEndHomCategory(CategoryWithAxiom_singleton):
     _base_category_class_and_axiom = (StandaloneHomCategory, "Endset")
 
-    def extra_super_categories(self) -> list[object]:
+    def extra_super_categories(self) -> Sequence[Category]:
         return [_sage_homsets_endset()]
 
     class ParentMethods:
@@ -147,16 +152,19 @@ class LocalEndHomCategory(CategoryWithAxiom_singleton):
         def local_end_hom_element(self) -> int:
             return 4
 
-    Finite = LazyImport(
-        "tests.fixtures.invariant_core.provider_roles.homsets",
-        "LocalFiniteEndHomCategory",
+    Finite = cast(
+        Any,
+        LazyImport(
+            "tests.fixtures.invariant_core.provider_roles.homsets",
+            "LocalFiniteEndHomCategory",
+        ),
     )
 
 
 class LocalFiniteEndHomCategory(CategoryWithAxiom_singleton):
     _base_category_class_and_axiom = (LocalEndHomCategory, "Finite")
 
-    def extra_super_categories(self) -> list[object]:
+    def extra_super_categories(self) -> Sequence[Category]:
         return [LocalEndHomCategory()]
 
     class ParentMethods:
