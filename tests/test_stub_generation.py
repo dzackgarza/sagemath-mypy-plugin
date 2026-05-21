@@ -18,6 +18,7 @@ from sage_mypy_category_plugin.projection import ExternalRuntimeClassRecord
 from sage_mypy_category_plugin.projection import ProviderMethodRecord
 from sage_mypy_category_plugin.projection import ProviderProjection
 from sage_mypy_category_plugin import stubs as stubs_cli
+from sage_mypy_category_plugin.static_stubs import static_stub_modules
 from sage_mypy_category_plugin.static_stubs import static_stub_sources
 from sage_mypy_category_plugin.stubs import generated_stub_sources
 from sage_mypy_category_plugin.stubs import write_generated_stub_tree
@@ -41,6 +42,46 @@ def test_static_stubs_are_syntactically_valid_python() -> None:
             raise AssertionError(
                 f"Static stub {path} has a syntax error: {exc}"
             ) from exc
+
+
+def test_static_stub_modules_derives_correct_dotted_module_names() -> None:
+    """static_stub_modules() must return exactly the dotted module name for each stub.
+
+    static_stub_modules() output is used by stubs.py to build the preserved-source
+    prefix list: any module in this set is treated as "already stubbed" and excluded
+    from re-generation.  If a module name is missing (e.g. path-separator confusion,
+    wrong suffix handling) or incorrect, the stub generator would either re-stub the
+    module (producing duplicate class definitions) or silently drop a needed module.
+
+    This test proves the path→module conversion logic correctly maps every entry in
+    _STUB_SOURCES to the expected dotted module name, and correctly excludes all
+    package marker (__init__.pyi) entries from the result.
+    """
+    modules = frozenset(static_stub_modules())
+
+    assert modules == {
+        "sage.categories.category",
+        "sage.categories.category_with_axiom",
+        "sage.categories.cartesian_product",
+        "sage.categories.functor",
+        "sage.categories.homset",
+        "sage.categories.morphism",
+        "sage.misc.abstract_method",
+        "sage.misc.cachefunc",
+        "sage.misc.lazy_import",
+        "sage.sets.condition_set",
+        "sage.structure.category_object",
+        "sage.structure.element",
+        "sage.structure.parent",
+        "sage.matrix.matrix2",
+        "sage.rings.real_mpfi",
+        "sage.rings.polynomial.ore_polynomial_ring",
+        "sage.combinat.posets.posets",
+    }, (
+        "static_stub_modules() returned unexpected module set; "
+        "check _STUB_SOURCES keys in static_stubs.py for path typos or "
+        "missing/extra entries"
+    )
 
 
 def test_generated_stubs_support_manifest_projected_annotation_behavior(
