@@ -52,6 +52,13 @@ class StructuralAudit:
     missing_typeinfo_count: int
 
 
+@dataclass(frozen=True)
+class BuildPlan:
+    mode: str
+    sources: tuple[BuildSource, ...]
+    requires_all_graph_providers: bool
+
+
 def main() -> None:
     args = _parse_args()
     consumer_root = args.consumer_root.resolve()
@@ -72,16 +79,24 @@ def main() -> None:
         mypy_cache_dir=work_dir / "mypy-cache",
     )
     _write_config(paths)
-    result = _build_consumer_modules(paths, consumer_root)
+    build_plan = _consumer_build_plan(consumer_root, all_modules=args.all_consumer_modules)
+    result = _build_consumer_modules(paths, consumer_root, build_plan)
     manifest_path = paths.cache_dir / "projection-manifest.json"
     manifest = load_manifest(manifest_path)
 
     _assert_manifest_has_no_generated_stub_cache(paths)
-    structural_audit = _assert_provider_typeinfos_match_manifest(result, manifest)
+    structural_audit = _assert_provider_typeinfos_match_manifest(
+        result,
+        manifest,
+        require_all_graph_providers=build_plan.requires_all_graph_providers,
+    )
 
     print(f"consumer_root={consumer_root}")
     print(f"work_dir={work_dir}")
     print(f"manifest={manifest_path}")
+    print(f"source_mode={build_plan.mode}")
+    print(f"source_module_count={len(build_plan.sources)}")
+    print(f"manifest_source_module_count={len(manifest.source_modules)}")
     print(f"projection_count={len(manifest.projections)}")
     print(f"unsupported_provider_count={len(manifest.unsupported_providers)}")
     print(f"checked_provider_count={structural_audit.checked_provider_count}")
@@ -115,6 +130,14 @@ def _parse_args() -> argparse.Namespace:
         default=DEFAULT_WORK_DIR,
         help="Directory where canary config, mypy cache, and manifest are retained.",
     )
+    parser.add_argument(
+        "--all-consumer-modules",
+        action="store_true",
+        help=(
+            "Build every Python module under category_specs instead of the "
+            "fast representative module set."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -140,7 +163,11 @@ def _write_config(paths: CanaryPaths) -> None:
     )
 
 
-def _build_consumer_modules(paths: CanaryPaths, consumer_root: Path) -> BuildResult:
+def _build_consumer_modules(
+    paths: CanaryPaths,
+    consumer_root: Path,
+    build_plan: BuildPlan,
+) -> BuildResult:
     options = Options()
     options.config_file = str(paths.config_path)
     options.plugins = ["sage_mypy_category_plugin.plugin"]
@@ -150,13 +177,43 @@ def _build_consumer_modules(paths: CanaryPaths, consumer_root: Path) -> BuildRes
     options.ignore_missing_imports = True
     options.explicit_package_bases = True
 
-    return build(
-        sources=[
+    return build(sources=list(build_plan.sources), options=options)
+
+
+def _consumer_build_plan(consumer_root: Path, *, all_modules: bool) -> BuildPlan:
+    if all_modules:
+        return BuildPlan(
+            mode="all",
+            sources=_all_category_specs_sources(consumer_root),
+            requires_all_graph_providers=True,
+        )
+    return BuildPlan(
+        mode="representative",
+        sources=tuple(
             BuildSource(str(_module_path(consumer_root, module)), module, None)
             for module in CANARY_MODULES
-        ],
-        options=options,
+        ),
+        requires_all_graph_providers=False,
     )
+
+
+def _all_category_specs_sources(consumer_root: Path) -> tuple[BuildSource, ...]:
+    package_root = consumer_root / "category_specs"
+    sources = tuple(
+        BuildSource(str(path), _module_name_for_path(consumer_root, path), None)
+        for path in sorted(package_root.rglob("*.py"))
+        if "__pycache__" not in path.parts
+    )
+    if not sources:
+        raise SystemExit(f"No category_specs Python modules found under {package_root}")
+    return sources
+
+
+def _module_name_for_path(consumer_root: Path, path: Path) -> str:
+    relative = path.relative_to(consumer_root)
+    if relative.name == "__init__.py":
+        return ".".join(relative.parent.parts)
+    return ".".join(relative.with_suffix("").parts)
 
 
 def _module_path(consumer_root: Path, module: str) -> Path:
@@ -180,6 +237,8 @@ def _assert_manifest_has_no_generated_stub_cache(paths: CanaryPaths) -> None:
 def _assert_provider_typeinfos_match_manifest(
     result: BuildResult,
     manifest: ProjectionManifest,
+    *,
+    require_all_graph_providers: bool,
 ) -> StructuralAudit:
     checked_provider_count = 0
     graph_absent_provider_count = 0
@@ -217,6 +276,12 @@ def _assert_provider_typeinfos_match_manifest(
 
     if checked_provider_count == 0:
         raise AssertionError("No category_specs provider TypeInfos were checked")
+    if require_all_graph_providers and graph_absent_provider_count:
+        raise AssertionError(
+            "Full consumer structural canary left "
+            f"{graph_absent_provider_count} projected category_specs providers "
+            "outside the mypy graph"
+        )
     if missing_typeinfos:
         missing = "\n  ".join(missing_typeinfos)
         raise AssertionError(f"Missing TypeInfo for loaded providers:\n  {missing}")
