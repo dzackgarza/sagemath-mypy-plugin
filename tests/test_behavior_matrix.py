@@ -962,26 +962,8 @@ def test_false_provider_mro_entry_is_detected_by_plugin(tmp_path: Path) -> None:
 
 
 def _write_plugin_config(tmp_path: Path) -> Path:
-    category_fullnames = list(BASE_CATEGORY_FULLNAMES)
-    for case in BEHAVIOR_CASES.values():
-        category_fullnames.extend(case[1:])
-    projections = provider_projections_for_categories(
-        tuple(category_fullnames),
-        roles=("parent",),
-    )
-    manifest = ProjectionManifest(
-        schema_version=1,
-        generated_by="tests",
-        sage_version="10.7",
-        python_version="3.12.13",
-        projections=tuple(projections.values()),
-        external_runtime_classes=external_runtime_class_records_for_test_manifest(
-            tuple(projections.values()),
-        ),
-    )
-    manifest_path = tmp_path / "sage-category-projections.json"
+    cache_dir = tmp_path / "sage-category-cache"
     config_path = tmp_path / "mypy.ini"
-    write_manifest(manifest_path, manifest)
     config_path.write_text(
         "\n".join(
             (
@@ -990,7 +972,9 @@ def _write_plugin_config(tmp_path: Path) -> Path:
                 "ignore_missing_imports = True",
                 "",
                 "[sage-mypy-category-plugin]",
-                f"manifest = {manifest_path}",
+                "packages = tests.fixtures.invariant_core",
+                "roles = parent",
+                f"cache_dir = {cache_dir}",
                 "",
             )
         )
