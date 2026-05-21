@@ -1440,3 +1440,26 @@ def test_manifest_rejects_external_runtime_class_with_undeclared_source_module()
         "Expected _validate_projection_graph to report the undeclared "
         f"source_module 'sage.categories.sets_cat'; got: {raised.value}"
     )
+
+
+def test_manifest_rejects_duplicate_provider_method_records() -> None:
+    """_validate_projection_graph must reject the same (provider, name) method twice.
+
+    The composite key is (provider, name) — the same provider can expose multiple
+    methods, but two records with identical provider+name would produce conflicting
+    stub entries for the same class attribute.
+    """
+    payload = _manifest_payload()
+    method_record = {
+        "provider": (
+            "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ParentMethods"
+        ),
+        "name": "normalized",
+        "return_type": "Self",
+    }
+    payload["provider_methods"] = [method_record, deepcopy(method_record)]
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    assert "duplicate provider method" in str(raised.value)

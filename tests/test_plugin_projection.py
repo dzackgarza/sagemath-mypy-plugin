@@ -1414,6 +1414,41 @@ def test_plugin_fails_clearly_for_invalid_manifest_schema(tmp_path: Path) -> Non
     ]
 
 
+def test_plugin_fails_clearly_for_invalid_role_config(tmp_path: Path) -> None:
+    """Plugin must reject unrecognised role strings in the config with a clear error.
+
+    The role list in mypy.ini is user-controlled; a typo or unsupported role
+    string must produce an actionable CompileError rather than silently falling
+    back to no projection or mapping to the wrong role.
+    """
+    cache_dir = tmp_path / "cache"
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                f"[{CONFIG_SECTION}]",
+                "packages = tests.fixtures.invariant_core.diamond_runtime",
+                "roles = badrolename",
+                f"cache_dir = {cache_dir}",
+                "",
+            )
+        )
+    )
+    options = Options()
+    options.config_file = str(config_path)
+
+    with pytest.raises(CompileError) as raised:
+        SageCategoryProjectionPlugin(options)
+
+    assert any("badrolename" in msg for msg in raised.value.messages), (
+        "Expected CompileError to name the invalid role 'badrolename'; "
+        f"got messages: {raised.value.messages}"
+    )
+
+
 def test_plugin_passthrough_when_no_config_section(tmp_path: Path) -> None:
     """Plugin listed in [mypy] plugins but no [sage-mypy-category-plugin] section.
 
