@@ -22,6 +22,7 @@ set shell := ["bash", "-uc"]
     structural
     manifest
     plugin_projection
+    production_lifecycle
     resolver_cli
     stubs
     behavior
@@ -31,6 +32,7 @@ set shell := ["bash", "-uc"]
     "tests/test_oracle_projection.py tests/test_homset_projection.py tests/test_provider_role_projection.py tests/test_axiom_projection.py"
     "tests/test_manifest.py"
     "tests/test_plugin_projection.py"
+    "tests/test_production_lifecycle.py"
     "tests/test_resolver_cli.py"
     "tests/test_stub_generation.py"
     "tests/test_behavior_matrix.py tests/test_role_behavior_matrix.py"
@@ -161,14 +163,6 @@ generate-manifest *args:
   args=({{args}})
   sage -python -m sage_mypy_category_plugin.resolver "${args[@]}"
 
-[group('build')]
-generate-stubs *args:
-  #!/usr/bin/env bash
-  set -euo pipefail
-  export PYTHONPATH="${PWD}${PYTHONPATH:+:${PYTHONPATH}}"
-  args=({{args}})
-  sage -python -m sage_mypy_category_plugin.stubs "${args[@]}"
-
 [group('validate')]
 typecheck *args:
   #!/usr/bin/env bash
@@ -176,53 +170,3 @@ typecheck *args:
   export PYTHONPATH="${PWD}${PYTHONPATH:+:${PYTHONPATH}}"
   args=({{args}})
   sage -python -m mypy --config-file=/dev/null --ignore-missing-imports --explicit-package-bases sage_mypy_category_plugin tests/test_*.py "${args[@]}"
-
-[group('validate')]
-consumer-mypy *args:
-  #!/usr/bin/env bash
-  set -euo pipefail
-  args=({{args}})
-  mypy_args=()
-  targets=()
-  manifest_arg=""
-  for arg in "${args[@]}"; do
-    if [[ "$arg" == -* ]]; then
-      mypy_args+=("$arg")
-    elif [[ -f "$arg" && "$arg" == *.json ]]; then
-      manifest_arg="$arg"
-    else
-      targets+=("$arg")
-    fi
-  done
-  if [[ "${#targets[@]}" -eq 0 ]]; then
-    targets=(category_specs)
-  fi
-  mypy_targets=()
-  repo_root="${PWD}"
-  consumer_root="${SAGE_MYPY_CONSUMER_ROOT:-/home/dzack/research}"
-  consumer_package="${consumer_root}/category_specs"
-  if [[ ! -d "$consumer_package" ]]; then
-    printf 'category_specs consumer tree not found at %s\n' "$consumer_package" >&2
-    exit 2
-  fi
-
-  config_root="$(mktemp -d)"
-  trap 'rm -rf "$config_root"' EXIT
-  config_path="${config_root}/mypy.ini"
-  cache_dir="${config_root}/sage-category-cache"
-
-  sage -python -m sage_mypy_category_plugin.write_consumer_config "$config_path" "$manifest_arg" "$cache_dir"
-
-  export PYTHONPATH="${repo_root}:${consumer_root}${PYTHONPATH:+:${PYTHONPATH}}"
-  cd "$consumer_root"
-  for target in "${targets[@]}"; do
-    path_target="${target//./\/}"
-    if [[ -d "$path_target" ]]; then
-      mypy_targets+=("$path_target")
-    elif [[ -f "${path_target}.py" ]]; then
-      mypy_targets+=("${path_target}.py")
-    else
-      mypy_targets+=("$target")
-    fi
-  done
-  sage -python -m mypy --config-file "$config_path" "${mypy_targets[@]}" "${mypy_args[@]}"

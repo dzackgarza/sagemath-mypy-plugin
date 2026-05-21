@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-import os
 import subprocess
-from hashlib import sha256
 from pathlib import Path
 
-from sage_mypy_category_plugin.manifest import ProjectionManifest, SourceModuleRecord
-from sage_mypy_category_plugin.projection import ProviderProjection
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
+PLUGIN_PACKAGE = REPO_ROOT / "sage_mypy_category_plugin"
 
 
 def test_justfile_exposes_final_state_validation_recipes() -> None:
@@ -23,9 +19,7 @@ def test_justfile_exposes_final_state_validation_recipes() -> None:
     recipes = frozenset(result.stdout.split())
 
     assert {
-        "consumer-mypy",
         "generate-manifest",
-        "generate-stubs",
         "release-check",
         "test",
         "test-behavior",
@@ -54,424 +48,28 @@ def test_generate_manifest_recipe_forwards_cli_arguments() -> None:
     assert "--output OUTPUT" in result.stdout
 
 
-def test_generate_stubs_recipe_forwards_cli_arguments() -> None:
+def test_production_validation_recipes_do_not_expose_wrapper_or_stub_generation() -> None:
     result = subprocess.run(
-        ("just", "--", "generate-stubs", "--help"),
+        ("just", "--summary"),
         cwd=REPO_ROOT,
         check=True,
         capture_output=True,
         text=True,
     )
 
-    assert "manifest" in result.stdout
-    assert "output_root" in result.stdout
-    assert "--manifest-output MANIFEST_OUTPUT" in result.stdout
-    assert "--preserve-source-module-prefix MODULE" in result.stdout
+    recipes = frozenset(result.stdout.split())
+
+    assert "consumer-mypy" not in recipes
+    assert "generate-stubs" not in recipes
 
 
-def test_consumer_config_writer_uses_plain_sidecar_config(tmp_path: Path) -> None:
-    config_path = tmp_path / "mypy.ini"
-    cache_dir = tmp_path / "sage-category-cache"
-
-    subprocess.run(
-        (
-            "sage",
-            "-python",
-            "-m",
-            "sage_mypy_category_plugin.write_consumer_config",
-            str(config_path),
-            "",
-            str(cache_dir),
-        ),
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    assert config_path.read_text() == "\n".join(
-        (
-            "[mypy]",
-            "plugins = sage_mypy_category_plugin.plugin",
-            "ignore_missing_imports = True",
-            "explicit_package_bases = True",
-            "",
-            "[sage-mypy-category-plugin]",
-            "packages =",
-            "    category_specs",
-            "roles =",
-            "    parent",
-            "    element",
-            "    subcategory",
-            "    morphism",
-            "    homset_parent",
-            "    homset_element",
-            f"cache_dir = {cache_dir}",
-            "strict = true",
-            "",
-        )
-    )
-
-
-def test_consumer_debug_config_writer_declares_manifest_alias_stub_root(
-    tmp_path: Path,
-) -> None:
-    config_path = tmp_path / "mypy.ini"
-    manifest_path = tmp_path / "projection-manifest.json"
-
-    subprocess.run(
-        (
-            "sage",
-            "-python",
-            "-m",
-            "sage_mypy_category_plugin.write_consumer_config",
-            str(config_path),
-            str(manifest_path),
-        ),
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    assert config_path.read_text() == "\n".join(
-        (
-            "[mypy]",
-            "plugins = sage_mypy_category_plugin.plugin",
-            "ignore_missing_imports = True",
-            "explicit_package_bases = True",
-            f"mypy_path = {manifest_path.parent.resolve() / 'stubs'}",
-            "",
-            "[sage-mypy-category-plugin]",
-            f"manifest = {manifest_path}",
-            "",
-        )
-    )
-
-
-def test_consumer_mypy_uses_generated_stubs_without_hiding_sources(
-    tmp_path: Path,
-) -> None:
-    consumer_package = tmp_path / "category_specs"
-    consumer_package.mkdir()
-    (consumer_package / "__init__.py").write_text("")
-    source_path = consumer_package / "example.py"
-    source_path.write_text(
-        "\n".join(
-            (
-                "from __future__ import annotations",
-                "from _sage_category_types import (",
-                "    category_specs_example__ChildCategory__parent_class,",
-                ")",
-                "",
-                "class BaseCategory:",
-                "    class ParentMethods:",
-                "        pass",
-                "",
-                "class ChildCategory:",
-                "    class ParentMethods:",
-                "        pass",
-                "",
-                "def invalid_alias(",
-                "    value: category_specs_example__ChildCategory__parent_class,",
-                ") -> int:",
-                "    return value",
-                "",
-            )
-        )
-    )
-    source_record = SourceModuleRecord(
-        module="category_specs.example",
-        path=str(source_path),
-        sha256=sha256(source_path.read_bytes()).hexdigest(),
-        mtime_ns=source_path.stat().st_mtime_ns,
-    )
-    base_provider = "category_specs.example.BaseCategory.ParentMethods"
-    child_provider = "category_specs.example.ChildCategory.ParentMethods"
-    manifest = ProjectionManifest(
-        schema_version=1,
-        generated_by="tests",
-        sage_version="10.7",
-        python_version="3.12.13",
-        projections=(
-            ProviderProjection(
-                provider=base_provider,
-                role="parent",
-                runtime_class="category_specs.example.BaseCategory.parent_class",
-                runtime_bases=("builtins.object",),
-                runtime_mro=(
-                    "category_specs.example.BaseCategory.parent_class",
-                    "builtins.object",
-                ),
-                provider_bases=(),
-                provider_mro=(base_provider,),
-            ),
-            ProviderProjection(
-                provider=child_provider,
-                role="parent",
-                runtime_class="category_specs.example.ChildCategory.parent_class",
-                runtime_bases=(
-                    "category_specs.example.BaseCategory.parent_class",
-                ),
-                runtime_mro=(
-                    "category_specs.example.ChildCategory.parent_class",
-                    "category_specs.example.BaseCategory.parent_class",
-                    "builtins.object",
-                ),
-                provider_bases=(base_provider,),
-                provider_mro=(child_provider, base_provider),
-            ),
-        ),
-        source_modules=(source_record,),
-    )
-    manifest_path = tmp_path / "manifest.json"
-    manifest_path.write_text(manifest.model_dump_json())
-
-    result = subprocess.run(
-        ("just", "--", "consumer-mypy", str(manifest_path)),
-        cwd=REPO_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-        env={
-            **os.environ,
-            "SAGE_MYPY_CONSUMER_ROOT": str(tmp_path),
-        },
-    )
-
-    assert result.returncode == 1, result.stdout + result.stderr
-    assert "category_specs/example.py" in result.stdout
-    assert "Incompatible return value type" in result.stdout
-    assert "_sage_category_types" not in result.stdout
-
-
-def test_consumer_mypy_accepts_explicit_consumer_target(tmp_path: Path) -> None:
-    consumer_package = tmp_path / "category_specs"
-    consumer_package.mkdir()
-    (consumer_package / "__init__.py").write_text("")
-    source_path = consumer_package / "example.py"
-    source_path.write_text(
-        "\n".join(
-            (
-                "from __future__ import annotations",
-                "from _sage_category_types import (",
-                "    category_specs_example__ChildCategory__parent_class,",
-                ")",
-                "",
-                "class BaseCategory:",
-                "    class ParentMethods:",
-                "        pass",
-                "",
-                "class ChildCategory:",
-                "    class ParentMethods:",
-                "        pass",
-                "",
-                "def invalid_alias(",
-                "    value: category_specs_example__ChildCategory__parent_class,",
-                ") -> int:",
-                "    return value",
-                "",
-            )
-        )
-    )
-    unrelated_path = consumer_package / "unrelated.py"
-    unrelated_path.write_text(
-        "\n".join(
-            (
-                "from __future__ import annotations",
-                "",
-                "def unrelated() -> int:",
-                '    return "not checked by targeted consumer run"',
-                "",
-            )
-        )
-    )
-    source_record = SourceModuleRecord(
-        module="category_specs.example",
-        path=str(source_path),
-        sha256=sha256(source_path.read_bytes()).hexdigest(),
-        mtime_ns=source_path.stat().st_mtime_ns,
-    )
-    base_provider = "category_specs.example.BaseCategory.ParentMethods"
-    child_provider = "category_specs.example.ChildCategory.ParentMethods"
-    manifest = ProjectionManifest(
-        schema_version=1,
-        generated_by="tests",
-        sage_version="10.7",
-        python_version="3.12.13",
-        projections=(
-            ProviderProjection(
-                provider=base_provider,
-                role="parent",
-                runtime_class="category_specs.example.BaseCategory.parent_class",
-                runtime_bases=("builtins.object",),
-                runtime_mro=(
-                    "category_specs.example.BaseCategory.parent_class",
-                    "builtins.object",
-                ),
-                provider_bases=(),
-                provider_mro=(base_provider,),
-            ),
-            ProviderProjection(
-                provider=child_provider,
-                role="parent",
-                runtime_class="category_specs.example.ChildCategory.parent_class",
-                runtime_bases=(
-                    "category_specs.example.BaseCategory.parent_class",
-                ),
-                runtime_mro=(
-                    "category_specs.example.ChildCategory.parent_class",
-                    "category_specs.example.BaseCategory.parent_class",
-                    "builtins.object",
-                ),
-                provider_bases=(base_provider,),
-                provider_mro=(child_provider, base_provider),
-            ),
-        ),
-        source_modules=(source_record,),
-    )
-    manifest_path = tmp_path / "manifest.json"
-    manifest_path.write_text(manifest.model_dump_json())
-
-    result = subprocess.run(
-        ("just", "--", "consumer-mypy", str(manifest_path), "category_specs.example"),
-        cwd=REPO_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-        env={
-            **os.environ,
-            "SAGE_MYPY_CONSUMER_ROOT": str(tmp_path),
-        },
-    )
-
-    assert result.returncode == 1, result.stdout + result.stderr
-    assert "category_specs/example.py" in result.stdout
-    assert "category_specs/unrelated.py" not in result.stdout
-
-
-def test_consumer_mypy_preserves_sage_category_source_modules(
-    tmp_path: Path,
-) -> None:
-    sage_categories = tmp_path / "sage" / "categories"
-    sage_categories.mkdir(parents=True)
-    (tmp_path / "sage" / "__init__.py").write_text("")
-    (sage_categories / "__init__.py").write_text("")
-    homsets_path = sage_categories / "homsets.py"
-    homsets_path.write_text(
-        "\n".join(
-            (
-                "from __future__ import annotations",
-                "",
-                "class HomsetsCategory:",
-                "    pass",
-                "",
-                "class HomsetsOf(HomsetsCategory):",
-                "    pass",
-                "",
-                "class Homsets:",
-                "    class ParentMethods:",
-                "        pass",
-                "",
-                "    class Endset:",
-                "        pass",
-                "",
-            )
-        )
-    )
-
-    consumer_package = tmp_path / "category_specs"
-    consumer_package.mkdir()
-    (consumer_package / "__init__.py").write_text("")
-    source_path = consumer_package / "example.py"
-    source_path.write_text(
-        "\n".join(
-            (
-                "from __future__ import annotations",
-                "",
-                "from _sage_category_types import (",
-                "    sage_categories_homsets__Homsets__parent_class,",
-                ")",
-                "from sage.categories.homsets import (",
-                "    Homsets,",
-                "    HomsetsCategory,",
-                "    HomsetsOf,",
-                ")",
-                "",
-                "def accepts_generated_alias(",
-                "    value: sage_categories_homsets__Homsets__parent_class,",
-                ") -> sage_categories_homsets__Homsets__parent_class:",
-                "    return value",
-                "",
-                "def preserves_source_visible_classes() -> type[HomsetsCategory]:",
-                "    return HomsetsOf",
-                "",
-                "def preserves_nested_axiom_class() -> type[object]:",
-                "    return Homsets.Endset",
-                "",
-            )
-        )
-    )
-
-    provider = "sage.categories.homsets.Homsets.ParentMethods"
-    manifest = ProjectionManifest(
-        schema_version=1,
-        generated_by="tests",
-        sage_version="10.7",
-        python_version="3.12.13",
-        projections=(
-            ProviderProjection(
-                provider=provider,
-                role="parent",
-                runtime_class="sage.categories.homsets.Homsets.parent_class",
-                runtime_bases=("builtins.object",),
-                runtime_mro=(
-                    "sage.categories.homsets.Homsets.parent_class",
-                    "builtins.object",
-                ),
-                provider_bases=(),
-                provider_mro=(provider,),
-            ),
-        ),
-        source_modules=(
-            SourceModuleRecord(
-                module="sage.categories.homsets",
-                path=str(homsets_path),
-                sha256=sha256(homsets_path.read_bytes()).hexdigest(),
-                mtime_ns=homsets_path.stat().st_mtime_ns,
-            ),
-            SourceModuleRecord(
-                module="category_specs.example",
-                path=str(source_path),
-                sha256=sha256(source_path.read_bytes()).hexdigest(),
-                mtime_ns=source_path.stat().st_mtime_ns,
-            ),
-        ),
-    )
-    manifest_path = tmp_path / "manifest.json"
-    manifest_path.write_text(manifest.model_dump_json())
-
-    result = subprocess.run(
-        ("just", "--", "consumer-mypy", str(manifest_path), "category_specs.example"),
-        cwd=REPO_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-        env={
-            **os.environ,
-            "SAGE_MYPY_CONSUMER_ROOT": str(tmp_path),
-        },
-    )
-
-    assert result.returncode == 0, result.stdout + result.stderr
+def test_consumer_config_writer_is_not_installed_plugin_surface() -> None:
+    assert not (PLUGIN_PACKAGE / "write_consumer_config.py").exists()
 
 
 # ---------------------------------------------------------------------------
 # CONTRACT.md sentinel checks — automated enforcement of banned patterns
 # ---------------------------------------------------------------------------
-
-PLUGIN_PACKAGE = REPO_ROOT / "sage_mypy_category_plugin"
-
 
 def _rg_count(pattern: str, path: Path) -> list[str]:
     """Return lines from ripgrep that match pattern in path, or [] if none."""

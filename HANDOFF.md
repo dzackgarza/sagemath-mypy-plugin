@@ -1,88 +1,72 @@
 # HANDOFF.md — sage-mypy-category-plugin
 
-## Current branch: `rewrite/invariant-core`
+## Current State
 
-All phases from `finishing-work.md` in the vault are complete as of commit `b8d9a39`.
-216 tests pass across all 7 suites (as of `a14e40a`).
+The repository is moving from the transitional generated-stub architecture to
+the vault-defined final architecture:
 
-### Phase completion status
+```text
+install sage-mypy-category-plugin
+install Sage-version sage-stubs sidecar
+configure packages / roles / cache_dir / strict
+run sage -python -m mypy
+```
 
-| Phase | Description | Status |
-| --- | --- | --- |
-| 0 | Freeze core contract (CONTRACT.md, sentinels) | Done |
-| 1 | Plugin-owned generation (`_generate_and_cache`, cache reuse) | Done |
-| 2 | Projection structural tests (TypeInfo.bases/mro assertions) | Done |
-| 3 | Real mathematical category fixtures (`tests/real_categories/`) | Done |
-| 4 | Decorator behavior matrix on real categories | Done |
-| 5 | Axioms, linked axioms, functorial, parameterized, homsets, morphisms (5A-5G) | Done |
-| 6 | Generated stubs under plugin ownership | Done |
-| 7 | Consumer end-to-end proof (E1-E6) | Done |
-| 8 | Mutation and anti-reward-hacking suite | Done |
-| 9 | Correctness argument and maintainability proof (`SPEC.md`) | Done |
+The plugin owns projection-manifest generation and cache refresh. Upstream Sage
+provider visibility belongs to the installed `sage-stubs` sidecar. Normal
+production usage must not require generated upstream Sage stubs, pre-generated
+manifests, wrapper recipes, `MYPYPATH`, `cache_dir/stubs` in `mypy_path`,
+diagnostic filtering, namespace hardcoding, or consumer error-count targets.
 
-### Phase 7 acceptance tests (all in `tests/test_plugin_projection.py`)
+## Canonical Success Metric
 
-| Test | Maps to |
-| --- | --- |
-| `test_plugin_generates_manifest_from_packages_config` | E1: fresh run |
-| `test_plugin_regenerates_from_clean_cache` | E1: idempotency |
-| `test_plugin_reuses_cache_on_second_init_without_regenerating` | E2: cache hit |
-| `test_plugin_detects_stale_source_and_regenerates_in_packages_mode` | E3: source mutation |
-| `test_real_sage_category_behavior_matrix_uses_standard_mypy_rules` | E4: negative injection |
-| `test_renamed_consumer_package_behavioral_invariant_holds` | E5: renamed-copy |
-| `test_plugin_recovers_from_corrupt_cache_in_packages_mode` | E6: stale cache |
+For every configured Sage category `C` and provider role `r`, let `K(C, r)` be
+the runtime named class Sage constructs and `P(C, r)` the corresponding source
+provider class. Completion requires this chain of evidence:
 
-### Key Artifacts
+```text
+Sage runtime constructs K(C, r)
+manifest records K.__bases__ and K.__mro__
+manifest records projection_r(K.__bases__) and projection_r(K.__mro__)
+mypy semantic analysis sets TypeInfo(P).bases to projected provider_bases
+mypy semantic analysis sets TypeInfo(P).mro to projected provider_mro + object
+```
 
-- `CONTRACT.md` — formalized invariants I1-I7, banned patterns BP1-BP10, sentinel checklist
-- `GOALS.md` — mission, architectural principle (suppression is never permanent), resolution hierarchy, Known Limitations, Test Surface State table
-- `sage_mypy_category_plugin/plugin.py` — production plugin entry point
-- `sage_mypy_category_plugin/oracle.py` — Sage runtime oracle (resolver subprocess context)
-- `sage_mypy_category_plugin/resolver.py` — category discovery and manifest generation
-- `sage_mypy_category_plugin/stubs.py` — generated stub writer
+Behavior tests are supporting evidence only when the structural TypeInfo
+invariant holds. A clean or smaller consumer error count is not proof.
 
-### Known Limitations (see GOALS.md for full detail)
+## Solid Evidence
 
-Self-returning descriptors (`@classmethod`, `@staticmethod`, `@property`, `@cached_method`)
-in external Sage runtime provider classes are not tracked in `ProviderMethodRecord` stubs.
-Empirically, no Sage `@cached_method` in `ParentMethods` carries a `Self` annotation, so
-no `@override` breakage occurs in practice. Migration path documented in GOALS.md.
+- `README.md`, `CONTRACT.md`, `SPEC.md`, and `GOALS.md` describe the sidecar
+  architecture and the structural TypeInfo invariant.
+- `tests/test_production_lifecycle.py` shells out through plain
+  `sage -python -m mypy` with plugin config and no `cache_dir/stubs` path.
+- `tests/test_plugin_projection.py` contains structural TypeInfo
+  `bases`/`mro` assertions against manifest projections.
+- `tests/test_behavior_matrix.py` and `tests/test_role_behavior_matrix.py`
+  contain plugin on/off × valid/invalid behavior matrices.
+- The nested `sage-stubs/` sidecar repository contains Sage 10.7 provider and
+  interface shells used by real fixtures and `category_specs` projections.
 
-### Test coverage additions (post-PR-open)
+## Remaining Release Gates
 
-Coverage gaps closed in the `a05f047`–`a14e40a` commit range:
+- Remove or demote all production-facing wrapper/debug-stub surfaces. In
+  particular, `consumer-mypy`, `write_consumer_config`, and first-class
+  generated-upstream-stub validation must not remain release evidence.
+- Keep debug manifest and runtime-alias paths out of production acceptance.
+  They may exist only as explicitly non-production diagnostics.
+- Add retained structural evidence for the real `/home/dzack/research/category_specs`
+  consumer: plugin boot, manifest/provider counts, missing TypeInfo/projection
+  failures, and representative provider `TypeInfo.bases`/`mro` audits.
+- Keep production lifecycle tests in the default and release validation matrix.
+- Run the contract sentinel greps, focused production/structural/behavior tests,
+  mutation checks, sidecar visibility checks, and `just release-check`.
 
-- `_validate_mypy_interval` both branches (inverted interval + current outside range)
-- `_validate_projection_graph` duplicate unsupported providers, concrete parents, external
-  source modules, provider methods
-- `_validate_projection_graph` concrete parent cross-field coherence (all 7 cases)
-- `_source_modules_stale_reason` file-missing and mtime_ns-mismatch branches
-- `_normalize_role_name` full variant mapping contract
-- `_returns_typing_self` actual `typing.Self` object form (Python ≥ 3.11)
-- `ProviderMethodRecord._validate_method_signature` non-identifier names
-- `import_module_and_qualname` / `import_fullname` boundary error paths
-- `_generate_and_cache` "no categories found" error path
-- `_parse_multiline_option` inline-comment stripping
-- Plugin invalid role config error reporting
+## Do Not Use As Proof
 
-### Open items
-
-The PR (`rewrite/invariant-core` → `main`) has received Gemini code review.
-All HIGH priority comments have been addressed. All MEDIUM priority comments have been
-addressed: two were already fixed, one required `_returns_typing_self` to handle
-`typing_extensions.Self` (commit `5af2f81`), two were architectural explanations.
-
-The consumer `just consumer-mypy` run produces 590 errors in 140 files (checked 260 source
-files) — these are real mypy type errors in the `category_specs` consumer codebase exposed
-by the plugin injecting Sage runtime MROs. The plugin is not responsible for fixing consumer
-code type errors. Error breakdown (2026-05-21): `misc` 225, `attr-defined` 139, `arg-type`
-57, `list-item` 44, `operator` 31, `override` 28, `return-value` 27, `call-arg` 19,
-`type-var` 10, `assignment` 5, `return` 4, `index` 1. These correspond to the
-`PHASE-QC-DYNAMIC-INHERITANCE-PLUGIN-REVIEW` task queue in the research repo.
-
-**Passthrough mode** (commit `af7becf`): when `plugins = sage_mypy_category_plugin.plugin`
-is listed in a mypy config but no `[sage-mypy-category-plugin]` section is present, the
-plugin initializes in passthrough mode (no generation, no projection, no CompileError).
-This makes global QC mypy configs that list the plugin generically work without errors.
-CONTRACT invariant I4 is not violated: passthrough fires only when no config section is
-present (and therefore no packages are configured), so there is no strict mode to enforce.
+- Total mypy error counts from `category_specs`.
+- A generated manifest supplied through `manifest = ...`.
+- A wrapper that writes a temporary config before invoking mypy.
+- A generated `cache_dir/stubs` tree used for upstream Sage provider visibility.
+- Tests that pass only because generated stubs or `_sage_category_types` make
+  symbols visible outside the sidecar/source path contract.

@@ -145,7 +145,8 @@ For a surface that suppresses a specific error code (e.g. `[attr-defined]`,
 | on     | exit 0                        |
 | off    | exit nonzero, `[error-code]`  |
 
-See `tests/test_local_wrapper_namespace.py` for the reference implementation.
+See the `category_specs_like` fixtures and behavior-matrix tests for the
+reference implementation.
 
 ### Validity requirement: plugin=off must produce an error
 
