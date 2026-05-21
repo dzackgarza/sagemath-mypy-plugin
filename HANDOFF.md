@@ -55,9 +55,13 @@ All HIGH priority comments have been addressed. All MEDIUM priority comments hav
 addressed: two were already fixed, one required `_returns_typing_self` to handle
 `typing_extensions.Self` (commit `5af2f81`), two were architectural explanations.
 
-The consumer `just consumer-mypy` run produces 1219 errors in 165 files — these are
-real mypy type errors in the `category_specs` consumer codebase, not plugin errors.
-The plugin is not responsible for fixing consumer code type errors.
+The consumer `just consumer-mypy` run produces 590 errors in 140 files (checked 260 source
+files) — these are real mypy type errors in the `category_specs` consumer codebase exposed
+by the plugin injecting Sage runtime MROs. The plugin is not responsible for fixing consumer
+code type errors. Error breakdown (2026-05-21): `misc` 225, `attr-defined` 139, `arg-type`
+57, `list-item` 44, `operator` 31, `override` 28, `return-value` 27, `call-arg` 19,
+`type-var` 10, `assignment` 5, `return` 4, `index` 1. These correspond to the
+`PHASE-QC-DYNAMIC-INHERITANCE-PLUGIN-REVIEW` task queue in the research repo.
 
 **Passthrough mode** (commit `af7becf`): when `plugins = sage_mypy_category_plugin.plugin`
 is listed in a mypy config but no `[sage-mypy-category-plugin]` section is present, the
