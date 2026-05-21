@@ -591,6 +591,71 @@ def test_package_mode_projects_category_specs_like_typeinfo_graph(
     assert observed_mro == (*projection.provider_mro, "builtins.object")
 
 
+def test_package_mode_projects_all_provider_role_typeinfo_graphs(
+    tmp_path: Path,
+) -> None:
+    cache_dir = tmp_path / "sage-category-cache"
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                "[sage-mypy-category-plugin]",
+                "packages = tests.fixtures.invariant_core.provider_roles",
+                "roles =",
+                "  parent",
+                "  element",
+                "  subcategory",
+                "  morphism",
+                "  homset_parent",
+                "  homset_element",
+                f"cache_dir = {cache_dir}",
+                "",
+            )
+        )
+    )
+
+    result = _build_fixture(
+        config_path,
+        tmp_path,
+        fixture_sources=(
+            (PROVIDER_ROLES_PATH, PROVIDER_ROLES_MODULE),
+            (HOMSET_ROLES_PATH, HOMSET_ROLES_MODULE),
+        ),
+    )
+    assert result.errors == []
+
+    manifest = load_manifest(cache_dir / "projection-manifest.json")
+    local_module_prefixes = (PROVIDER_ROLES_MODULE, HOMSET_ROLES_MODULE)
+    projections = tuple(
+        projection
+        for projection in manifest.projections
+        if projection.provider.startswith(local_module_prefixes)
+    )
+
+    assert {projection.role for projection in projections} == {
+        "element",
+        "homset_element",
+        "homset_parent",
+        "morphism",
+        "parent",
+        "subcategory",
+    }
+
+    for projection in projections:
+        info = _typeinfo_for_fullname(result, projection.provider)
+        observed_bases = tuple(base.type.fullname for base in info.bases)
+        observed_mro = tuple(mro_info.fullname for mro_info in info.mro)
+
+        assert observed_bases == projection.provider_bases, projection.provider
+        assert observed_mro == (
+            *projection.provider_mro,
+            "builtins.object",
+        ), projection.provider
+
+
 def test_plugin_regenerates_from_clean_cache(tmp_path: Path) -> None:
     """Phase 1A: plugin init regenerates when no cache exists."""
     cache_dir = tmp_path / "sage-category-cache"
@@ -901,6 +966,31 @@ def _nested_typeinfo(
     return inner_node
 
 
+def _typeinfo_for_fullname(result: BuildResult, fullname: str) -> TypeInfo:
+    parts = fullname.split(".")
+    for split_index in range(len(parts), 0, -1):
+        module_name = ".".join(parts[:split_index])
+        module = result.files.get(module_name)
+        if module is None:
+            continue
+
+        node: TypeInfo | None = None
+        scope: TypeInfo | None = None
+        for part in parts[split_index:]:
+            names = module.names if scope is None else scope.names
+            symbol = names.get(part)
+            if symbol is None or not isinstance(symbol.node, TypeInfo):
+                node = None
+                break
+            node = symbol.node
+            scope = node
+        else:
+            if node is not None:
+                return node
+
+    raise AssertionError(f"Could not resolve TypeInfo for {fullname}")
+
+
 def _inner_typeinfo(outer_info: TypeInfo, inner: str) -> TypeInfo:
     inner_node = outer_info.names[inner].node
     assert isinstance(inner_node, TypeInfo)
@@ -1011,11 +1101,6 @@ def _importable_module_name(fullname: str) -> str:
 # what the manifest says, no more and no less.  A corrupted manifest therefore
 # produces a detectable, quantifiably wrong TypeInfo graph.
 # ─────────────────────────────────────────────────────────────────────────────
-
-
-
-
-
 
 
 
