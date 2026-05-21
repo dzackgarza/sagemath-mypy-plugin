@@ -26,6 +26,7 @@ from sage_mypy_category_plugin.oracle import unsupported_provider_traces
 from sage_mypy_category_plugin.plugin import (
     CONFIG_SECTION,
     SageCategoryProjectionPlugin,
+    _normalize_role_name,
 )
 from sage_mypy_category_plugin.projection import ProviderProjection, ProviderRole
 from sage_mypy_category_plugin.stubs import write_generated_stub_tree
@@ -1412,6 +1413,41 @@ def test_plugin_fails_clearly_for_invalid_manifest_schema(tmp_path: Path) -> Non
         "Invalid Sage category projection manifest "
         f"{manifest_path}: plugin_schema_version: Input should be '1'"
     ]
+
+
+def test_normalize_role_name_maps_all_documented_variants_to_canonical_literals() -> None:
+    """_normalize_role_name must accept every documented user-facing variant.
+
+    The plugin config accepts multiple spellings of homset roles because users
+    copying from examples may use spaces or CamelCase.  A missing or misspelled
+    entry in the role_map would silently pass through and then fail in _parse_roles
+    with an opaque "Invalid role" error instead of the correct canonical form.
+    """
+    # Canonical forms map to themselves
+    assert _normalize_role_name("parent") == "parent"
+    assert _normalize_role_name("element") == "element"
+    assert _normalize_role_name("subcategory") == "subcategory"
+    assert _normalize_role_name("morphism") == "morphism"
+    assert _normalize_role_name("homset_parent") == "homset_parent"
+    assert _normalize_role_name("homset_element") == "homset_element"
+
+    # Space-separated variants: common in hand-written INI files
+    assert _normalize_role_name("homset parent") == "homset_parent"
+    assert _normalize_role_name("homset element") == "homset_element"
+
+    # No-separator camelCase-like variants
+    assert _normalize_role_name("homsetparent") == "homset_parent"
+    assert _normalize_role_name("homsetelement") == "homset_element"
+
+    # Case insensitive (lowercasing happens before map lookup)
+    assert _normalize_role_name("Parent") == "parent"
+    assert _normalize_role_name("PARENT") == "parent"
+    assert _normalize_role_name("HomsetParent") == "homset_parent"
+    assert _normalize_role_name("Homset Parent") == "homset_parent"
+
+    # Unknown names pass through unchanged so _parse_roles can produce a clear error
+    assert _normalize_role_name("badrolename") == "badrolename"
+    assert _normalize_role_name("") == ""
 
 
 def test_plugin_fails_clearly_for_invalid_role_config(tmp_path: Path) -> None:
