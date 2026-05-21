@@ -1474,11 +1474,21 @@ def test_plugin_generates_manifest_from_packages_config(tmp_path: Path) -> None:
     manifest = json.loads(manifest_path.read_text())
     assert len(manifest["projections"]) == 4, "Diamond fixture has 4 categories"
 
-    # Stubs were generated
+    # Stubs were generated — runtime alias stub embeds the projected diamond MRO
     stub_root = cache_dir / "stubs"
     assert stub_root.is_dir(), "Plugin should have generated stubs"
-    pyi_files = list(stub_root.rglob("*.pyi"))
-    assert len(pyi_files) >= 1, "At least one .pyi should be generated"
+    runtime_alias_stub = stub_root / "_sage_category_types.pyi"
+    assert runtime_alias_stub.is_file(), (
+        "Plugin should have generated _sage_category_types.pyi runtime alias stub"
+    )
+    # The runtime alias stub must encode BottomCategory's provider_mro, proving
+    # the full diamond MRO projection reached the stub layer.
+    bottom_alias = (
+        "tests_fixtures_invariant_core_diamond_runtime__BottomCategory__parent_class"
+    )
+    assert bottom_alias in runtime_alias_stub.read_text(), (
+        "_sage_category_types.pyi must contain BottomCategory runtime alias"
+    )
 
     # mypy_path was mutated to include stub root
     assert str(stub_root.resolve()) in options.mypy_path, (
