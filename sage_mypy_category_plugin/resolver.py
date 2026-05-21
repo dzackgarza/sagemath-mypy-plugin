@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from argparse import ArgumentParser
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from hashlib import sha256
 from inspect import Parameter, signature
 from importlib import import_module
@@ -242,16 +242,57 @@ def _category_fullnames_defined_in_module(module: ModuleType) -> tuple[str, ...]
 
     return tuple(
         f"{candidate.__module__}.{candidate.__qualname__}"
-        for candidate in vars(module).values()
+        for candidate in _classes_defined_in_module(module)
         if (
-            isinstance(candidate, type)
-            and candidate.__module__ == module.__name__
-            and issubclass(candidate, Category)
-            and _is_nullary_category_factory(candidate)
+            issubclass(candidate, Category)
             and not isinstance(getattr(candidate, "super_categories"), AbstractMethod)
-            and _has_bound_axiom_metadata(candidate, CategoryWithAxiom)
+            and _is_discoverable_category_factory(candidate, CategoryWithAxiom)
         )
     )
+
+
+def _is_discoverable_category_factory(
+    candidate: type[object],
+    axiom_base: type[object],
+) -> bool:
+    if issubclass(candidate, axiom_base):
+        return _has_bound_axiom_metadata(candidate, axiom_base)
+    return _is_nullary_category_factory(candidate)
+
+
+def _classes_defined_in_module(module: ModuleType) -> tuple[type[object], ...]:
+    return tuple(
+        _classes_defined_in_namespace(
+            module,
+            module_name=module.__name__,
+            seen=set(),
+        )
+    )
+
+
+def _classes_defined_in_namespace(
+    namespace_owner: object,
+    *,
+    module_name: str,
+    seen: set[type[object]],
+) -> Iterator[type[object]]:
+    for name, raw_candidate in vars(namespace_owner).items():
+        if not isinstance(raw_candidate, type):
+            continue
+        candidate = getattr(namespace_owner, name, raw_candidate)
+        if (
+            not isinstance(candidate, type)
+            or candidate.__module__ != module_name
+            or candidate in seen
+        ):
+            continue
+        seen.add(candidate)
+        yield candidate
+        yield from _classes_defined_in_namespace(
+            candidate,
+            module_name=module_name,
+            seen=seen,
+        )
 
 
 def _has_bound_axiom_metadata(

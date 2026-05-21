@@ -424,6 +424,28 @@ def test_resolver_package_discovery_excludes_uninstantiable_category_bases(
     )
 
 
+def test_resolver_package_discovery_includes_bound_nested_axiom_classes(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "sage-category-nested-axiom-package.json"
+
+    resolver.main(
+        [
+            "--output",
+            str(manifest_path),
+            "--role",
+            "parent",
+            "--package",
+            AXIOM_FIXTURE_MODULE,
+        ]
+    )
+
+    manifest = load_manifest(manifest_path)
+
+    assert AXIOM_ROOT_PROVIDER in manifest.projection_by_provider
+    assert NESTED_AXIOM_PROVIDER in manifest.projection_by_provider
+
+
 def test_resolver_records_source_module_mtime_ns(tmp_path: Path) -> None:
     manifest_path = tmp_path / "sage-category-axiom-projections.json"
 

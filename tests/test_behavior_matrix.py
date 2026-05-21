@@ -234,7 +234,6 @@ def test_local_axiom_behavior_matrix_uses_standard_mypy_rules(
     visible_sage_stubs = _write_visible_sage_axiom_stubs(tmp_path)
     config_path = _write_axiom_plugin_config(
         tmp_path,
-        visible_sage_stubs=visible_sage_stubs,
     )
     modules = tuple(case[0] for case in AXIOM_BEHAVIOR_CASES.values())
 
@@ -982,63 +981,9 @@ def _write_plugin_config(tmp_path: Path) -> Path:
     return config_path
 
 
-def _write_axiom_plugin_config(
-    tmp_path: Path,
-    *,
-    visible_sage_stubs: Path,
-) -> Path:
-    category_fullnames = [
-        AXIOM_ROOT_CATEGORY,
-        *(case[1] for case in AXIOM_BEHAVIOR_CASES.values()),
-    ]
-    projections = provider_projections_for_categories(
-        tuple(category_fullnames),
-        roles=("parent",),
-    )
-    source_modules = (
-        _source_module_record(
-            "tests.fixtures.invariant_core.axioms",
-            FIXTURE_ROOT / "axioms.py",
-        ),
-        *(
-            _source_module_record(case[0], _module_path(case[0]))
-            for case in AXIOM_BEHAVIOR_CASES.values()
-        ),
-        _source_module_record(
-            "sage.categories.finite_sets",
-            visible_sage_stubs / "sage" / "categories" / "finite_sets.pyi",
-        ),
-        _source_module_record(
-            "sage.categories.sets_cat",
-            visible_sage_stubs / "sage" / "categories" / "sets_cat.pyi",
-        ),
-        _source_module_record(
-            "sage.categories.sets_with_partial_maps",
-            visible_sage_stubs
-            / "sage"
-            / "categories"
-            / "sets_with_partial_maps.pyi",
-        ),
-        _source_module_record(
-            "sage.categories.objects",
-            visible_sage_stubs / "sage" / "categories" / "objects.pyi",
-        ),
-    )
-    manifest = ProjectionManifest(
-        schema_version=1,
-        generated_by="tests",
-        sage_version="10.7",
-        python_version="3.12.13",
-        projections=tuple(projections.values()),
-        external_runtime_classes=external_runtime_class_records_for_test_manifest(
-            tuple(projections.values()),
-            source_modules=source_modules,
-        ),
-        source_modules=source_modules,
-    )
-    manifest_path = tmp_path / "sage-category-axiom-behavior-projections.json"
+def _write_axiom_plugin_config(tmp_path: Path) -> Path:
+    cache_dir = tmp_path / "sage-category-axiom-cache"
     config_path = tmp_path / "axiom-behavior-mypy.ini"
-    write_manifest(manifest_path, manifest)
     config_path.write_text(
         "\n".join(
             (
@@ -1047,7 +992,9 @@ def _write_axiom_plugin_config(
                 "ignore_missing_imports = True",
                 "",
                 "[sage-mypy-category-plugin]",
-                f"manifest = {manifest_path}",
+                "packages = tests.fixtures.invariant_core",
+                "roles = parent",
+                f"cache_dir = {cache_dir}",
                 "",
             )
         )
