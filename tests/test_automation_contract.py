@@ -584,6 +584,29 @@ def test_contract_no_xfail_without_strict_in_tests() -> None:
     )
 
 
+def test_contract_no_bare_except_exception_in_plugin_package() -> None:
+    """CONTRACT.md BP3: bare 'except Exception' is banned in the plugin package.
+
+    BP3 forbids silent exception swallowing in projection paths.  Every caught
+    exception must either be specific (e.g. AttributeError, ModuleNotFoundError)
+    or logged at DEBUG level.  A bare 'except Exception' clause with no logging
+    makes failures indistinguishable from 'no projection needed', masking real
+    bugs.  The only approved broad catches are the two guarded oracle import loops
+    which explicitly use narrower types (AttributeError, TypeError, ValueError,
+    AssertionError) and log at DEBUG level.
+
+    This test ensures 'except Exception' never appears in the plugin package,
+    even accidentally via a refactor that widens an existing catch.
+    """
+    hits = _rg_count(r"\bexcept\s+Exception\b", PLUGIN_PACKAGE)
+    assert hits == [], (
+        "Found bare 'except Exception' in plugin package — "
+        "CONTRACT.md BP3 forbids silent exception swallowing; "
+        "use a specific exception type and log at DEBUG level:\n"
+        + "\n".join(hits)
+    )
+
+
 def test_contract_fixtures_use_local_wrapper_not_direct_sage_category() -> None:
     """CONTRACT.md BP2: test fixtures for third-party namespace tests must inherit
     from a local wrapper base, not from sage.categories.category.Category directly.
