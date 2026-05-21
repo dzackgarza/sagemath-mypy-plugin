@@ -19,7 +19,7 @@ dependencies = [
 # for sage.categories.*, sage.structure.*, sage.misc.*, etc.
 # Install: sage -python -m pip install "sage-mypy-category-plugin[sage10_7]"
 # (or: just install-sidecar)
-sage10_7 = ["sage-stubs @ git+https://github.com/dzackgarza/sage-stubs@537333fa2b663f2395c26dc509f29f448fabfdbd"]
+sage10_7 = ["sage-stubs @ git+https://github.com/dzackgarza/sage-stubs@d94de9e04ced1e0ed78ba5b64c77d76b4b7fdabe"]
 
 [tool.setuptools.packages.find]
 include = ["sage_mypy_category_plugin*"]
