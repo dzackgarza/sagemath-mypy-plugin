@@ -1563,6 +1563,42 @@ def test_plugin_passthrough_when_no_config_section(tmp_path: Path) -> None:
     assert plugin.report_config_data(None) == {"passthrough": "true"}  # type: ignore[arg-type]
 
 
+def test_plugin_fails_clearly_when_no_categories_found_in_packages(
+    tmp_path: Path,
+) -> None:
+    """Plugin must report a clear error when the configured packages yield no categories.
+
+    Covers the 'no category classes found' branch in _generate_and_cache.
+    tests.fixtures.invariant_core.local_wrapper defines LocalCategoryBase whose
+    super_categories is still abstract (not overridden), so discover_category_fullnames
+    returns an empty tuple and the plugin cannot proceed.
+    """
+    cache_dir = tmp_path / "cache"
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                f"[{CONFIG_SECTION}]",
+                "packages = tests.fixtures.invariant_core.local_wrapper",
+                f"cache_dir = {cache_dir}",
+                "",
+            )
+        )
+    )
+    options = Options()
+    options.config_file = str(config_path)
+
+    with pytest.raises(CompileError) as raised:
+        SageCategoryProjectionPlugin(options)
+
+    assert any(
+        "No Sage category classes found" in msg for msg in raised.value.messages
+    ), raised.value.messages
+
+
 def test_plugin_generates_manifest_from_packages_config(tmp_path: Path) -> None:
     """Phase 1A: plugin init with 'packages' config auto-generates manifest + stubs."""
     cache_dir = tmp_path / "sage-category-cache"
