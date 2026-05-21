@@ -9,6 +9,11 @@ from sage.categories.objects import Objects  # type: ignore[import-untyped]
 from tests.fixtures.invariant_core.local_wrapper import LocalCategoryBase
 
 
+class DescriptorBackedType(type):
+    def __get__(cls, instance: object, owner: type[object] | None = None) -> object:
+        raise AssertionError("discovery must not invoke descriptor-backed classes")
+
+
 class AbstractPackageCategory(LocalCategoryBase):
     pass
 
@@ -26,6 +31,9 @@ class UnboundSingletonAxiomPackageCategory(CategoryWithAxiom_singleton):
 class ConcretePackageCategory(LocalCategoryBase):
     def super_categories(self) -> list[object]:
         return [Objects()]
+
+    class DescriptorBackedConstruction(metaclass=DescriptorBackedType):
+        pass
 
     class ParentMethods:
         def concrete_package_method(self) -> int:

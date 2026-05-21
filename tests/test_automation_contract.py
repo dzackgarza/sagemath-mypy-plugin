@@ -22,6 +22,7 @@ def test_justfile_exposes_final_state_validation_recipes() -> None:
 
     assert {
         "consumer-structural",
+        "consumer-structural-fresh",
         "generate-manifest",
         "release-check",
         "test",
@@ -77,7 +78,7 @@ def test_release_check_runs_final_architecture_gates() -> None:
     assert "just test-plugin-projection -q" in release_check
     assert "just test-behavior -q" in release_check
     assert "just test tests/test_automation_contract.py -q" in release_check
-    assert "just consumer-structural" in release_check
+    assert "just consumer-structural-fresh" in release_check
     assert "just test-supported-mypy" in release_check
     assert "just test-mutation" in release_check
 

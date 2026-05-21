@@ -251,6 +251,26 @@ def _category_fullnames_defined_in_module(module: ModuleType) -> tuple[str, ...]
     )
 
 
+def _category_candidate_for_discovery(
+    namespace_owner: object,
+    name: str,
+    raw_candidate: type[object],
+) -> type[object]:
+    from sage.categories.category_with_axiom import CategoryWithAxiom  # type: ignore[import-untyped]
+
+    if not issubclass(raw_candidate, CategoryWithAxiom) or (
+        "_base_category_class_and_axiom" in raw_candidate.__dict__
+    ):
+        return raw_candidate
+    try:
+        resolved_candidate = getattr(namespace_owner, name, raw_candidate)
+    except (AttributeError, TypeError, ValueError, AssertionError):
+        return raw_candidate
+    if isinstance(resolved_candidate, type):
+        return resolved_candidate
+    return raw_candidate
+
+
 def _is_discoverable_category_factory(
     candidate: type[object],
     axiom_base: type[object],
@@ -279,7 +299,11 @@ def _classes_defined_in_namespace(
     for name, raw_candidate in vars(namespace_owner).items():
         if not isinstance(raw_candidate, type):
             continue
-        candidate = getattr(namespace_owner, name, raw_candidate)
+        candidate = _category_candidate_for_discovery(
+            namespace_owner,
+            name,
+            raw_candidate,
+        )
         if (
             not isinstance(candidate, type)
             or candidate.__module__ != module_name

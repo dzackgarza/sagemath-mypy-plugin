@@ -424,6 +424,27 @@ def test_resolver_package_discovery_excludes_uninstantiable_category_bases(
     )
 
 
+def test_resolver_package_discovery_does_not_invoke_descriptor_backed_classes(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "sage-category-descriptor-package-discovery.json"
+
+    resolver.main(
+        [
+            "--output",
+            str(manifest_path),
+            "--role",
+            "parent",
+            "--package",
+            PACKAGE_DISCOVERY_FIXTURE,
+        ]
+    )
+
+    manifest = load_manifest(manifest_path)
+
+    assert PACKAGE_DISCOVERY_CONCRETE_PROVIDER in manifest.projection_by_provider
+
+
 def test_resolver_package_discovery_includes_bound_nested_axiom_classes(
     tmp_path: Path,
 ) -> None:

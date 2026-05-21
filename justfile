@@ -148,7 +148,7 @@ release-check:
   just test-plugin-projection -q
   just test-behavior -q
   just test tests/test_automation_contract.py -q
-  just consumer-structural
+  just consumer-structural-fresh
   just test-supported-mypy
   just test-mutation
 
@@ -184,4 +184,18 @@ consumer-structural *args:
   sage -python devtools/consumer_structural_canary.py \
     --consumer-root "$consumer_root" \
     --work-dir ".mypy_cache/sage-category-plugin-consumer-canary" \
+    "${args[@]}"
+
+[group('validate')]
+consumer-structural-fresh *args:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  consumer_root="${SAGE_MYPY_CONSUMER_ROOT:-/home/dzack/research}"
+  export PYTHONPATH="${PWD}:${consumer_root}${PYTHONPATH:+:${PYTHONPATH}}"
+  args=({{args}})
+  work_dir="$(mktemp -d)"
+  trap 'rm -rf "${work_dir}"' EXIT
+  sage -python devtools/consumer_structural_canary.py \
+    --consumer-root "$consumer_root" \
+    --work-dir "${work_dir}" \
     "${args[@]}"
