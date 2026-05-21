@@ -35,6 +35,7 @@ CANARY_PROVIDERS = (
     "category_specs.topological_spaces._TopologicalSpaceObjectMethods",
     "category_specs.topological_spaces._TopologicalSpaceElementMethods",
 )
+CONSUMER_PROVIDER_PREFIX = "category_specs."
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,13 @@ class CanaryPaths:
     config_path: Path
     cache_dir: Path
     mypy_cache_dir: Path
+
+
+@dataclass(frozen=True)
+class StructuralAudit:
+    checked_provider_count: int
+    graph_absent_provider_count: int
+    missing_typeinfo_count: int
 
 
 def main() -> None:
@@ -69,13 +77,16 @@ def main() -> None:
     manifest = load_manifest(manifest_path)
 
     _assert_manifest_has_no_generated_stub_cache(paths)
-    _assert_provider_typeinfos_match_manifest(result, manifest)
+    structural_audit = _assert_provider_typeinfos_match_manifest(result, manifest)
 
     print(f"consumer_root={consumer_root}")
     print(f"work_dir={work_dir}")
     print(f"manifest={manifest_path}")
     print(f"projection_count={len(manifest.projections)}")
     print(f"unsupported_provider_count={len(manifest.unsupported_providers)}")
+    print(f"checked_provider_count={structural_audit.checked_provider_count}")
+    print(f"graph_absent_provider_count={structural_audit.graph_absent_provider_count}")
+    print(f"missing_typeinfo_count={structural_audit.missing_typeinfo_count}")
     print(f"mypy_error_count={len(result.errors)}")
     for provider in CANARY_PROVIDERS:
         projection = manifest.projection_by_provider[provider]
@@ -169,11 +180,23 @@ def _assert_manifest_has_no_generated_stub_cache(paths: CanaryPaths) -> None:
 def _assert_provider_typeinfos_match_manifest(
     result: BuildResult,
     manifest: ProjectionManifest,
-) -> None:
-    projection_by_provider = manifest.projection_by_provider
-    for provider in CANARY_PROVIDERS:
-        projection = projection_by_provider[provider]
-        info = _typeinfo_for_fullname(result, provider)
+) -> StructuralAudit:
+    checked_provider_count = 0
+    graph_absent_provider_count = 0
+    missing_typeinfos: list[str] = []
+    source_modules = tuple(record.module for record in manifest.source_modules)
+    for projection in manifest.projections:
+        provider = projection.provider
+        if not provider.startswith(CONSUMER_PROVIDER_PREFIX):
+            continue
+        provider_module = _source_module_for_fullname(source_modules, provider)
+        if provider_module is None or provider_module not in result.graph:
+            graph_absent_provider_count += 1
+            continue
+        info = _typeinfo_for_fullname(result, provider, provider_module)
+        if info is None:
+            missing_typeinfos.append(provider)
+            continue
         observed_bases = tuple(base.type.fullname for base in info.bases)
         observed_mro = tuple(
             mro_info.fullname
@@ -190,33 +213,52 @@ def _assert_provider_typeinfos_match_manifest(
                 f"{provider} TypeInfo.mro mismatch: "
                 f"expected {projection.provider_mro!r}, observed {observed_mro!r}"
             )
+        checked_provider_count += 1
+
+    if checked_provider_count == 0:
+        raise AssertionError("No category_specs provider TypeInfos were checked")
+    if missing_typeinfos:
+        missing = "\n  ".join(missing_typeinfos)
+        raise AssertionError(f"Missing TypeInfo for loaded providers:\n  {missing}")
+
+    return StructuralAudit(
+        checked_provider_count=checked_provider_count,
+        graph_absent_provider_count=graph_absent_provider_count,
+        missing_typeinfo_count=len(missing_typeinfos),
+    )
 
 
-def _typeinfo_for_fullname(result: BuildResult, fullname: str) -> TypeInfo:
-    module_name = _longest_graph_module_prefix(result, fullname)
+def _typeinfo_for_fullname(
+    result: BuildResult,
+    fullname: str,
+    module_name: str,
+) -> TypeInfo | None:
     state = result.graph[module_name]
     suffix = fullname.removeprefix(f"{module_name}.")
     pieces = suffix.split(".")
     symbol = state.tree.names.get(pieces[0])
     if symbol is None or not isinstance(symbol.node, TypeInfo):
-        raise AssertionError(f"Missing TypeInfo for {pieces[0]!r} in {module_name}")
+        return None
     info = symbol.node
     for piece in pieces[1:]:
         nested = info.names.get(piece)
         if nested is None or not isinstance(nested.node, TypeInfo):
-            raise AssertionError(f"Missing nested TypeInfo {piece!r} in {info.fullname}")
+            return None
         info = nested.node
     return info
 
 
-def _longest_graph_module_prefix(result: BuildResult, fullname: str) -> str:
+def _source_module_for_fullname(
+    source_modules: tuple[str, ...],
+    fullname: str,
+) -> str | None:
     matches = [
         module
-        for module in result.graph
+        for module in source_modules
         if fullname == module or fullname.startswith(f"{module}.")
     ]
     if not matches:
-        raise AssertionError(f"No mypy graph module contains {fullname!r}")
+        return None
     return max(matches, key=len)
 
 
