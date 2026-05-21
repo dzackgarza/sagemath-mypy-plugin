@@ -20,6 +20,7 @@ from sage_mypy_category_plugin.manifest import (
 )
 from sage_mypy_category_plugin.projection import ConcreteParentRecord
 from sage_mypy_category_plugin.projection import ProviderProjection
+from sage_mypy_category_plugin.projection import roles_share_projection
 
 
 def _projection() -> ProviderProjection:
@@ -1253,3 +1254,37 @@ def test_manifest_source_module_digest_tracks_source_mtime_changes() -> None:
     mutated_manifest = ProjectionManifest.model_validate(mutated_payload)
 
     assert base_manifest.source_module_digest != mutated_manifest.source_module_digest
+
+
+def test_roles_share_projection_encodes_role_alias_semantics() -> None:
+    """roles_share_projection() must reflect the ROLE_PROJECTION_ALIASES contract.
+
+    This function gates deduplication in the resolver, named-class trace validation
+    in the manifest, and provider-MRO sharing in the oracle.  The alias pairs
+    (parent↔homset_parent, element↔homset_element) mean these roles share the same
+    runtime named-class — Sage creates a single parent_class / element_class for
+    both normal and homset variants.  Non-alias pairs must NOT share projection or
+    deduplication would incorrectly merge distinct roles.
+    """
+    # Every role shares projection with itself (reflexivity)
+    for role in ("parent", "element", "subcategory", "morphism", "homset_parent", "homset_element"):
+        assert roles_share_projection(role, role), (  # type: ignore[arg-type]
+            f"{role!r} must share projection with itself"
+        )
+
+    # The two approved alias pairs: Sage creates one named class for both
+    assert roles_share_projection("parent", "homset_parent")
+    assert roles_share_projection("homset_parent", "parent")
+    assert roles_share_projection("element", "homset_element")
+    assert roles_share_projection("homset_element", "element")
+
+    # Unrelated pairs must NOT share projection — different runtime named classes
+    assert not roles_share_projection("parent", "element")
+    assert not roles_share_projection("parent", "subcategory")
+    assert not roles_share_projection("parent", "morphism")
+    assert not roles_share_projection("parent", "homset_element")
+    assert not roles_share_projection("element", "subcategory")
+    assert not roles_share_projection("element", "morphism")
+    assert not roles_share_projection("element", "homset_parent")
+    assert not roles_share_projection("homset_parent", "homset_element")
+    assert not roles_share_projection("subcategory", "morphism")
