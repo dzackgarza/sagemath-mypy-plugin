@@ -1309,31 +1309,8 @@ def test_stale_reason_detects_mtime_mismatch(tmp_path: Path) -> None:
     assert "some.source.module" in reason, reason
 
 
-def test_plugin_fails_clearly_for_stale_source_module_metadata(
-    tmp_path: Path,
-) -> None:
-    projections = _provider_projections(
-        CATEGORY_FULLNAMES,
-        roles=("parent",),
-    )
-    stale_source_module = DIAMOND_SOURCE_MODULE.model_copy(
-        update={"sha256": "0" * 64}
-    )
-    manifest = ProjectionManifest(
-        schema_version=1,
-        generated_by="tests",
-        sage_version="10.7",
-        python_version="3.12.13",
-        projections=tuple(projections.values()),
-        external_runtime_classes=external_runtime_class_records_for_test_manifest(
-            tuple(projections.values()),
-            source_modules=(stale_source_module,),
-        ),
-        source_modules=(stale_source_module,),
-    )
-    manifest_path = tmp_path / "stale-source-module.json"
+def test_plugin_fails_clearly_when_packages_option_is_missing(tmp_path: Path) -> None:
     config_path = tmp_path / "mypy.ini"
-    write_manifest(manifest_path, manifest)
     config_path.write_text(
         "\n".join(
             (
@@ -1341,7 +1318,6 @@ def test_plugin_fails_clearly_for_stale_source_module_metadata(
                 "plugins = sage_mypy_category_plugin.plugin",
                 "",
                 "[sage-mypy-category-plugin]",
-                f"manifest = {manifest_path}",
                 "",
             )
         )
@@ -1353,102 +1329,7 @@ def test_plugin_fails_clearly_for_stale_source_module_metadata(
         SageCategoryProjectionPlugin(options)
 
     assert raised.value.messages == [
-        "Stale Sage category source module metadata for "
-        f"{FIXTURE_MODULE}: sha256 mismatch"
-    ]
-
-
-def test_plugin_fails_clearly_when_manifest_option_is_missing(tmp_path: Path) -> None:
-    config_path = tmp_path / "mypy.ini"
-    config_path.write_text(
-        "\n".join(
-            (
-                "[mypy]",
-                "plugins = sage_mypy_category_plugin.plugin",
-                "",
-                "[sage-mypy-category-plugin]",
-                "",
-            )
-        )
-    )
-    options = Options()
-    options.config_file = str(config_path)
-
-    with pytest.raises(CompileError) as raised:
-        SageCategoryProjectionPlugin(options)
-
-    assert f"[{CONFIG_SECTION}] section in {config_path} must specify either " in raised.value.messages[0]
-    assert "'manifest' (debug/pregenerated path) or 'packages' (auto-generation)" in raised.value.messages[0]
-
-
-def test_plugin_fails_clearly_when_manifest_file_is_missing(tmp_path: Path) -> None:
-    manifest_path = tmp_path / "missing-manifest.json"
-    config_path = tmp_path / "mypy.ini"
-    config_path.write_text(
-        "\n".join(
-            (
-                "[mypy]",
-                "plugins = sage_mypy_category_plugin.plugin",
-                "",
-                "[sage-mypy-category-plugin]",
-                f"manifest = {manifest_path}",
-                "",
-            )
-        )
-    )
-    options = Options()
-    options.config_file = str(config_path)
-
-    with pytest.raises(CompileError) as raised:
-        SageCategoryProjectionPlugin(options)
-
-    assert raised.value.messages == [
-        f"Could not read Sage category projection manifest {manifest_path}: "
-        "file is missing"
-    ]
-
-
-def test_plugin_fails_clearly_for_invalid_manifest_schema(tmp_path: Path) -> None:
-    projections = _provider_projections(
-        CATEGORY_FULLNAMES,
-        roles=("parent",),
-    )
-    valid_manifest = ProjectionManifest(
-        schema_version=1,
-        generated_by="tests",
-        sage_version="10.7",
-        python_version="3.12.13",
-        projections=tuple(projections.values()),
-        external_runtime_classes=external_runtime_class_records_for_test_manifest(
-            tuple(projections.values()),
-        ),
-    )
-    payload = valid_manifest.model_dump(mode="json")
-    payload["plugin_schema_version"] = "999"
-    manifest_path = tmp_path / "invalid-plugin-schema.json"
-    config_path = tmp_path / "mypy.ini"
-    manifest_path.write_text(json.dumps(payload))
-    config_path.write_text(
-        "\n".join(
-            (
-                "[mypy]",
-                "plugins = sage_mypy_category_plugin.plugin",
-                "",
-                "[sage-mypy-category-plugin]",
-                f"manifest = {manifest_path}",
-                "",
-            )
-        )
-    )
-    options = Options()
-    options.config_file = str(config_path)
-
-    with pytest.raises(CompileError) as raised:
-        SageCategoryProjectionPlugin(options)
-
-    assert raised.value.messages == [
-        "Invalid Sage category projection manifest "
-        f"{manifest_path}: plugin_schema_version: Input should be '1'"
+        f"[{CONFIG_SECTION}] section in {config_path} must specify 'packages'"
     ]
 
 

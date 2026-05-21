@@ -267,8 +267,8 @@ def _read_plugin_config(options: Options) -> PluginConfig:
     if not has_manifest and not has_packages:
         raise CompileError(
             [
-                f"[{CONFIG_SECTION}] section in {config_path} must specify either "
-                "'manifest' (debug/pregenerated path) or 'packages' (auto-generation)"
+                f"[{CONFIG_SECTION}] section in {config_path} must specify "
+                "'packages'"
             ]
         )
 
