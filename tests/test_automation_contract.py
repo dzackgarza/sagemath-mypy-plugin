@@ -543,6 +543,47 @@ def test_contract_no_banned_broad_hooks_in_plugin() -> None:
     )
 
 
+def test_contract_no_unconditional_skip_markers_in_tests() -> None:
+    """CONTRACT.md BP10: @pytest.mark.skip and @pytest.mark.skipif are banned.
+
+    Unconditional skips hide real failures and violate the 'no masking' rule.
+    Tests must reflect 100% actual runtime reality. There is no approved use of
+    skip or skipif in this repo.
+    """
+    tests_dir = REPO_ROOT / "tests"
+    # Match only decorator lines: leading whitespace then @pytest.mark.skip/skipif
+    hits = _rg_count(r"^\s*@pytest\.mark\.(skip|skipif)\b", tests_dir)
+    assert hits == [], (
+        "Found @pytest.mark.skip or @pytest.mark.skipif in tests — "
+        "CONTRACT.md BP10 bans unconditional skips:\n"
+        + "\n".join(hits)
+    )
+
+
+def test_contract_no_xfail_without_strict_in_tests() -> None:
+    """CONTRACT.md BP10: @pytest.mark.xfail may only be used with strict=True.
+
+    A non-strict xfail can silently pass when the underlying failure disappears,
+    turning the test into dead verification. Any xfail that omits strict=True
+    or uses strict=False is banned. Additionally the xfail must document a
+    deletion condition in its 'reason' argument (enforced by code review; this
+    test only enforces the strict= requirement mechanically).
+    """
+    tests_dir = REPO_ROOT / "tests"
+    # Match @pytest.mark.xfail lines that lack strict=True.
+    # A line with strict=True is acceptable; one without it is banned.
+    # Match only decorator lines: leading whitespace then @pytest.mark.xfail
+    xfail_hits = _rg_count(r"^\s*@pytest\.mark\.xfail\b", tests_dir)
+    non_strict_hits = [
+        line for line in xfail_hits if "strict=True" not in line
+    ]
+    assert non_strict_hits == [], (
+        "Found @pytest.mark.xfail without strict=True — "
+        "CONTRACT.md BP10 requires strict=True and a documented deletion condition:\n"
+        + "\n".join(non_strict_hits)
+    )
+
+
 def test_contract_fixtures_use_local_wrapper_not_direct_sage_category() -> None:
     """CONTRACT.md BP2: test fixtures for third-party namespace tests must inherit
     from a local wrapper base, not from sage.categories.category.Category directly.
