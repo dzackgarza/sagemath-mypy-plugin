@@ -1378,3 +1378,65 @@ def test_manifest_rejects_inverted_mypy_version_interval() -> None:
         "Expected _validate_mypy_interval to report the incoherent interval "
         f"[2.0.0, 1.0.0]; got: {raised.value}"
     )
+
+
+def test_manifest_rejects_duplicate_unsupported_provider_records() -> None:
+    """_validate_projection_graph must reject the same (role, provider) pair twice.
+
+    Duplicate unsupported provider records are rejected by checking the
+    (role, provider) composite key — a provider can be unsupported for one role
+    (parent) but supported for another (element), so the role is part of the key.
+    """
+    payload = _manifest_payload()
+    record = _unsupported_provider_record().model_dump(mode="json")
+    payload["unsupported_providers"] = [record, deepcopy(record)]
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    assert "duplicate unsupported provider" in str(raised.value)
+
+
+def test_manifest_rejects_duplicate_concrete_parent_records() -> None:
+    """_validate_projection_graph must reject duplicate concrete_class keys.
+
+    ConcreteParentRecord deduplication uses concrete_class as the unique key
+    — two records with the same concrete_class are incoherent because only one
+    runtime parent type can correspond to a given concrete parent class.
+    """
+    payload = _manifest_payload()
+    concrete_parent = payload["concrete_parents"][0]
+    payload["concrete_parents"] = [concrete_parent, deepcopy(concrete_parent)]
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    assert "duplicate concrete parent" in str(raised.value)
+
+
+def test_manifest_rejects_external_runtime_class_with_undeclared_source_module() -> None:
+    """_validate_projection_graph must reject an ExternalRuntimeClassRecord whose
+    source_module is not present in the manifest's source_modules list.
+
+    This cross-reference check prevents the oracle from resolving type signatures
+    against a module that was never hashed and recorded — without it, a stale or
+    missing source module could silently supply wrong type information.
+    """
+    payload = _manifest_payload()
+    # sage.categories.sets_cat is NOT in the manifest's source_modules list.
+    payload["external_runtime_classes"] = [
+        {
+            "runtime_class": "sage.categories.sets_cat.Sets.parent_class",
+            "module": "sage.categories.sets_cat",
+            "static_signature_source": "python_source",
+            "source_module": "sage.categories.sets_cat",
+        }
+    ]
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    assert "source_module" in str(raised.value), (
+        "Expected _validate_projection_graph to report the undeclared "
+        f"source_module 'sage.categories.sets_cat'; got: {raised.value}"
+    )
