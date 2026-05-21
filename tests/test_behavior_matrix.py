@@ -840,21 +840,10 @@ def test_false_provider_base_reference_is_detected_by_plugin(tmp_path: Path) -> 
             tuple(projections.values()),
         ),
     )
-    manifest_path = tmp_path / "corrupted-bases-manifest.json"
-    config_path = tmp_path / "mypy.ini"
-    write_manifest(manifest_path, manifest)
-    config_path.write_text(
-        "\n".join(
-            (
-                "[mypy]",
-                "plugins = sage_mypy_category_plugin.plugin",
-                "ignore_missing_imports = True",
-                "",
-                "[sage-mypy-category-plugin]",
-                f"manifest = {manifest_path}",
-                "",
-            )
-        )
+    config_path = _write_package_config_with_cached_manifest(
+        tmp_path,
+        manifest,
+        cache_label="corrupted-bases",
     )
 
     # Include diamond_runtime as a root source so mypy does not silence its errors.
@@ -925,21 +914,10 @@ def test_false_provider_mro_entry_is_detected_by_plugin(tmp_path: Path) -> None:
             tuple(projections.values()),
         ),
     )
-    manifest_path = tmp_path / "corrupted-mro-manifest.json"
-    config_path = tmp_path / "mypy.ini"
-    write_manifest(manifest_path, manifest)
-    config_path.write_text(
-        "\n".join(
-            (
-                "[mypy]",
-                "plugins = sage_mypy_category_plugin.plugin",
-                "ignore_missing_imports = True",
-                "",
-                "[sage-mypy-category-plugin]",
-                f"manifest = {manifest_path}",
-                "",
-            )
-        )
+    config_path = _write_package_config_with_cached_manifest(
+        tmp_path,
+        manifest,
+        cache_label="corrupted-mro",
     )
 
     # Include diamond_runtime as a root source — see the provider_bases test for
@@ -963,6 +941,36 @@ def test_false_provider_mro_entry_is_detected_by_plugin(tmp_path: Path) -> None:
 def _write_plugin_config(tmp_path: Path) -> Path:
     cache_dir = tmp_path / "sage-category-cache"
     config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "ignore_missing_imports = True",
+                "",
+                "[sage-mypy-category-plugin]",
+                "packages = tests.fixtures.invariant_core",
+                "roles = parent",
+                f"cache_dir = {cache_dir}",
+                "",
+            )
+        )
+    )
+    return config_path
+
+
+def _write_package_config_with_cached_manifest(
+    tmp_path: Path,
+    manifest: ProjectionManifest,
+    *,
+    cache_label: str,
+) -> Path:
+    cache_dir = tmp_path / f"{cache_label}-cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = cache_dir / "projection-manifest.json"
+    write_manifest(manifest_path, manifest)
+
+    config_path = tmp_path / f"{cache_label}.ini"
     config_path.write_text(
         "\n".join(
             (

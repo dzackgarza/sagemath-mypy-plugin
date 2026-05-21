@@ -1203,26 +1203,8 @@ def test_plugin_fails_strict_projection_for_missing_provider_references(
 
 
 def test_plugin_reports_semantic_manifest_config_data(tmp_path: Path) -> None:
-    projections = _provider_projections(
-        CATEGORY_FULLNAMES,
-        roles=("parent",),
-    )
-    manifest = ProjectionManifest(
-        schema_version=1,
-        generated_by="tests",
-        sage_version="10.7",
-        sage_git_revision="abc123abc123abc123abc123abc123abc123abcd",
-        python_version="3.12.13",
-        projections=tuple(projections.values()),
-        external_runtime_classes=external_runtime_class_records_for_test_manifest(
-            tuple(projections.values()),
-            source_modules=(DIAMOND_SOURCE_MODULE,),
-        ),
-        source_modules=(DIAMOND_SOURCE_MODULE,),
-    )
-    manifest_path = tmp_path / "sage-category-projections.json"
+    cache_dir = tmp_path / "sage-category-cache"
     config_path = tmp_path / "mypy.ini"
-    write_manifest(manifest_path, manifest)
     config_path.write_text(
         "\n".join(
             (
@@ -1230,7 +1212,9 @@ def test_plugin_reports_semantic_manifest_config_data(tmp_path: Path) -> None:
                 "plugins = sage_mypy_category_plugin.plugin",
                 "",
                 "[sage-mypy-category-plugin]",
-                f"manifest = {manifest_path}",
+                "packages = tests.fixtures.invariant_core",
+                "roles = parent",
+                f"cache_dir = {cache_dir}",
                 "",
             )
         )
@@ -1242,6 +1226,7 @@ def test_plugin_reports_semantic_manifest_config_data(tmp_path: Path) -> None:
     config_data = plugin.report_config_data(
         ctx=None,  # type: ignore[arg-type]
     )
+    manifest = load_manifest(cache_dir / "projection-manifest.json")
 
     assert config_data["manifest_semantic_projection_digest"] == (
         manifest.semantic_projection_digest
@@ -1250,21 +1235,23 @@ def test_plugin_reports_semantic_manifest_config_data(tmp_path: Path) -> None:
         manifest.plugin_schema_version
     )
     assert config_data["manifest_sage_version"] == manifest.sage_version
-    assert config_data["manifest_sage_git_revision"] == manifest.sage_git_revision
+    assert config_data["manifest_sage_git_revision"] == (
+        manifest.sage_git_revision or ""
+    )
     assert config_data["manifest_mypy_min_version"] == manifest.mypy_min_version
     assert config_data["manifest_mypy_max_version"] == manifest.mypy_max_version
     assert config_data["manifest_source_module_digest"] == (
         manifest.source_module_digest
     )
-    assert manifest.source_module_by_module == {FIXTURE_MODULE: DIAMOND_SOURCE_MODULE}
+    assert FIXTURE_MODULE in manifest.source_module_by_module
 
 
 def test_stale_reason_detects_missing_file(tmp_path: Path) -> None:
     """_source_modules_stale_reason returns the 'file is missing' diagnostic.
 
-    The plugin debug-manifest path regenerates stubs before validation, so the
-    file-missing branch cannot be exercised via the full plugin init.  The
-    detection function itself is the owned unit; test it directly.
+    Package-mode plugin init regenerates a missing cache before validating it, so
+    the file-missing branch is tested directly against the owned stale-detection
+    logic.
     """
     missing_path = tmp_path / "gone.py"
     # Never created — simulates a deleted source file.
