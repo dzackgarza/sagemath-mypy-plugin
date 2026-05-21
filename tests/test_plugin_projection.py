@@ -545,6 +545,52 @@ def test_plugin_generates_manifest_from_packages_config(tmp_path: Path) -> None:
     assert bottom_provider in plugin._projection_by_provider
 
 
+def test_package_mode_projects_category_specs_like_typeinfo_graph(
+    tmp_path: Path,
+) -> None:
+    cache_dir = tmp_path / "sage-category-cache"
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                "[sage-mypy-category-plugin]",
+                "packages = tests.fixtures.invariant_core.category_specs_like",
+                "roles = parent",
+                f"cache_dir = {cache_dir}",
+                "",
+            )
+        )
+    )
+
+    result = _build_fixture(
+        config_path,
+        tmp_path,
+        fixture_path=CATEGORY_SPECS_LIKE_SUBCATEGORY_PATH,
+        fixture_module=CATEGORY_SPECS_LIKE_SUBCATEGORY_MODULE,
+    )
+    assert result.errors == []
+
+    manifest = load_manifest(cache_dir / "projection-manifest.json")
+    projection = manifest.projection_by_provider[
+        CATEGORY_SPECS_LIKE_COMMUTATIVE_PROVIDER
+    ]
+    info = _nested_typeinfo(
+        result,
+        module=CATEGORY_SPECS_LIKE_SUBCATEGORY_MODULE,
+        outer="_CommutativeRings",
+        inner="ParentMethods",
+    )
+
+    observed_bases = tuple(base.type.fullname for base in info.bases)
+    observed_mro = tuple(mro_info.fullname for mro_info in info.mro)
+
+    assert observed_bases == projection.provider_bases
+    assert observed_mro == (*projection.provider_mro, "builtins.object")
+
+
 def test_plugin_regenerates_from_clean_cache(tmp_path: Path) -> None:
     """Phase 1A: plugin init regenerates when no cache exists."""
     cache_dir = tmp_path / "sage-category-cache"
@@ -965,7 +1011,6 @@ def _importable_module_name(fullname: str) -> str:
 # what the manifest says, no more and no less.  A corrupted manifest therefore
 # produces a detectable, quantifiably wrong TypeInfo graph.
 # ─────────────────────────────────────────────────────────────────────────────
-
 
 
 
