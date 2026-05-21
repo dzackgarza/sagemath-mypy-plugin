@@ -212,31 +212,6 @@ def _supported_provider_projections(
         if not _is_unsupported_provider(projection.role, provider)
     }
 
-
-def _projections_with_resolved_bases(
-    projections: dict[str, ProviderProjection],
-) -> dict[str, ProviderProjection]:
-    """Filter to only projections whose provider_bases and provider_mro
-    elements are all present as projection keys.
-
-    When consumer categories raise exceptions during introspection, they
-    are skipped. Their providers are not projected, but
-    _record_discovered_runtime_provider_projections may still create
-    projections for traced runtime classes that reference the skipped
-    providers as bases. These orphaned projections must be excluded to
-    satisfy the manifest's reference-integrity validation.
-    """
-    provider_keys = frozenset(projections)
-    result: dict[str, ProviderProjection] = {}
-    for provider, projection in projections.items():
-        if all(
-            base in provider_keys
-            for base in (*projection.provider_bases, *projection.provider_mro)
-        ):
-            result[provider] = projection
-    return result
-
-
 def concrete_parent_records_for_factories(
     factory_fullnames: Iterable[str],
 ) -> dict[str, ConcreteParentRecord]:
