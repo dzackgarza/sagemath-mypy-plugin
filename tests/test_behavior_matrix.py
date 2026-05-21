@@ -844,6 +844,7 @@ def test_false_provider_base_reference_is_detected_by_plugin(tmp_path: Path) -> 
         tmp_path,
         manifest,
         cache_label="corrupted-bases",
+        strict=True,
     )
 
     # Include diamond_runtime as a root source so mypy does not silence its errors.
@@ -864,6 +865,62 @@ def test_false_provider_base_reference_is_detected_by_plugin(tmp_path: Path) -> 
         f"Expected 'provider_bases references missing symbols' error for ghost manifest; "
         f"got: {result.errors}"
     )
+
+
+def test_false_provider_base_reference_is_skipped_in_non_strict_mode(
+    tmp_path: Path,
+) -> None:
+    """Non-strict mode does not emit plugin projection errors for missing bases."""
+    category_fullnames = list(BASE_CATEGORY_FULLNAMES)
+    category_fullnames.extend(BEHAVIOR_CASES["valid"][1:])
+    projections: dict[str, ProviderProjection] = dict(
+        provider_projections_for_categories(
+            tuple(category_fullnames),
+            roles=("parent",),
+        )
+    )
+
+    ghost_provider = "tests.fixtures.phantom.NonStrictGhostCategory.ParentMethods"
+    projections[ghost_provider] = _ghost_provider_projection(ghost_provider)
+
+    bottom_provider = (
+        "tests.fixtures.invariant_core.diamond_runtime.BottomCategory.ParentMethods"
+    )
+    original = projections[bottom_provider]
+    projections[bottom_provider] = original.model_copy(
+        update={
+            "provider_bases": (*original.provider_bases, ghost_provider),
+            "provider_mro": (*original.provider_mro, ghost_provider),
+        }
+    )
+
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=tuple(projections.values()),
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            tuple(projections.values()),
+        ),
+    )
+    config_path = _write_package_config_with_cached_manifest(
+        tmp_path,
+        manifest,
+        cache_label="non-strict-corrupted-bases",
+        strict=False,
+    )
+
+    result = _run_mypy(
+        (BEHAVIOR_CASES["valid"][0], "tests.fixtures.invariant_core.diamond_runtime"),
+        config_path,
+        tmp_path,
+    )
+
+    assert not any(
+        "provider_bases references missing symbols" in e for e in result.errors
+    ), result.errors
+    assert result.errors
 
 
 def test_false_provider_mro_entry_is_detected_by_plugin(tmp_path: Path) -> None:
@@ -918,6 +975,7 @@ def test_false_provider_mro_entry_is_detected_by_plugin(tmp_path: Path) -> None:
         tmp_path,
         manifest,
         cache_label="corrupted-mro",
+        strict=True,
     )
 
     # Include diamond_runtime as a root source — see the provider_bases test for
@@ -964,6 +1022,7 @@ def _write_package_config_with_cached_manifest(
     manifest: ProjectionManifest,
     *,
     cache_label: str,
+    strict: bool,
 ) -> Path:
     cache_dir = tmp_path / f"{cache_label}-cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -981,6 +1040,7 @@ def _write_package_config_with_cached_manifest(
                 "[sage-mypy-category-plugin]",
                 "packages = tests.fixtures.invariant_core",
                 "roles = parent",
+                f"strict = {str(strict).lower()}",
                 f"cache_dir = {cache_dir}",
                 "",
             )

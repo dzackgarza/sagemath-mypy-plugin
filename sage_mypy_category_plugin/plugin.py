@@ -47,6 +47,7 @@ class SageCategoryProjectionPlugin(Plugin):
             # Passthrough: plugin is listed in [mypy] plugins but has no
             # [sage-mypy-category-plugin] section or packages configured.
             # No generation, no projection, no stubs.
+            self._strict = config.strict
             self._manifest = ProjectionManifest.model_construct(
                 projections=(), source_modules=[]
             )
@@ -56,6 +57,7 @@ class SageCategoryProjectionPlugin(Plugin):
             self._source_modules: tuple[str, ...] = ()
             return
 
+        self._strict = config.strict
         self._manifest, self._manifest_path = _generate_and_cache(config)
         self._manifest = load_manifest(self._manifest_path)
 
@@ -123,11 +125,11 @@ class SageCategoryProjectionPlugin(Plugin):
     def _customize_provider_mro(self, ctx: ClassDefContext) -> None:
         info = ctx.cls.info
         projection = self._projection_by_provider[info.fullname]
-        base_infos = _lookup_provider_bases(ctx, projection)
+        base_infos = _lookup_provider_bases(ctx, projection, strict=self._strict)
         if base_infos is None:
             return
 
-        mro_infos = _lookup_provider_mro(ctx, projection)
+        mro_infos = _lookup_provider_mro(ctx, projection, strict=self._strict)
         object_info = _lookup_typeinfo(ctx, MYPY_OBJECT)
         if mro_infos is None or object_info is None:
             return
@@ -141,35 +143,42 @@ class SageCategoryProjectionPlugin(Plugin):
             if mro_info.fullname != MYPY_OBJECT
         )
         if observed_provider_mro != projection.provider_mro:
-            ctx.api.fail(
-                "Sage category provider MRO mismatch: "
-                f"expected {projection.provider_mro!r}, "
-                f"observed {observed_provider_mro!r}",
-                ctx.cls,
-            )
+            if self._strict:
+                ctx.api.fail(
+                    "Sage category provider MRO mismatch: "
+                    f"expected {projection.provider_mro!r}, "
+                    f"observed {observed_provider_mro!r}",
+                    ctx.cls,
+                )
 
 
 def _lookup_provider_bases(
     ctx: ClassDefContext,
     projection: ProviderProjection,
+    *,
+    strict: bool,
 ) -> tuple[TypeInfo, ...] | None:
     return _lookup_typeinfos(
         ctx=ctx,
         fullnames=projection.provider_bases,
         projection_field="provider_bases",
         projection_fullname=projection.provider,
+        strict=strict,
     )
 
 
 def _lookup_provider_mro(
     ctx: ClassDefContext,
     projection: ProviderProjection,
+    *,
+    strict: bool,
 ) -> tuple[TypeInfo, ...] | None:
     return _lookup_typeinfos(
         ctx=ctx,
         fullnames=projection.provider_mro,
         projection_field="provider_mro",
         projection_fullname=projection.provider,
+        strict=strict,
     )
 
 
@@ -179,6 +188,7 @@ def _lookup_typeinfos(
     projection_field: str,
     projection_fullname: str,
     fullnames: tuple[str, ...],
+    strict: bool,
 ) -> tuple[TypeInfo, ...] | None:
     typeinfos: list[TypeInfo] = []
     missing_names: list[str] = []
@@ -195,6 +205,8 @@ def _lookup_typeinfos(
             # defer so mypy reprocesses this class definition after more
             # TypeInfos are available.
             ctx.api.defer()
+            return None
+        if not strict:
             return None
         ctx.api.fail(
             "Sage category provider projection for "
