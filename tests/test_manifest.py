@@ -1352,3 +1352,29 @@ def test_roles_share_projection_encodes_role_alias_semantics() -> None:
     assert not roles_share_projection("element", "homset_parent")
     assert not roles_share_projection("homset_parent", "homset_element")
     assert not roles_share_projection("subcategory", "morphism")
+
+
+def test_manifest_rejects_inverted_mypy_version_interval() -> None:
+    """_validate_mypy_interval must reject min > max independently of current mypy.
+
+    The validator has two distinct branches:
+      1. mypy_min > mypy_max — the interval itself is incoherent
+      2. current mypy outside [min, max] — valid interval, wrong runtime version
+
+    This test targets branch 1.  If the check is missing or the order is wrong
+    (e.g. checking current placement before validating the interval) this test
+    would either pass silently or raise for the wrong reason.
+    """
+    payload = _manifest_payload()
+    # 2.0.0 > 1.0.0, so the interval [2.0.0, 1.0.0] is incoherent regardless
+    # of where the current mypy version falls.
+    payload["mypy_min_version"] = "2.0.0"
+    payload["mypy_max_version"] = "1.0.0"
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    assert "incompatible mypy version interval" in str(raised.value), (
+        "Expected _validate_mypy_interval to report the incoherent interval "
+        f"[2.0.0, 1.0.0]; got: {raised.value}"
+    )
