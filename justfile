@@ -148,6 +148,12 @@ release-check:
   just test-mutation
 
 [group('build')]
+install-sidecar:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  sage -python -m pip install -e sage-stubs/
+
+[group('build')]
 generate-manifest *args:
   #!/usr/bin/env bash
   set -euo pipefail

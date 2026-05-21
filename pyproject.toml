@@ -13,6 +13,14 @@ dependencies = [
     "pydantic>=2.12,<3",
 ]
 
+[project.optional-dependencies]
+# PEP 561 sidecar stub package for Sage 10.7 infrastructure interfaces.
+# When installed, mypy auto-discovers it and no mypy_path configuration is needed
+# for sage.categories.*, sage.structure.*, sage.misc.*, etc.
+# Install: sage -python -m pip install "sage-mypy-category-plugin[sage10_7]"
+# (or: just install-sidecar)
+sage10_7 = ["sage-stubs==10.7.0"]
+
 [tool.setuptools.packages.find]
 include = ["sage_mypy_category_plugin*"]
 
