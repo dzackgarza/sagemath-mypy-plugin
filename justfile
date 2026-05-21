@@ -144,12 +144,12 @@ test-supported-mypy:
 [group('test')]
 release-check:
   just test-performance
+  just test-structural -q
+  just test-manifest -q
   just test-production-lifecycle -q
   just test-plugin-projection -q
   just test-behavior -q
   just test tests/test_automation_contract.py -q
-  just consumer-structural-fresh
-  just consumer-structural-all-fresh
   just test-supported-mypy
   just test-mutation
 

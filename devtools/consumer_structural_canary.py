@@ -102,7 +102,6 @@ def main() -> None:
     print(f"checked_provider_count={structural_audit.checked_provider_count}")
     print(f"graph_absent_provider_count={structural_audit.graph_absent_provider_count}")
     print(f"missing_typeinfo_count={structural_audit.missing_typeinfo_count}")
-    print(f"mypy_error_count={len(result.errors)}")
     for provider in CANARY_PROVIDERS:
         projection = manifest.projection_by_provider[provider]
         print(

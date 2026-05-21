@@ -21,8 +21,6 @@ def test_justfile_exposes_final_state_validation_recipes() -> None:
     recipes = frozenset(result.stdout.split())
 
     assert {
-        "consumer-structural",
-        "consumer-structural-fresh",
         "generate-manifest",
         "release-check",
         "test",
@@ -74,11 +72,13 @@ def test_release_check_runs_final_architecture_gates() -> None:
     release_check = release_check.split("\n[group(", maxsplit=1)[0]
 
     assert "just test-performance" in release_check
+    assert "just test-structural -q" in release_check
+    assert "just test-manifest -q" in release_check
     assert "just test-production-lifecycle -q" in release_check
     assert "just test-plugin-projection -q" in release_check
     assert "just test-behavior -q" in release_check
     assert "just test tests/test_automation_contract.py -q" in release_check
-    assert "just consumer-structural-fresh" in release_check
+    assert "consumer-structural" not in release_check
     assert "just test-supported-mypy" in release_check
     assert "just test-mutation" in release_check
 
