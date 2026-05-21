@@ -86,6 +86,13 @@ def test_plugin_init_does_not_generate_or_expose_upstream_sage_stubs() -> None:
     assert "cache_dir/stubs" not in plugin_source
 
 
+def test_plugin_config_does_not_accept_pre_generated_manifest_option() -> None:
+    plugin_source = (PLUGIN_PACKAGE / "plugin.py").read_text(encoding="utf-8")
+
+    assert "debug_manifest" not in plugin_source
+    assert 'has_option(CONFIG_SECTION, "manifest")' not in plugin_source
+
+
 # ---------------------------------------------------------------------------
 # CONTRACT.md sentinel checks — automated enforcement of banned patterns
 # ---------------------------------------------------------------------------

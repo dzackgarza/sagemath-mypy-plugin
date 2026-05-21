@@ -1038,7 +1038,8 @@ def _run_nested_provider_mypy(
         projections=tuple(projections.values()),
     )
     config_path = tmp_path / "nested-provider-mypy.ini"
-    manifest_path = tmp_path / "nested-provider-manifest.json"
+    cache_dir = tmp_path / "nested-provider-cache"
+    manifest_path = cache_dir / "projection-manifest.json"
     manifest = ProjectionManifest(
         schema_version=1,
         generated_by="tests",
@@ -1051,6 +1052,7 @@ def _run_nested_provider_mypy(
         ),
         source_modules=source_modules,
     )
+    cache_dir.mkdir(parents=True, exist_ok=True)
     write_manifest(manifest_path, manifest)
     config_path.write_text(
         "\n".join(
@@ -1060,7 +1062,9 @@ def _run_nested_provider_mypy(
                 "ignore_missing_imports = True",
                 "",
                 "[sage-mypy-category-plugin]",
-                f"manifest = {manifest_path}",
+                "packages = sage.categories",
+                "roles = parent",
+                f"cache_dir = {cache_dir}",
                 "",
             )
         )

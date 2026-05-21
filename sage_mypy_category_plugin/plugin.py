@@ -36,7 +36,6 @@ class PluginConfig:
     roles: tuple[ProviderRole, ...] = DEFAULT_ROLES
     cache_dir: Path | None = None
     strict: bool = False
-    debug_manifest: Path | None = None
 
 
 class SageCategoryProjectionPlugin(Plugin):
@@ -44,7 +43,7 @@ class SageCategoryProjectionPlugin(Plugin):
         super().__init__(options)
         config = _read_plugin_config(options)
 
-        if not config.packages and config.debug_manifest is None:
+        if not config.packages:
             # Passthrough: plugin is listed in [mypy] plugins but has no
             # [sage-mypy-category-plugin] section or packages configured.
             # No generation, no projection, no stubs.
@@ -57,12 +56,8 @@ class SageCategoryProjectionPlugin(Plugin):
             self._source_modules: tuple[str, ...] = ()
             return
 
-        if config.debug_manifest is not None:
-            self._manifest = _load_manifest_for_plugin(config.debug_manifest)
-            self._manifest_path = config.debug_manifest
-        else:
-            self._manifest, self._manifest_path = _generate_and_cache(config)
-            self._manifest = load_manifest(self._manifest_path)
+        self._manifest, self._manifest_path = _generate_and_cache(config)
+        self._manifest = load_manifest(self._manifest_path)
 
         _validate_source_module_metadata(self._manifest.source_modules)
         self._manifest_digest = sha256(self._manifest_path.read_bytes()).hexdigest()
@@ -247,10 +242,9 @@ def _read_plugin_config(options: Options) -> PluginConfig:
         # enforce and no configured packages to project.
         return PluginConfig()
 
-    has_manifest = parser.has_option(CONFIG_SECTION, "manifest")
     has_packages = parser.has_option(CONFIG_SECTION, "packages")
 
-    if not has_manifest and not has_packages:
+    if not has_packages:
         raise CompileError(
             [
                 f"[{CONFIG_SECTION}] section in {config_path} must specify "
@@ -278,19 +272,11 @@ def _read_plugin_config(options: Options) -> PluginConfig:
     if parser.has_option(CONFIG_SECTION, "strict"):
         strict = parser.getboolean(CONFIG_SECTION, "strict")
 
-    debug_manifest: Path | None = None
-    if has_manifest:
-        raw_path = parser.get(CONFIG_SECTION, "manifest")
-        debug_manifest = Path(raw_path)
-        if not debug_manifest.is_absolute():
-            debug_manifest = config_path.parent / debug_manifest
-
     return PluginConfig(
         packages=packages,
         roles=roles,
         cache_dir=cache_dir,
         strict=strict,
-        debug_manifest=debug_manifest,
     )
 
 
@@ -394,25 +380,6 @@ def _resolve_cache_dir(config: PluginConfig) -> Path:
     if config.cache_dir is not None:
         return config.cache_dir
     return Path(DEFAULT_CACHE_DIR)
-
-
-def _load_manifest_for_plugin(path: Path) -> ProjectionManifest:
-    try:
-        return load_manifest(path)
-    except FileNotFoundError as error:
-        raise CompileError(
-            [
-                f"Could not read Sage category projection manifest {path}: "
-                "file is missing"
-            ]
-        ) from error
-    except ValidationError as error:
-        raise CompileError(
-            [
-                f"Invalid Sage category projection manifest {path}: "
-                f"{_format_validation_error(error)}"
-            ]
-        ) from error
 
 
 def _format_validation_error(error: ValidationError) -> str:
