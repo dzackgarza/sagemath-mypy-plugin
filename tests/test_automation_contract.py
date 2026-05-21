@@ -68,6 +68,11 @@ def test_consumer_config_writer_is_not_installed_plugin_surface() -> None:
     assert not (PLUGIN_PACKAGE / "write_consumer_config.py").exists()
 
 
+def test_generated_stub_modules_are_not_installed_plugin_surface() -> None:
+    assert not (PLUGIN_PACKAGE / "stubs.py").exists()
+    assert not (PLUGIN_PACKAGE / "static_stubs.py").exists()
+
+
 def test_readme_documents_only_package_mode_user_config() -> None:
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
 
