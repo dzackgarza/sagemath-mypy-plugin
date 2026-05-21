@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from sage_mypy_category_plugin.imports import import_fullname
+from sage_mypy_category_plugin.imports import import_module_and_qualname
 from sage_mypy_category_plugin.oracle import RoleProjection
 from sage_mypy_category_plugin.oracle import concrete_parent_records_for_factories
 from sage_mypy_category_plugin.oracle import provider_projections_for_categories
@@ -627,3 +628,44 @@ def test_concrete_parent_record_matches_sage_initialized_category() -> None:
         "sage.categories.semigroups.Semigroups.ElementMethods",
         "sage.categories.magmas.Magmas.ElementMethods",
     )
+
+
+def test_import_module_and_qualname_rejects_single_part_name() -> None:
+    """import_module_and_qualname requires a dotted (fully-qualified) name.
+
+    A single identifier like 'builtins' has no module/qualname split and is
+    rejected with ValueError before any import attempt.  This boundary check
+    prevents callers from accidentally passing bare module names as fullnames.
+    """
+    with pytest.raises(ValueError, match="fully-qualified"):
+        import_module_and_qualname("singlepart")
+
+
+def test_import_fullname_raises_attribute_error_with_context() -> None:
+    """import_fullname reports the fullname and missing attribute in the error.
+
+    The AttributeError message embeds the full dotted name and the missing
+    attribute name, giving callers enough context to diagnose broken references
+    in category manifests without reading a bare AttributeError from the
+    object repr.
+    """
+    with pytest.raises(AttributeError) as raised:
+        import_fullname("builtins.int.nonexistent_sage_method_xyz")
+
+    message = str(raised.value)
+    assert "nonexistent_sage_method_xyz" in message
+    assert "builtins.int.nonexistent_sage_method_xyz" in message
+
+
+def test_import_module_and_qualname_raises_when_no_prefix_importable() -> None:
+    """import_module_and_qualname raises ModuleNotFoundError for fully unknown names.
+
+    When no prefix of the dotted name resolves to an importable module, the
+    function raises ModuleNotFoundError (not AttributeError or ValueError).
+    This happens for names that belong to packages not installed in the
+    environment.
+    """
+    with pytest.raises(ModuleNotFoundError):
+        import_module_and_qualname(
+            "nonexistent_package_sage_xyz.SubClass.method"
+        )
