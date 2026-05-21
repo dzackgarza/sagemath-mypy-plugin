@@ -191,8 +191,8 @@ cache_dir = .mypy_cache/sage-category-plugin
 The plugin still owns projection generation: it produces or refreshes the
 manifest during `__init__` on first run. No manual generation, no wrapper, no
 environment variable, and no cache-stub `mypy_path` entry are part of the
-production contract. Debug manifest/runtime-alias paths must be documented as
-non-production and may not be counted as release acceptance evidence.
+production contract. Pre-generated manifest and generated-stub paths are not
+release evidence and must not be exposed through normal validation recipes.
 
 ### BP9. Using Any/object/empty provider bases as a success path
 

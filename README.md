@@ -80,11 +80,10 @@ strict = true
 
 | Option | Required | Default | Description |
 |--------|----------|---------|-------------|
-| `packages` | yes (or `manifest`) | — | Python package names to scan for Sage category classes. The plugin imports each package under Sage Python at startup. |
+| `packages` | yes | — | Python package names to scan for Sage category classes. The plugin imports each package under Sage Python at startup. |
 | `roles` | no | `parent` | Provider roles to project. Available: `parent`, `element`, `subcategory`, `morphism`, `homset_parent`, `homset_element`. |
 | `cache_dir` | no | `.mypy_cache/sage-category-plugin` | Directory for the generated projection manifest. Relative paths are resolved from the config file's directory. |
 | `strict` | no | `false` | If `true`, any projection failure (missing TypeInfo, MRO mismatch) causes a hard mypy error instead of a warning. |
-| `manifest` | debug only | — | Path to a pre-generated manifest JSON. Bypasses plugin-owned generation. Not for production use. |
 
 ### Running mypy
 
@@ -102,7 +101,7 @@ The plugin caches the projection manifest in `cache_dir`:
 
 ```
 cache_dir/
-    manifest.json          ← projection manifest (validated Pydantic model)
+    projection-manifest.json  ← projection manifest (validated Pydantic model)
 ```
 
 **What triggers regeneration:**
@@ -123,7 +122,7 @@ cache_dir/
 | Failure | Symptom | Cause | Fix |
 |---------|---------|-------|-----|
 | Missing `[sage-mypy-category-plugin]` section | `CompileError: Missing section` | Config file does not have the plugin section | Add `[sage-mypy-category-plugin]` to `mypy.ini` |
-| Neither `packages` nor `manifest` specified | `CompileError: must specify either 'manifest' or 'packages'` | Config section is present but empty | Add `packages = ...` |
+| `packages` not specified | `CompileError: must specify 'packages'` | Config section is present but empty | Add `packages = ...` |
 | Provider TypeInfo not found | `Sage category provider projection … references missing symbols` | A projected provider class is not visible to mypy (missing sidecar stub or source) | Ensure consumer `packages` are source roots/importable and the Sage-version `sage-stubs` sidecar is installed |
 | MRO mismatch after projection | `Sage category provider MRO mismatch: expected … observed …` | TypeInfo lookup succeeded but mypy resolved a different order | Usually indicates a stale manifest; delete `cache_dir` and rerun |
 | Sage runtime import error | `CompileError: ...` during plugin `__init__` | A package in `packages` cannot be imported under Sage Python | Verify the package is installed and importable: `sage -python -c "import my_package"` |
@@ -134,27 +133,21 @@ cache_dir/
 **Inspect the generated manifest:**
 
 ```bash
-python -m json.tool .mypy_cache/sage-category-plugin/manifest.json | head -100
+python -m json.tool .mypy_cache/sage-category-plugin/projection-manifest.json | head -100
 ```
 
-**Regenerate the manifest manually (CLI resolver):**
+**Generate an inspection manifest manually (CLI resolver):**
 
 ```bash
 just generate-manifest \
-    --packages my_category_package \
+    --package my_category_package \
     --roles parent element \
-    --output .mypy_cache/sage-category-plugin/manifest.json
+    --output .mypy_cache/sage-category-plugin/projection-manifest.json
 ```
 
-**Use a pre-generated manifest for debugging:**
-
-```ini
-[sage-mypy-category-plugin]
-manifest = /path/to/manifest.json
-```
-
-This bypasses plugin-owned generation and uses the specified file directly.
-Useful for bisecting manifest vs. projection issues.
+The CLI resolver is for inspection and bisecting projection issues. It is not
+part of the production mypy path; normal mypy runs generate and refresh their
+own projection manifest from `packages`.
 
 **Run only the behavior test matrix:**
 

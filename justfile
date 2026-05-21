@@ -24,7 +24,6 @@ set shell := ["bash", "-uc"]
     plugin_projection
     production_lifecycle
     resolver_cli
-    stubs
     behavior
     automation
   )
@@ -34,7 +33,6 @@ set shell := ["bash", "-uc"]
     "tests/test_plugin_projection.py"
     "tests/test_production_lifecycle.py"
     "tests/test_resolver_cli.py"
-    "tests/test_stub_generation.py"
     "tests/test_behavior_matrix.py tests/test_role_behavior_matrix.py"
     "tests/test_automation_contract.py"
   )
@@ -78,10 +76,6 @@ test-resolver-cli *args:
   just test tests/test_resolver_cli.py {{args}}
 
 [group('test')]
-test-stubs *args:
-  just test tests/test_stub_generation.py {{args}}
-
-[group('test')]
 test-behavior *args:
   just test tests/test_behavior_matrix.py tests/test_role_behavior_matrix.py {{args}}
 
@@ -91,7 +85,7 @@ test-mutation:
     tests/test_manifest.py::test_manifest_semantic_digest_tracks_projection_changes \
     tests/test_manifest.py::test_manifest_semantic_digest_tracks_unsupported_provider_changes \
     tests/test_manifest.py::test_manifest_source_module_digest_tracks_source_hash_changes \
-    tests/test_plugin_projection.py::test_plugin_reports_manifest_drift_and_rebuilds_projection \
+    tests/test_plugin_projection.py::test_plugin_recovers_from_corrupt_cache_in_packages_mode \
     tests/test_behavior_matrix.py::test_false_provider_base_reference_is_detected_by_plugin \
     tests/test_behavior_matrix.py::test_false_provider_mro_entry_is_detected_by_plugin \
     -q

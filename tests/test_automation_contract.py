@@ -30,7 +30,6 @@ def test_justfile_exposes_final_state_validation_recipes() -> None:
         "test-plugin-projection",
         "test-resolver-cli",
         "test-structural",
-        "test-stubs",
         "test-supported-mypy",
         "typecheck",
     } <= recipes
@@ -62,10 +61,20 @@ def test_production_validation_recipes_do_not_expose_wrapper_or_stub_generation(
 
     assert "consumer-mypy" not in recipes
     assert "generate-stubs" not in recipes
+    assert "test-stubs" not in recipes
 
 
 def test_consumer_config_writer_is_not_installed_plugin_surface() -> None:
     assert not (PLUGIN_PACKAGE / "write_consumer_config.py").exists()
+
+
+def test_readme_documents_only_package_mode_user_config() -> None:
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "manifest = " not in readme
+    assert "mypy_path = .mypy_cache/sage-category-plugin/stubs" not in readme
+    assert "packages =" in readme
+    assert "sage-stubs" in readme
 
 
 # ---------------------------------------------------------------------------

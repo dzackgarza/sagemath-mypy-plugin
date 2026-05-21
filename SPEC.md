@@ -216,7 +216,6 @@ manifested values, keeping A1 true across incremental builds.
 | Fail-loud lookup | `plugin.py:_lookup_typeinfos` |
 | Symbol ordering edges | `plugin.py:get_additional_deps` |
 | Upstream Sage provider visibility | installed Sage-version `sage-stubs` sidecar |
-| Debug/runtime alias stub generation | `stubs.py` + `plugin.py:_generate_and_write_stubs` |
 | Manifest validation tests | `tests/test_manifest.py` |
 | Structural MRO invariant tests | `tests/test_plugin_projection.py` |
 | Behavior matrix tests | `tests/test_behavior_matrix.py` |
