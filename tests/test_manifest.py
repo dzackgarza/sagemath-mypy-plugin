@@ -578,6 +578,22 @@ def test_manifest_rejects_duplicate_source_module_records() -> None:
     assert "duplicate source module" in str(raised.value)
 
 
+def test_manifest_rejects_duplicate_external_runtime_class_records() -> None:
+    payload = _manifest_payload()
+    external_record = {
+        "runtime_class": "sage.structure.parent.Parent",
+        "module": "sage.structure.parent",
+        "static_signature_source": "untyped_external",
+        "source_module": None,
+    }
+    payload["external_runtime_classes"] = [external_record, deepcopy(external_record)]
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    assert "duplicate external runtime class" in str(raised.value)
+
+
 def test_manifest_rejects_duplicate_named_class_records() -> None:
     payload = _manifest_payload()
     named_class_record = _named_class_record().model_dump(mode="json")
