@@ -30,6 +30,9 @@ LEFT_ZERO_SEMIGROUP = "sage.categories.examples.semigroups.LeftZeroSemigroup"
 SELF_RETURN_MODULE = "tests.fixtures.invariant_core.provider_methods"
 SELF_RETURN_CATEGORY = f"{SELF_RETURN_MODULE}.SelfReturnCategory"
 SELF_RETURN_PROVIDER = f"{SELF_RETURN_CATEGORY}.ParentMethods"
+SELF_OBJECT_MODULE = "tests.fixtures.invariant_core.provider_methods_object_self"
+SELF_OBJECT_CATEGORY = f"{SELF_OBJECT_MODULE}.SelfObjectCategory"
+SELF_OBJECT_PROVIDER = f"{SELF_OBJECT_CATEGORY}.ParentMethods"
 AXIOM_FIXTURE_MODULE = "tests.fixtures.invariant_core.axioms"
 NESTED_AXIOM_CATEGORY = f"{AXIOM_FIXTURE_MODULE}.AxiomRootCategory.Finite"
 NESTED_AXIOM_PROVIDER = f"{NESTED_AXIOM_CATEGORY}.ParentMethods"
@@ -568,3 +571,37 @@ def test_resolver_records_self_return_provider_methods(tmp_path: Path) -> None:
         (record.provider, record.name, record.return_type)
         for record in manifest.provider_methods
     ) == ((SELF_RETURN_PROVIDER, "normalized", "Self"),)
+
+
+def test_resolver_records_typing_self_object_return_methods(tmp_path: Path) -> None:
+    """oracle._returns_typing_self must detect the actual typing.Self object.
+
+    provider_methods.py uses ``from __future__ import annotations``, so its
+    ``-> Self`` annotation becomes the string ``"Self"`` at runtime (form 1).
+    This test uses provider_methods_object_self.py which has NO
+    ``from __future__ import annotations``, so ``-> Self`` produces the actual
+    ``typing.Self`` object at runtime (form 2).  A bug that removes the
+    ``_SELF_ANNOTATION_OBJECTS`` check would make this test fail while leaving
+    the string-annotation test green.
+    """
+    manifest_path = tmp_path / "sage-category-self-object-methods.json"
+
+    resolver.main(
+        [
+            "--output",
+            str(manifest_path),
+            "--role",
+            "parent",
+            SELF_OBJECT_CATEGORY,
+        ]
+    )
+
+    manifest = load_manifest(manifest_path)
+
+    assert tuple(
+        (record.provider, record.name, record.return_type)
+        for record in manifest.provider_methods
+    ) == ((SELF_OBJECT_PROVIDER, "normalized", "Self"),), (
+        "oracle._returns_typing_self must recognise the actual typing.Self object "
+        "(not just the string 'Self') — check _SELF_ANNOTATION_OBJECTS in oracle.py"
+    )
