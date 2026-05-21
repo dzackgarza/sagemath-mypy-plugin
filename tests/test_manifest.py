@@ -1411,6 +1411,27 @@ def test_manifest_rejects_inverted_mypy_version_interval() -> None:
     )
 
 
+def test_manifest_rejects_manifest_for_wrong_mypy_version() -> None:
+    """_validate_mypy_interval must reject a manifest whose version pin excludes
+    the running mypy.
+
+    This is the second branch of _validate_mypy_interval: the interval itself
+    is coherent (min ≤ max) but the current mypy falls outside it.  The range
+    [0.0.1, 0.0.2] is guaranteed to exclude any real mypy release.
+    """
+    payload = _manifest_payload()
+    payload["mypy_min_version"] = "0.0.1"
+    payload["mypy_max_version"] = "0.0.2"
+
+    with pytest.raises(ValidationError) as raised:
+        ProjectionManifest.model_validate(payload)
+
+    assert "incompatible mypy version for this manifest" in str(raised.value), (
+        "Expected _validate_mypy_interval to report that the running mypy is "
+        f"outside [0.0.1, 0.0.2]; got: {raised.value}"
+    )
+
+
 def test_manifest_rejects_duplicate_unsupported_provider_records() -> None:
     """_validate_projection_graph must reject the same (role, provider) pair twice.
 
