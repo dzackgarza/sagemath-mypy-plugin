@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from hashlib import sha256
 from pathlib import Path
 
@@ -17,8 +18,29 @@ from sage_mypy_category_plugin.projection import ExternalRuntimeClassRecord
 from sage_mypy_category_plugin.projection import ProviderMethodRecord
 from sage_mypy_category_plugin.projection import ProviderProjection
 from sage_mypy_category_plugin import stubs as stubs_cli
+from sage_mypy_category_plugin.static_stubs import static_stub_sources
 from sage_mypy_category_plugin.stubs import generated_stub_sources
 from sage_mypy_category_plugin.stubs import write_generated_stub_tree
+
+
+def test_static_stubs_are_syntactically_valid_python() -> None:
+    """Every hand-maintained static stub in static_stubs.py must be valid Python syntax.
+
+    A syntax error in a static stub surfaces as a confusing mypy parse error rather
+    than a clear diagnostic pointing at the stub source.  This test proves that all
+    non-empty stub sources in _STUB_SOURCES are parseable by the Python AST, catching
+    any malformed stub before it reaches a mypy run.
+    """
+    for path, source in static_stub_sources().items():
+        if not source:
+            # Empty __init__.pyi package markers have no content to validate.
+            continue
+        try:
+            ast.parse(source, filename=str(path), type_comments=False)
+        except SyntaxError as exc:
+            raise AssertionError(
+                f"Static stub {path} has a syntax error: {exc}"
+            ) from exc
 
 
 def test_generated_stubs_support_manifest_projected_annotation_behavior(
