@@ -72,6 +72,10 @@ test-plugin-projection *args:
   just test tests/test_plugin_projection.py {{args}}
 
 [group('test')]
+test-production-lifecycle *args:
+  just test tests/test_production_lifecycle.py {{args}}
+
+[group('test')]
 test-resolver-cli *args:
   just test tests/test_resolver_cli.py {{args}}
 
@@ -140,6 +144,11 @@ test-supported-mypy:
 [group('test')]
 release-check:
   just test-performance
+  just test-production-lifecycle -q
+  just test-plugin-projection -q
+  just test-behavior -q
+  just test tests/test_automation_contract.py -q
+  just consumer-structural
   just test-supported-mypy
   just test-mutation
 

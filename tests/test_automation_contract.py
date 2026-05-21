@@ -30,6 +30,7 @@ def test_justfile_exposes_final_state_validation_recipes() -> None:
         "test-mutation",
         "test-performance",
         "test-plugin-projection",
+        "test-production-lifecycle",
         "test-resolver-cli",
         "test-structural",
         "test-supported-mypy",
@@ -64,6 +65,21 @@ def test_production_validation_recipes_do_not_expose_wrapper_or_stub_generation(
     assert "consumer-mypy" not in recipes
     assert "generate-stubs" not in recipes
     assert "test-stubs" not in recipes
+
+
+def test_release_check_runs_final_architecture_gates() -> None:
+    justfile = (REPO_ROOT / "justfile").read_text(encoding="utf-8")
+    release_check = justfile.split("[group('test')]\nrelease-check:", maxsplit=1)[1]
+    release_check = release_check.split("\n[group(", maxsplit=1)[0]
+
+    assert "just test-performance" in release_check
+    assert "just test-production-lifecycle -q" in release_check
+    assert "just test-plugin-projection -q" in release_check
+    assert "just test-behavior -q" in release_check
+    assert "just test tests/test_automation_contract.py -q" in release_check
+    assert "just consumer-structural" in release_check
+    assert "just test-supported-mypy" in release_check
+    assert "just test-mutation" in release_check
 
 
 def test_consumer_config_writer_is_not_installed_plugin_surface() -> None:
