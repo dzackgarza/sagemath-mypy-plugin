@@ -157,7 +157,7 @@ release-check:
 install-sidecar:
   #!/usr/bin/env bash
   set -euo pipefail
-  sage -python -m pip install --force-reinstall "git+https://github.com/dzackgarza/sage-stubs@33663a2a0e5a965f205841fb19f90c968e314d34"
+  sage -python -m pip install --force-reinstall "git+https://github.com/dzackgarza/sage-stubs@e0e193e91f4db8b6f961e44dc024f809493984c7"
 
 [group('build')]
 generate-manifest *args:
