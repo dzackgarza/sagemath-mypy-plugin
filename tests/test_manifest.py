@@ -19,6 +19,7 @@ from sage_mypy_category_plugin.manifest import (
     write_manifest,
 )
 from sage_mypy_category_plugin.projection import ConcreteParentRecord
+from sage_mypy_category_plugin.projection import ExternalRuntimeClassRecord
 from sage_mypy_category_plugin.projection import ProviderProjection
 from sage_mypy_category_plugin.projection import roles_share_projection
 
@@ -1254,6 +1255,53 @@ def test_manifest_source_module_digest_tracks_source_mtime_changes() -> None:
     mutated_manifest = ProjectionManifest.model_validate(mutated_payload)
 
     assert base_manifest.source_module_digest != mutated_manifest.source_module_digest
+
+
+def test_external_runtime_class_record_rejects_untyped_with_source_module() -> None:
+    """ExternalRuntimeClassRecord must reject untyped_external + source_module combination.
+
+    An untyped_external class has no source module — it is represented in stubs
+    by a shelled-out empty class stub (class Parent: ...).  Claiming a source_module
+    on an untyped_external record would be contradictory: the stubs.py generator
+    would treat the class as python_source-visible and skip generating the shell,
+    leaving mypy with no definition for the class.
+    """
+    with pytest.raises(ValidationError) as raised:
+        ExternalRuntimeClassRecord(
+            runtime_class="sage.structure.parent.Parent",
+            module="sage.structure.parent",
+            static_signature_source="untyped_external",
+            source_module="sage.structure.parent",
+        )
+
+    assert any(
+        "untyped external runtime classes must not claim a source module" in str(e["msg"])
+        for e in raised.value.errors()
+    )
+
+
+def test_external_runtime_class_record_rejects_python_source_without_source_module() -> None:
+    """ExternalRuntimeClassRecord must reject python_source + missing source_module.
+
+    A python_source class claims that mypy can read its type information from
+    Python source.  Without a source_module, the stubs.py generator cannot
+    record which module's source file carries the class, so the preserved-source
+    metadata is incomplete.  stub and python_source are treated identically
+    for this requirement: both must name their source_module.
+    """
+    for signature_source in ("python_source", "stub"):
+        with pytest.raises(ValidationError) as raised:
+            ExternalRuntimeClassRecord(
+                runtime_class="sage.categories.sets_cat.Sets.parent_class",
+                module="sage.categories.sets_cat",
+                static_signature_source=signature_source,  # type: ignore[arg-type]
+                source_module=None,
+            )
+
+        assert any(
+            "source_module" in str(e["msg"])
+            for e in raised.value.errors()
+        ), f"Expected source_module error for {signature_source!r}"
 
 
 def test_roles_share_projection_encodes_role_alias_semantics() -> None:
