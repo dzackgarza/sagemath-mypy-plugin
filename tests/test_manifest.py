@@ -20,6 +20,7 @@ from sage_mypy_category_plugin.manifest import (
 )
 from sage_mypy_category_plugin.projection import ConcreteParentRecord
 from sage_mypy_category_plugin.projection import ExternalRuntimeClassRecord
+from sage_mypy_category_plugin.projection import ProviderMethodRecord
 from sage_mypy_category_plugin.projection import ProviderProjection
 from sage_mypy_category_plugin.projection import roles_share_projection
 
@@ -1463,3 +1464,31 @@ def test_manifest_rejects_duplicate_provider_method_records() -> None:
         ProjectionManifest.model_validate(payload)
 
     assert "duplicate provider method" in str(raised.value)
+
+
+def test_provider_method_record_rejects_non_identifier_method_name() -> None:
+    """ProviderMethodRecord must reject method names that are not Python identifiers.
+
+    The stubs generator emits ``def {name}(self) -> ...`` directly.  A non-identifier
+    name would produce syntactically invalid stubs, so the validator must catch it
+    at manifest construction time rather than at stub-write time.
+    """
+    invalid_names = (
+        "not.a.method",   # dotted — passes as a fullname but not an identifier
+        "123start",       # starts with a digit
+        "has space",      # contains a space
+        "",               # empty string
+    )
+    for name in invalid_names:
+        with pytest.raises(ValidationError) as raised:
+            ProviderMethodRecord(
+                provider=(
+                    "tests.fixtures.invariant_core.diamond_runtime.TopCategory.ParentMethods"
+                ),
+                name=name,
+                return_type="Self",
+            )
+        assert any(
+            "identifier" in str(e["msg"]) or "name" in str(e["msg"])
+            for e in raised.value.errors()
+        ), f"Expected identifier error for name {name!r}; got: {raised.value}"
