@@ -18,6 +18,10 @@ DEFAULT_WORK_DIR = Path(".mypy_cache/sage-category-plugin-consumer-canary")
 DEFAULT_ROLES = (
     "parent",
     "element",
+    "subcategory",
+    "morphism",
+    "homset_parent",
+    "homset_element",
 )
 CANARY_MODULES = (
     "category_specs.cat",
