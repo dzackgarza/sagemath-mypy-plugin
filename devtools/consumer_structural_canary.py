@@ -11,6 +11,7 @@ from mypy.nodes import TypeInfo
 from mypy.options import Options
 
 from sage_mypy_category_plugin.manifest import ProjectionManifest, load_manifest
+from sage_mypy_category_plugin.projection import ProviderProjection
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -58,11 +59,20 @@ class StructuralAudit:
     checked_provider_count: int
     graph_absent_provider_count: int
     missing_typeinfo_count: int
+    projected_ancestor_missing_typeinfo_count: int
     mismatched_provider_count: int
     checked_providers: tuple[str, ...]
     graph_absent_providers: tuple[str, ...]
     missing_typeinfos: tuple[str, ...]
+    projected_ancestor_missing_typeinfos: tuple[ProjectedAncestorMissing, ...]
     mismatches: tuple[ProviderMismatch, ...]
+
+
+@dataclass(frozen=True)
+class ProjectedAncestorMissing:
+    provider: str
+    ancestor: str
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -148,6 +158,10 @@ def main() -> None:
     print(f"checked_provider_count={structural_audit.checked_provider_count}")
     print(f"graph_absent_provider_count={structural_audit.graph_absent_provider_count}")
     print(f"missing_typeinfo_count={structural_audit.missing_typeinfo_count}")
+    print(
+        "projected_ancestor_missing_typeinfo_count="
+        f"{structural_audit.projected_ancestor_missing_typeinfo_count}"
+    )
     print(f"mismatched_provider_count={structural_audit.mismatched_provider_count}")
     print(f"negative_injected_error_count={negative_error_count}")
     print(f"artifact_dir={artifact_dir}")
@@ -373,6 +387,7 @@ def _provider_typeinfos_audit(
     checked_providers: list[str] = []
     graph_absent_providers: list[str] = []
     missing_typeinfos: list[str] = []
+    projected_ancestor_missing_typeinfos: list[ProjectedAncestorMissing] = []
     mismatches: list[ProviderMismatch] = []
     source_modules = tuple(record.module for record in manifest.source_modules)
     for projection in manifest.projections:
@@ -387,6 +402,25 @@ def _provider_typeinfos_audit(
         if info is None:
             missing_typeinfos.append(provider)
             continue
+        for ancestor in _projected_ancestors(projection):
+            ancestor_module = _graph_module_for_fullname(result, ancestor)
+            if ancestor_module is None:
+                projected_ancestor_missing_typeinfos.append(
+                    ProjectedAncestorMissing(
+                        provider=provider,
+                        ancestor=ancestor,
+                        reason="module_absent",
+                    )
+                )
+                continue
+            if _typeinfo_for_fullname(result, ancestor, ancestor_module) is None:
+                projected_ancestor_missing_typeinfos.append(
+                    ProjectedAncestorMissing(
+                        provider=provider,
+                        ancestor=ancestor,
+                        reason="typeinfo_absent",
+                    )
+                )
         observed_bases = tuple(base.type.fullname for base in info.bases)
         observed_mro = tuple(
             mro_info.fullname
@@ -418,10 +452,14 @@ def _provider_typeinfos_audit(
         checked_provider_count=checked_provider_count,
         graph_absent_provider_count=len(graph_absent_providers),
         missing_typeinfo_count=len(missing_typeinfos),
+        projected_ancestor_missing_typeinfo_count=len(
+            projected_ancestor_missing_typeinfos
+        ),
         mismatched_provider_count=len({mismatch.provider for mismatch in mismatches}),
         checked_providers=tuple(checked_providers),
         graph_absent_providers=tuple(graph_absent_providers),
         missing_typeinfos=tuple(missing_typeinfos),
+        projected_ancestor_missing_typeinfos=tuple(projected_ancestor_missing_typeinfos),
         mismatches=tuple(mismatches),
     )
 
@@ -450,6 +488,12 @@ def _assert_provider_typeinfos_match_manifest(
     if structural_audit.missing_typeinfos:
         missing = "\n  ".join(structural_audit.missing_typeinfos)
         raise AssertionError(f"Missing TypeInfo for loaded providers:\n  {missing}")
+    if structural_audit.projected_ancestor_missing_typeinfos:
+        missing = "\n  ".join(
+            f"{entry.provider} -> {entry.ancestor} ({entry.reason})"
+            for entry in structural_audit.projected_ancestor_missing_typeinfos
+        )
+        raise AssertionError(f"Missing projected ancestor TypeInfo:\n  {missing}")
 
 
 def _write_artifacts(
@@ -506,6 +550,7 @@ def _artifact_payload(
             and structural_audit.graph_absent_provider_count
         )
         or structural_audit.missing_typeinfo_count
+        or structural_audit.projected_ancestor_missing_typeinfo_count
         or structural_audit.mismatched_provider_count
     ):
         status = "fail"
@@ -529,10 +574,21 @@ def _artifact_payload(
         "checked_provider_count": structural_audit.checked_provider_count,
         "graph_absent_provider_count": structural_audit.graph_absent_provider_count,
         "missing_typeinfo_count": structural_audit.missing_typeinfo_count,
+        "projected_ancestor_missing_typeinfo_count": (
+            structural_audit.projected_ancestor_missing_typeinfo_count
+        ),
         "mismatched_provider_count": structural_audit.mismatched_provider_count,
         "checked_providers": structural_audit.checked_providers,
         "graph_absent_providers": structural_audit.graph_absent_providers,
         "missing_typeinfos": structural_audit.missing_typeinfos,
+        "projected_ancestor_missing_typeinfos": [
+            {
+                "provider": entry.provider,
+                "ancestor": entry.ancestor,
+                "reason": entry.reason,
+            }
+            for entry in structural_audit.projected_ancestor_missing_typeinfos
+        ],
         "mismatches": [
             {
                 "provider": mismatch.provider,
@@ -552,6 +608,9 @@ def _artifact_payload(
 
 
 def _artifact_markdown(payload: dict[str, object]) -> str:
+    projection_trace_events = payload["projection_trace_events"]
+    if not isinstance(projection_trace_events, list):
+        raise AssertionError("projection_trace_events artifact field must be a list")
     lines = [
         "# Consumer Structural Canary",
         "",
@@ -563,9 +622,11 @@ def _artifact_markdown(payload: dict[str, object]) -> str:
         f"- checked_provider_count: {payload['checked_provider_count']}",
         f"- graph_absent_provider_count: {payload['graph_absent_provider_count']}",
         f"- missing_typeinfo_count: {payload['missing_typeinfo_count']}",
+        "- projected_ancestor_missing_typeinfo_count: "
+        f"{payload['projected_ancestor_missing_typeinfo_count']}",
         f"- mismatched_provider_count: {payload['mismatched_provider_count']}",
         f"- negative_injected_error_count: {payload['negative_injected_error_count']}",
-        f"- projection_trace_event_count: {len(payload['projection_trace_events'])}",
+        f"- projection_trace_event_count: {len(projection_trace_events)}",
         "",
         "## Mismatches",
         "",
@@ -592,6 +653,12 @@ def _artifact_markdown(payload: dict[str, object]) -> str:
             "",
             *_markdown_items(payload["missing_typeinfos"]),
             "",
+            "## Missing Projected Ancestor TypeInfos",
+            "",
+            *_projected_ancestor_missing_markdown_items(
+                payload["projected_ancestor_missing_typeinfos"]
+            ),
+            "",
             "## Graph-Absent Providers",
             "",
             *_markdown_items(payload["graph_absent_providers"]),
@@ -602,7 +669,7 @@ def _artifact_markdown(payload: dict[str, object]) -> str:
             "",
             "## Projection Hook Trace",
             "",
-            *_projection_trace_markdown_items(payload["projection_trace_events"]),
+            *_projection_trace_markdown_items(projection_trace_events),
             "",
         ]
     )
@@ -613,6 +680,25 @@ def _markdown_items(value: object) -> list[str]:
     if not isinstance(value, list | tuple) or not value:
         return ["None."]
     return [f"- `{item}`" for item in value]
+
+
+def _projected_ancestor_missing_markdown_items(value: object) -> list[str]:
+    if not isinstance(value, list) or not value:
+        return ["None."]
+    return [
+        f"- `{entry['provider']}` -> `{entry['ancestor']}` ({entry['reason']})"
+        for entry in value
+        if isinstance(entry, dict)
+    ]
+
+
+def _projected_ancestors(projection: ProviderProjection) -> tuple[str, ...]:
+    ancestors = [
+        ancestor
+        for ancestor in (*projection.provider_bases, *projection.provider_mro)
+        if ancestor != projection.provider and ancestor != "builtins.object"
+    ]
+    return tuple(dict.fromkeys(ancestors))
 
 
 def _projection_trace_events(
@@ -687,6 +773,17 @@ def _source_module_for_fullname(
     matches = [
         module
         for module in source_modules
+        if fullname == module or fullname.startswith(f"{module}.")
+    ]
+    if not matches:
+        return None
+    return max(matches, key=len)
+
+
+def _graph_module_for_fullname(result: BuildResult, fullname: str) -> str | None:
+    matches = [
+        module
+        for module in result.graph
         if fullname == module or fullname.startswith(f"{module}.")
     ]
     if not matches:

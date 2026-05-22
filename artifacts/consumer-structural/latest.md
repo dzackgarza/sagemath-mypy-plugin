@@ -8,6 +8,7 @@
 - checked_provider_count: 187
 - graph_absent_provider_count: 131
 - missing_typeinfo_count: 0
+- projected_ancestor_missing_typeinfo_count: 0
 - mismatched_provider_count: 0
 - negative_injected_error_count: 1
 - projection_trace_event_count: 0
@@ -17,6 +18,10 @@
 None.
 
 ## Missing TypeInfos
+
+None.
+
+## Missing Projected Ancestor TypeInfos
 
 None.
 
@@ -355,7 +360,7 @@ None.
 - `/home/dzack/research/category_specs/rings/__init__.py:2130: error: "Category" has no attribute "Quotients"  [attr-defined]`
 - `/home/dzack/research/category_specs/rings/__init__.py:2142: error: "Category" has no attribute "Subobjects"  [attr-defined]`
 - `/home/dzack/research/category_specs/rings/__init__.py:2167: error: Incompatible types in assignment (expression has type "type[RingHomCategory]", base class "Category" defined the type as "Callable[[], Category]")  [assignment]`
-- `/tmp/tmp.Tzwd7m8Rxl/negative_consumer_probe.py:5: error: Incompatible types in assignment (expression has type "int", variable has type "_SetObjectMethods")  [assignment]`
+- `/tmp/tmp.POQVipNnh2/negative_consumer_probe.py:5: error: Incompatible types in assignment (expression has type "int", variable has type "_SetObjectMethods")  [assignment]`
 
 ## Projection Hook Trace
 
