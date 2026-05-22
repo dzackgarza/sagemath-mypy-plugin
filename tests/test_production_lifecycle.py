@@ -9,6 +9,8 @@ manifest.
 Behavioral conjunction verified:
   plugin on  + valid code   → exit 0, no errors
   plugin on  + invalid code → exit nonzero, standard mypy error
+  plugin off + valid code   → exit nonzero, no base method was found
+  plugin off + invalid code → exit nonzero, no base method was found
 """
 from __future__ import annotations
 
@@ -45,20 +47,7 @@ def _run_sage_mypy(
     )
 
 
-def test_production_lifecycle_valid_code_exits_clean(tmp_path: Path) -> None:
-    """Plugin-on + valid code → exit 0 with no errors via subprocess shellout.
-
-    Uses the normal config shape documented in README.md:
-      [mypy]
-      plugins = sage_mypy_category_plugin.plugin
-
-      [sage-mypy-category-plugin]
-      packages = tests.real_categories
-      roles = parent
-      cache_dir = <cache_dir>
-
-    No generated-stub mypy_path and no Python-API path injection.
-    """
+def _write_plugin_config(tmp_path: Path) -> tuple[Path, Path]:
     cache_dir = tmp_path / "sage-category-cache"
     config_path = tmp_path / "mypy.ini"
     config_path.write_text(
@@ -75,9 +64,34 @@ def test_production_lifecycle_valid_code_exits_clean(tmp_path: Path) -> None:
             ]
         )
     )
+    return config_path, cache_dir
+
+
+def _write_baseline_config(tmp_path: Path) -> Path:
+    config_path = tmp_path / "mypy-baseline.ini"
+    config_path.write_text("[mypy]\n")
+    return config_path
+
+
+def test_production_lifecycle_behavior_matrix(tmp_path: Path) -> None:
+    """Plain subprocess mypy obeys the plugin on/off × valid/invalid matrix.
+
+    Plugin-on cases use the normal README config shape:
+      [mypy]
+      plugins = sage_mypy_category_plugin.plugin
+
+      [sage-mypy-category-plugin]
+      packages = tests.real_categories
+      roles = parent
+      cache_dir = <cache_dir>
+
+    No generated-stub mypy_path and no Python-API path injection.
+    """
+    plugin_config_path, cache_dir = _write_plugin_config(tmp_path)
+    baseline_config_path = _write_baseline_config(tmp_path)
 
     result = _run_sage_mypy(
-        config_path,
+        plugin_config_path,
         FINITE_SMALL_GROUPS_VALID,
         cwd=REPO_ROOT,
     )
@@ -100,32 +114,8 @@ def test_production_lifecycle_valid_code_exits_clean(tmp_path: Path) -> None:
         "Production plugin path must not generate upstream Sage stubs"
     )
 
-
-def test_production_lifecycle_invalid_code_exits_nonzero(tmp_path: Path) -> None:
-    """Plugin-on + invalid code → exit nonzero with standard mypy error via shellout.
-
-    Same config as the valid-code test.  A @override on a non-existent method
-    should still produce a standard mypy error even though the plugin is active.
-    """
-    cache_dir = tmp_path / "sage-category-cache"
-    config_path = tmp_path / "mypy.ini"
-    config_path.write_text(
-        "\n".join(
-            [
-                "[mypy]",
-                "plugins = sage_mypy_category_plugin.plugin",
-                "",
-                "[sage-mypy-category-plugin]",
-                "packages = tests.real_categories",
-                "roles = parent",
-                f"cache_dir = {cache_dir}",
-                "",
-            ]
-        )
-    )
-
     result = _run_sage_mypy(
-        config_path,
+        plugin_config_path,
         FINITE_SMALL_GROUPS_INVALID,
         cwd=REPO_ROOT,
     )
@@ -137,5 +127,40 @@ def test_production_lifecycle_invalid_code_exits_nonzero(tmp_path: Path) -> None
     )
     assert "no base method was found" in result.stdout, (
         "Plugin-on + @override on nonexistent method should produce standard mypy error.\n"
+        f"stdout:\n{result.stdout}"
+    )
+
+    result = _run_sage_mypy(
+        baseline_config_path,
+        FINITE_SMALL_GROUPS_VALID,
+        cwd=REPO_ROOT,
+    )
+
+    assert result.returncode != 0, (
+        "Expected nonzero exit for valid code with plugin off; the fixture must "
+        "prove mypy needs projected provider MRO.\n"
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    assert "no base method was found" in result.stdout, (
+        "Plugin-off + valid override should fail because mypy cannot see Sage "
+        "provider inheritance.\n"
+        f"stdout:\n{result.stdout}"
+    )
+
+    result = _run_sage_mypy(
+        baseline_config_path,
+        FINITE_SMALL_GROUPS_INVALID,
+        cwd=REPO_ROOT,
+    )
+
+    assert result.returncode != 0, (
+        "Expected nonzero exit for invalid code with plugin off.\n"
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+    assert "no base method was found" in result.stdout, (
+        "Plugin-off + invalid override should fail before Sage provider "
+        "inheritance is projected.\n"
         f"stdout:\n{result.stdout}"
     )

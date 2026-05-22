@@ -144,20 +144,16 @@ All surfaces are tested with the conjunction matrix:
 | `Homsets.ElementMethods @override` | GREEN | `test_non_parent_role_behavior_matrix_uses_standard_mypy_inheritance_rules` |
 | Axiom category providers | GREEN | `test_local_axiom_behavior_matrix_uses_standard_mypy_rules`, `test_nested_sage_provider_behavior_matrix_uses_standard_mypy_rules` |
 | Linked axiom categories | GREEN | `test_linked_axiom_projection_matches_sage_runtime_mro` |
-| Functorial construction providers | GREEN | `test_nested_sage_provider_behavior_matrix_uses_standard_mypy_rules` |
-| Parameterized category providers | GREEN | `test_nested_sage_provider_behavior_matrix_uses_standard_mypy_rules` |
+| Functorial construction providers | GREEN | `test_cached_manifest_projects_functorial_and_parameterized_sage_typeinfo_graphs`, `test_nested_sage_provider_behavior_matrix_uses_standard_mypy_rules` |
+| Parameterized category providers | GREEN | `test_cached_manifest_projects_functorial_and_parameterized_sage_typeinfo_graphs`, `test_nested_sage_provider_behavior_matrix_uses_standard_mypy_rules` |
 | `@final` violation | GREEN | `test_real_sage_category_behavior_matrix_uses_standard_mypy_rules` |
 | Override signature mismatch | GREEN | `test_real_sage_category_behavior_matrix_uses_standard_mypy_rules` |
 | Consumer (renamed package) | GREEN | `test_renamed_consumer_package_behavioral_invariant_holds` |
 | Mutation: ghost provider_bases | GREEN | `test_false_provider_base_reference_is_detected_by_plugin` |
 | Mutation: ghost provider_mro | GREEN | `test_false_provider_mro_entry_is_detected_by_plugin` |
-| Mutation: axiom provider_mro truncation/reordering | GREEN | `test_phase5A_nested_axiom_provider_mro_mutations_are_structurally_detectable` |
-| Mutation: linked axiom provider_mro truncation/reordering | GREEN | `test_phase5B_linked_axiom_provider_mro_mutations_are_structurally_detectable` |
-| Mutation: CartesianProducts provider_mro | GREEN | `test_phase5C_cartesian_products_provider_mro_mutations_are_structurally_detectable` |
-| Mutation: TensorProducts provider_mro | GREEN | `test_phase5D_tensor_products_provider_mro_mutations_are_structurally_detectable` |
-| Mutation: parameterized provider_mro | GREEN | `test_phase5E_parameterized_provider_mro_mutations_are_structurally_detectable` |
-| Mutation: homset provider_mro | GREEN | `test_phase5F_homset_provider_mro_mutations_are_structurally_detectable` |
-| Mutation: morphism provider_mro | GREEN | `test_phase5G_morphism_provider_mro_mutations_are_structurally_detectable` |
+| Mutation: semantic projection digest changes | GREEN | `test_manifest_semantic_digest_tracks_projection_changes` |
+| Mutation: unsupported-provider digest changes | GREEN | `test_manifest_semantic_digest_tracks_unsupported_provider_changes` |
+| Mutation: source-module digest changes | GREEN | `test_manifest_source_module_digest_tracks_source_hash_changes` |
 | Cache: fresh generation | GREEN | `test_plugin_generates_manifest_from_packages_config` |
 | Cache: hit (no regeneration) | GREEN | `test_plugin_reuses_cache_on_second_init_without_regenerating` |
 | Cache: stale source → regeneration | GREEN | `test_plugin_detects_stale_source_and_regenerates_in_packages_mode` |

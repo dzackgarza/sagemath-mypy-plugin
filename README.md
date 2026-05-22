@@ -121,7 +121,7 @@ cache_dir/
 
 | Failure | Symptom | Cause | Fix |
 |---------|---------|-------|-----|
-| Missing `[sage-mypy-category-plugin]` section | `CompileError: Missing section` | Config file does not have the plugin section | Add `[sage-mypy-category-plugin]` to `mypy.ini` |
+| Missing `[sage-mypy-category-plugin]` section | Plugin passthrough; no manifest generation or projection | Config file lists the plugin but does not configure packages to scan | Add `[sage-mypy-category-plugin]` with `packages = ...` to enable projection |
 | `packages` not specified | `CompileError: must specify 'packages'` | Config section is present but empty | Add `packages = ...` |
 | Provider TypeInfo not found | `Sage category provider projection … references missing symbols` | A projected provider class is not visible to mypy (missing sidecar stub or source) | Ensure consumer `packages` are source roots/importable and the Sage-version `sage-stubs` sidecar is installed |
 | MRO mismatch after projection | `Sage category provider MRO mismatch: expected … observed …` | TypeInfo lookup succeeded but mypy resolved a different order | Usually indicates a stale manifest; delete `cache_dir` and rerun |

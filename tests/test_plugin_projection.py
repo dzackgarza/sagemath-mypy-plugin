@@ -15,8 +15,10 @@ from mypy.nodes import TypeInfo
 from mypy.options import Options
 
 from sage_mypy_category_plugin.manifest import (
+    ProjectionManifest,
     SourceModuleRecord,
     load_manifest,
+    write_manifest,
 )
 from sage_mypy_category_plugin.oracle import (
     provider_projections_for_categories,
@@ -28,6 +30,7 @@ from sage_mypy_category_plugin.plugin import (
     _source_modules_stale_reason,
 )
 from sage_mypy_category_plugin.projection import ProviderProjection, ProviderRole
+from tests.manifest_helpers import external_runtime_class_records_for_test_manifest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_MODULE = "tests.fixtures.invariant_core.diamond_runtime"
@@ -145,6 +148,17 @@ FUNCTORIAL_CARTESIAN_CATEGORY = (
     "tests.fixtures.invariant_core.functorial.cartesian_products."
     "CartesianProductsCategory"
 )
+FUNCTORIAL_CARTESIAN_PATH = (
+    REPO_ROOT
+    / "tests"
+    / "fixtures"
+    / "invariant_core"
+    / "functorial"
+    / "cartesian_products.py"
+)
+FUNCTORIAL_CARTESIAN_MODULE = (
+    "tests.fixtures.invariant_core.functorial.cartesian_products"
+)
 FUNCTORIAL_CARTESIAN_PARENT_PROVIDER = (
     "sage.categories.sets_cat.Sets.CartesianProducts.ParentMethods"
 )
@@ -155,6 +169,15 @@ FUNCTORIAL_TENSOR_CATEGORY = (
     "tests.fixtures.invariant_core.functorial.tensor_products."
     "TensorProductsCategory"
 )
+FUNCTORIAL_TENSOR_PATH = (
+    REPO_ROOT
+    / "tests"
+    / "fixtures"
+    / "invariant_core"
+    / "functorial"
+    / "tensor_products.py"
+)
+FUNCTORIAL_TENSOR_MODULE = "tests.fixtures.invariant_core.functorial.tensor_products"
 FUNCTORIAL_TENSOR_PARENT_PROVIDER = (
     "sage.categories.modules.Modules.TensorProducts.ParentMethods"
 )
@@ -163,6 +186,10 @@ PARAMETERIZED_CATEGORY_FULLNAMES = (
     "tests.fixtures.invariant_core.parameterized.ModulesOverRationals",
     "tests.fixtures.invariant_core.parameterized.VectorSpacesOverRationals",
 )
+PARAMETERIZED_PATH = (
+    REPO_ROOT / "tests" / "fixtures" / "invariant_core" / "parameterized.py"
+)
+PARAMETERIZED_MODULE = "tests.fixtures.invariant_core.parameterized"
 PARAMETERIZED_MODULES_PROVIDER = "sage.categories.modules.Modules.ParentMethods"
 PARAMETERIZED_VECTOR_SPACES_PROVIDER = (
     "sage.categories.vector_spaces.VectorSpaces.ParentMethods"
@@ -656,6 +683,85 @@ def test_package_mode_projects_all_provider_role_typeinfo_graphs(
         ), projection.provider
 
 
+def test_cached_manifest_projects_functorial_and_parameterized_sage_typeinfo_graphs(
+    tmp_path: Path,
+) -> None:
+    cache_dir = tmp_path / "sage-category-cache"
+    manifest_path = cache_dir / "projection-manifest.json"
+    projections = provider_projections_for_categories(
+        (
+            FUNCTORIAL_CARTESIAN_CATEGORY,
+            FUNCTORIAL_TENSOR_CATEGORY,
+            *PARAMETERIZED_CATEGORY_FULLNAMES,
+        ),
+        roles=("parent", "element"),
+    )
+    manifest = ProjectionManifest(
+        schema_version=1,
+        generated_by="tests",
+        sage_version="10.7",
+        python_version="3.12.13",
+        projections=tuple(projections.values()),
+        external_runtime_classes=external_runtime_class_records_for_test_manifest(
+            tuple(projections.values()),
+        ),
+    )
+    cache_dir.mkdir(parents=True)
+    write_manifest(manifest_path, manifest)
+
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                "[sage-mypy-category-plugin]",
+                "packages =",
+                "  tests.fixtures.invariant_core",
+                "roles =",
+                "  parent",
+                "  element",
+                f"cache_dir = {cache_dir}",
+                "",
+            )
+        )
+    )
+
+    result = _build_fixture(
+        config_path,
+        tmp_path,
+        fixture_sources=(
+            (FUNCTORIAL_CARTESIAN_PATH, FUNCTORIAL_CARTESIAN_MODULE),
+            (FUNCTORIAL_TENSOR_PATH, FUNCTORIAL_TENSOR_MODULE),
+            (PARAMETERIZED_PATH, PARAMETERIZED_MODULE),
+        ),
+    )
+    assert not _contains_error_fragment(result, "Sage category provider projection")
+    assert not _contains_error_fragment(result, "Sage category provider MRO mismatch")
+
+    manifest = load_manifest(manifest_path)
+    provider_fullnames = (
+        FUNCTORIAL_CARTESIAN_PARENT_PROVIDER,
+        FUNCTORIAL_CARTESIAN_ELEMENT_PROVIDER,
+        FUNCTORIAL_TENSOR_PARENT_PROVIDER,
+        PARAMETERIZED_MODULES_PROVIDER,
+        PARAMETERIZED_VECTOR_SPACES_PROVIDER,
+    )
+
+    for provider_fullname in provider_fullnames:
+        projection = manifest.projection_by_provider[provider_fullname]
+        info = _typeinfo_for_fullname(result, provider_fullname)
+        observed_bases = tuple(base.type.fullname for base in info.bases)
+        observed_mro = tuple(mro_info.fullname for mro_info in info.mro)
+
+        assert observed_bases == projection.provider_bases, provider_fullname
+        assert observed_mro == (
+            *projection.provider_mro,
+            "builtins.object",
+        ), provider_fullname
+
+
 def test_plugin_regenerates_from_clean_cache(tmp_path: Path) -> None:
     """Phase 1A: plugin init regenerates when no cache exists."""
     cache_dir = tmp_path / "sage-category-cache"
@@ -1000,11 +1106,6 @@ def _inner_typeinfo(outer_info: TypeInfo, inner: str) -> TypeInfo:
 def _contains_error_fragment(result: BuildResult, fragment: str) -> bool:
     return any(fragment in error for error in result.errors)
 
-
-
-
-
-
 def _source_module_records_for_modules(
     stub_root: Path,
     module_names: tuple[str, ...],
@@ -1091,24 +1192,4 @@ def _importable_module_name(fullname: str) -> str:
             continue
         return module_name
     raise AssertionError(f"Could not find importable module for {fullname!r}")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Phase 5 mutation proof helpers and tests (5A–5G)
-#
-# Each test proves: provider_mro mutations (truncation and reordering) propagate
-# exactly to TypeInfo.mro.  This is the structural invariant: the plugin writes
-# what the manifest says, no more and no less.  A corrupted manifest therefore
-# produces a detectable, quantifiably wrong TypeInfo graph.
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-
-
-
-
-
-
-
-
 
