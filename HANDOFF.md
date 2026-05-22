@@ -2,8 +2,7 @@
 
 ## Current State
 
-The repository is moving from the transitional generated-stub architecture to
-the vault-defined final architecture:
+The repository now follows the vault-defined sidecar architecture:
 
 ```text
 install sage-mypy-category-plugin
@@ -45,25 +44,25 @@ invariant holds. A clean or smaller consumer error count is not proof.
   `bases`/`mro` assertions against manifest projections.
 - `tests/test_behavior_matrix.py` and `tests/test_role_behavior_matrix.py`
   contain plugin on/off × valid/invalid behavior matrices.
-- `just consumer-structural` runs a retained structural canary against the real
-  `/home/dzack/research/category_specs` tree and compares representative
-  provider `TypeInfo.bases`/`mro` values to the plugin-generated manifest.
+- `just consumer-structural-all-fresh` runs a structural canary against the
+  real `/home/dzack/research/category_specs` tree, builds all importable
+  consumer modules, compares provider `TypeInfo.bases`/`mro` values to the
+  plugin-generated manifest, and verifies an injected consumer diagnostic still
+  surfaces.
 - The nested `sage-stubs/` sidecar repository contains Sage 10.7 provider and
   interface shells used by real fixtures and `category_specs` projections.
 
 ## Remaining Release Gates
 
-- Remove or demote all production-facing wrapper/debug-stub surfaces. In
-  particular, `consumer-mypy`, `write_consumer_config`, and first-class
-  generated-upstream-stub validation must not remain release evidence.
-- Keep debug manifest and runtime-alias paths out of production acceptance.
-  They may exist only as explicitly non-production diagnostics.
-- Expand real `/home/dzack/research/category_specs` evidence beyond the current
-  retained canary where needed: negative injected consumer errors, broader
-  provider role coverage, and missing TypeInfo/projection triage.
+- Keep wrapper/debug-stub surfaces out of production acceptance. In particular,
+  `consumer-mypy`, `write_consumer_config`, and first-class generated-upstream-
+  stub validation must not re-enter release evidence.
+- Keep debug manifest and runtime-alias paths out of production acceptance. They
+  may exist only as explicitly non-production diagnostics.
 - Keep production lifecycle tests in the default and release validation matrix.
 - Run the contract sentinel greps, focused production/structural/behavior tests,
-  mutation checks, sidecar visibility checks, and `just release-check`.
+  mutation checks, sidecar visibility checks, `just consumer-structural-all-fresh`,
+  and `just release-check`.
 
 ## Do Not Use As Proof
 
