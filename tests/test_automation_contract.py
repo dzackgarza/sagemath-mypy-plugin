@@ -6,7 +6,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_PACKAGE = REPO_ROOT / "sage_mypy_category_plugin"
-SAGE_STUBS_COMMIT = "1bb285047beacbdd2b44fef011233b024e8f7631"
+SAGE_STUBS_DEVELOPMENT_REF = "main"
 
 
 def test_justfile_exposes_final_state_validation_recipes() -> None:
@@ -101,13 +101,13 @@ def test_readme_documents_only_package_mode_user_config() -> None:
     assert "sage-stubs" in readme
 
 
-def test_sidecar_install_paths_pin_exact_sage_stubs_commit() -> None:
+def test_sidecar_install_paths_use_development_sidecar_ref() -> None:
     project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     sidecar_extra = project["project"]["optional-dependencies"]["sage10_7"]
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     justfile = (REPO_ROOT / "justfile").read_text(encoding="utf-8")
 
-    expected_url = f"git+https://github.com/dzackgarza/sage-stubs@{SAGE_STUBS_COMMIT}"
+    expected_url = f"git+https://github.com/dzackgarza/sage-stubs@{SAGE_STUBS_DEVELOPMENT_REF}"
 
     assert sidecar_extra == [f"sage-stubs @ {expected_url}"]
     assert expected_url in readme

@@ -34,7 +34,7 @@ in the Sage Python environment, together with the Sage-version sidecar stubs:
 
 ```bash
 sage -python -m pip install -e .
-sage -python -m pip install "git+https://github.com/dzackgarza/sage-stubs@1bb285047beacbdd2b44fef011233b024e8f7631"
+sage -python -m pip install "git+https://github.com/dzackgarza/sage-stubs@main"
 ```
 
 Verify that the installed mypy version matches the pinned version:
@@ -161,13 +161,18 @@ just test-behavior
 just test-mutation
 ```
 
-## Sage and mypy version pinning
+## Sage sidecar and mypy versioning
 
 The plugin pins mypy at the version shipped with the Sage Python environment.
 The manifest records the Sage version and git revision at generation time,
 plus `mypy_min_version`/`mypy_max_version` bounds. Running with a different
 mypy version triggers manifest regeneration (or a hard error if the new version
 is outside the supported range).
+
+During active development the Sage 10.7 sidecar is installed from
+`sage-stubs@main` so sidecar stub batches do not require plugin pin commits.
+Release builds should depend on a Sage-version-compatible sidecar release range
+instead of a moving branch.
 
 To verify pinning:
 
@@ -190,5 +195,6 @@ just typecheck       # mypy on the plugin source itself
 
 - [SPEC.md](SPEC.md) — formal correctness argument
 - [CONTRACT.md](CONTRACT.md) — non-negotiable invariants and banned patterns
+- [MINIMAL_STUB_CONTRACT.md](MINIMAL_STUB_CONTRACT.md) — sidecar stub scope
 - [AGENTS.md](AGENTS.md) — repository rules for agents
 - [GOALS.md](GOALS.md) — historical scope and suppression rationale
