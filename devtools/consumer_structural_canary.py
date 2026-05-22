@@ -43,6 +43,7 @@ class CanaryPaths:
     config_path: Path
     cache_dir: Path
     mypy_cache_dir: Path
+    negative_probe_path: Path
 
 
 @dataclass(frozen=True)
@@ -77,14 +78,20 @@ def main() -> None:
         config_path=work_dir / "mypy.ini",
         cache_dir=work_dir / "sage-category-cache",
         mypy_cache_dir=work_dir / "mypy-cache",
+        negative_probe_path=work_dir / "negative_consumer_probe.py",
     )
     _write_config(paths)
-    build_plan = _consumer_build_plan(consumer_root, all_modules=args.all_consumer_modules)
+    _write_negative_probe(paths)
+    build_plan = _with_negative_probe(
+        _consumer_build_plan(consumer_root, all_modules=args.all_consumer_modules),
+        paths,
+    )
     result = _build_consumer_modules(paths, consumer_root, build_plan)
     manifest_path = paths.cache_dir / "projection-manifest.json"
     manifest = load_manifest(manifest_path)
 
     _assert_manifest_has_no_generated_stub_cache(paths)
+    negative_error_count = _assert_negative_probe_error_survives(result, paths)
     structural_audit = _assert_provider_typeinfos_match_manifest(
         result,
         manifest,
@@ -102,6 +109,7 @@ def main() -> None:
     print(f"checked_provider_count={structural_audit.checked_provider_count}")
     print(f"graph_absent_provider_count={structural_audit.graph_absent_provider_count}")
     print(f"missing_typeinfo_count={structural_audit.missing_typeinfo_count}")
+    print(f"negative_injected_error_count={negative_error_count}")
     for provider in CANARY_PROVIDERS:
         projection = manifest.projection_by_provider[provider]
         print(
@@ -162,6 +170,22 @@ def _write_config(paths: CanaryPaths) -> None:
     )
 
 
+def _write_negative_probe(paths: CanaryPaths) -> None:
+    paths.negative_probe_path.write_text(
+        "\n".join(
+            (
+                "from __future__ import annotations",
+                "",
+                "from category_specs.sets import _SetObjectMethods",
+                "",
+                "bad_assignment: _SetObjectMethods = 1",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+
+
 def _build_consumer_modules(
     paths: CanaryPaths,
     consumer_root: Path,
@@ -193,6 +217,24 @@ def _consumer_build_plan(consumer_root: Path, *, all_modules: bool) -> BuildPlan
             for module in CANARY_MODULES
         ),
         requires_all_graph_providers=False,
+    )
+
+
+def _with_negative_probe(
+    build_plan: BuildPlan,
+    paths: CanaryPaths,
+) -> BuildPlan:
+    return BuildPlan(
+        mode=build_plan.mode,
+        sources=(
+            *build_plan.sources,
+            BuildSource(
+                str(paths.negative_probe_path),
+                "_sage_mypy_category_specs_negative_probe",
+                None,
+            ),
+        ),
+        requires_all_graph_providers=build_plan.requires_all_graph_providers,
     )
 
 
@@ -231,6 +273,26 @@ def _assert_manifest_has_no_generated_stub_cache(paths: CanaryPaths) -> None:
         raise AssertionError("plugin did not write projection-manifest.json")
     if (paths.cache_dir / "stubs").exists():
         raise AssertionError("production package mode generated cache stubs")
+
+
+def _assert_negative_probe_error_survives(
+    result: BuildResult,
+    paths: CanaryPaths,
+) -> int:
+    probe_name = paths.negative_probe_path.name
+    probe_errors = tuple(error for error in result.errors if probe_name in error)
+    if not probe_errors:
+        raise AssertionError(
+            "negative consumer probe produced no mypy errors; "
+            "the canary no longer proves ordinary consumer diagnostics survive"
+        )
+    assignment_errors = tuple(error for error in probe_errors if "[assignment]" in error)
+    if not assignment_errors:
+        raise AssertionError(
+            "negative consumer probe errors did not include the expected "
+            f"[assignment] diagnostic: {probe_errors!r}"
+        )
+    return len(probe_errors)
 
 
 def _assert_provider_typeinfos_match_manifest(
@@ -298,6 +360,8 @@ def _typeinfo_for_fullname(
     module_name: str,
 ) -> TypeInfo | None:
     state = result.graph[module_name]
+    if state.tree is None:
+        return None
     suffix = fullname.removeprefix(f"{module_name}.")
     pieces = suffix.split(".")
     symbol = state.tree.names.get(pieces[0])
