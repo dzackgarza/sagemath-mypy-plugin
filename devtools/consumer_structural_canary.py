@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,7 @@ from sage_mypy_category_plugin.manifest import ProjectionManifest, load_manifest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONSUMER_ROOT = Path("/home/dzack/research")
 DEFAULT_WORK_DIR = Path(".mypy_cache/sage-category-plugin-consumer-canary")
+DEFAULT_ARTIFACT_DIR = Path("artifacts/consumer-structural")
 DEFAULT_ROLES = (
     "parent",
     "element",
@@ -55,6 +57,19 @@ class StructuralAudit:
     checked_provider_count: int
     graph_absent_provider_count: int
     missing_typeinfo_count: int
+    mismatched_provider_count: int
+    checked_providers: tuple[str, ...]
+    graph_absent_providers: tuple[str, ...]
+    missing_typeinfos: tuple[str, ...]
+    mismatches: tuple[ProviderMismatch, ...]
+
+
+@dataclass(frozen=True)
+class ProviderMismatch:
+    provider: str
+    field: str
+    expected: tuple[str, ...]
+    observed: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -94,11 +109,29 @@ def main() -> None:
     manifest_path = paths.cache_dir / "projection-manifest.json"
     manifest = load_manifest(manifest_path)
 
-    _assert_manifest_has_no_generated_stub_cache(paths)
-    negative_error_count = _assert_negative_probe_error_survives(result, paths)
-    structural_audit = _assert_provider_typeinfos_match_manifest(
+    generated_stub_cache_absent = _manifest_has_no_generated_stub_cache(paths)
+    negative_error_count = _negative_probe_error_count(result, paths)
+    structural_audit = _provider_typeinfos_audit(
         result,
         manifest,
+    )
+    artifact_dir = args.artifact_dir.resolve()
+    _write_artifacts(
+        artifact_dir=artifact_dir,
+        paths=paths,
+        consumer_root=consumer_root,
+        build_plan=build_plan,
+        result=result,
+        manifest=manifest,
+        structural_audit=structural_audit,
+        generated_stub_cache_absent=generated_stub_cache_absent,
+        negative_error_count=negative_error_count,
+    )
+
+    _assert_manifest_has_no_generated_stub_cache(generated_stub_cache_absent)
+    _assert_negative_probe_error_survives(negative_error_count, result, paths)
+    _assert_provider_typeinfos_match_manifest(
+        structural_audit,
         require_all_graph_providers=build_plan.requires_all_graph_providers,
     )
 
@@ -113,7 +146,9 @@ def main() -> None:
     print(f"checked_provider_count={structural_audit.checked_provider_count}")
     print(f"graph_absent_provider_count={structural_audit.graph_absent_provider_count}")
     print(f"missing_typeinfo_count={structural_audit.missing_typeinfo_count}")
+    print(f"mismatched_provider_count={structural_audit.mismatched_provider_count}")
     print(f"negative_injected_error_count={negative_error_count}")
+    print(f"artifact_dir={artifact_dir}")
     for provider in CANARY_PROVIDERS:
         projection = manifest.projection_by_provider[provider]
         print(
@@ -147,6 +182,15 @@ def _parse_args() -> argparse.Namespace:
         help=(
             "Build every Python module under category_specs instead of the "
             "fast representative module set."
+        ),
+    )
+    parser.add_argument(
+        "--artifact-dir",
+        type=Path,
+        default=DEFAULT_ARTIFACT_DIR,
+        help=(
+            "Repo-local directory where durable JSON and Markdown diagnostics "
+            "are written for external analysis."
         ),
     )
     return parser.parse_args()
@@ -272,17 +316,35 @@ def _module_path(consumer_root: Path, module: str) -> Path:
     raise SystemExit(f"Cannot resolve canary module {module!r} under {consumer_root}")
 
 
-def _assert_manifest_has_no_generated_stub_cache(paths: CanaryPaths) -> None:
-    if not (paths.cache_dir / "projection-manifest.json").is_file():
-        raise AssertionError("plugin did not write projection-manifest.json")
-    if (paths.cache_dir / "stubs").exists():
-        raise AssertionError("production package mode generated cache stubs")
+def _manifest_has_no_generated_stub_cache(paths: CanaryPaths) -> bool:
+    return (paths.cache_dir / "projection-manifest.json").is_file() and not (
+        paths.cache_dir / "stubs"
+    ).exists()
 
 
-def _assert_negative_probe_error_survives(
+def _assert_manifest_has_no_generated_stub_cache(
+    generated_stub_cache_absent: bool,
+) -> None:
+    if not generated_stub_cache_absent:
+        raise AssertionError(
+            "plugin did not write projection-manifest.json or generated cache stubs"
+        )
+
+
+def _negative_probe_error_count(
     result: BuildResult,
     paths: CanaryPaths,
 ) -> int:
+    probe_name = paths.negative_probe_path.name
+    probe_errors = tuple(error for error in result.errors if probe_name in error)
+    return len(probe_errors)
+
+
+def _assert_negative_probe_error_survives(
+    negative_error_count: int,
+    result: BuildResult,
+    paths: CanaryPaths,
+) -> None:
     probe_name = paths.negative_probe_path.name
     probe_errors = tuple(error for error in result.errors if probe_name in error)
     if not probe_errors:
@@ -296,18 +358,19 @@ def _assert_negative_probe_error_survives(
             "negative consumer probe errors did not include the expected "
             f"[assignment] diagnostic: {probe_errors!r}"
         )
-    return len(probe_errors)
+    if negative_error_count != len(probe_errors):
+        raise AssertionError("negative probe artifact count disagrees with result errors")
 
 
-def _assert_provider_typeinfos_match_manifest(
+def _provider_typeinfos_audit(
     result: BuildResult,
     manifest: ProjectionManifest,
-    *,
-    require_all_graph_providers: bool,
 ) -> StructuralAudit:
     checked_provider_count = 0
-    graph_absent_provider_count = 0
+    checked_providers: list[str] = []
+    graph_absent_providers: list[str] = []
     missing_typeinfos: list[str] = []
+    mismatches: list[ProviderMismatch] = []
     source_modules = tuple(record.module for record in manifest.source_modules)
     for projection in manifest.projections:
         provider = projection.provider
@@ -315,7 +378,7 @@ def _assert_provider_typeinfos_match_manifest(
             continue
         provider_module = _source_module_for_fullname(source_modules, provider)
         if provider_module is None or provider_module not in result.graph:
-            graph_absent_provider_count += 1
+            graph_absent_providers.append(provider)
             continue
         info = _typeinfo_for_fullname(result, provider, provider_module)
         if info is None:
@@ -328,34 +391,213 @@ def _assert_provider_typeinfos_match_manifest(
             if mro_info.fullname != "builtins.object"
         )
         if observed_bases != projection.provider_bases:
-            raise AssertionError(
-                f"{provider} TypeInfo.bases mismatch: "
-                f"expected {projection.provider_bases!r}, observed {observed_bases!r}"
+            mismatches.append(
+                ProviderMismatch(
+                    provider=provider,
+                    field="bases",
+                    expected=projection.provider_bases,
+                    observed=observed_bases,
+                )
             )
         if observed_mro != projection.provider_mro:
-            raise AssertionError(
-                f"{provider} TypeInfo.mro mismatch: "
-                f"expected {projection.provider_mro!r}, observed {observed_mro!r}"
+            mismatches.append(
+                ProviderMismatch(
+                    provider=provider,
+                    field="mro",
+                    expected=projection.provider_mro,
+                    observed=observed_mro,
+                )
             )
         checked_provider_count += 1
-
-    if checked_provider_count == 0:
-        raise AssertionError("No category_specs provider TypeInfos were checked")
-    if require_all_graph_providers and graph_absent_provider_count:
-        raise AssertionError(
-            "Full consumer structural canary left "
-            f"{graph_absent_provider_count} projected category_specs providers "
-            "outside the mypy graph"
-        )
-    if missing_typeinfos:
-        missing = "\n  ".join(missing_typeinfos)
-        raise AssertionError(f"Missing TypeInfo for loaded providers:\n  {missing}")
+        checked_providers.append(provider)
 
     return StructuralAudit(
         checked_provider_count=checked_provider_count,
-        graph_absent_provider_count=graph_absent_provider_count,
+        graph_absent_provider_count=len(graph_absent_providers),
         missing_typeinfo_count=len(missing_typeinfos),
+        mismatched_provider_count=len({mismatch.provider for mismatch in mismatches}),
+        checked_providers=tuple(checked_providers),
+        graph_absent_providers=tuple(graph_absent_providers),
+        missing_typeinfos=tuple(missing_typeinfos),
+        mismatches=tuple(mismatches),
     )
+
+
+def _assert_provider_typeinfos_match_manifest(
+    structural_audit: StructuralAudit,
+    *,
+    require_all_graph_providers: bool,
+) -> None:
+    if structural_audit.mismatches:
+        mismatch = structural_audit.mismatches[0]
+        raise AssertionError(
+            f"{mismatch.provider} TypeInfo.{mismatch.field} mismatch: "
+            f"expected {mismatch.expected!r}, observed {mismatch.observed!r}"
+        )
+
+    if structural_audit.checked_provider_count == 0:
+        raise AssertionError("No category_specs provider TypeInfos were checked")
+    if require_all_graph_providers and structural_audit.graph_absent_provider_count:
+        raise AssertionError(
+            "Full consumer structural canary left "
+            f"{structural_audit.graph_absent_provider_count} projected "
+            "category_specs providers "
+            "outside the mypy graph"
+        )
+    if structural_audit.missing_typeinfos:
+        missing = "\n  ".join(structural_audit.missing_typeinfos)
+        raise AssertionError(f"Missing TypeInfo for loaded providers:\n  {missing}")
+
+
+def _write_artifacts(
+    *,
+    artifact_dir: Path,
+    paths: CanaryPaths,
+    consumer_root: Path,
+    build_plan: BuildPlan,
+    result: BuildResult,
+    manifest: ProjectionManifest,
+    structural_audit: StructuralAudit,
+    generated_stub_cache_absent: bool,
+    negative_error_count: int,
+) -> None:
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    payload = _artifact_payload(
+        paths=paths,
+        consumer_root=consumer_root,
+        build_plan=build_plan,
+        result=result,
+        manifest=manifest,
+        structural_audit=structural_audit,
+        generated_stub_cache_absent=generated_stub_cache_absent,
+        negative_error_count=negative_error_count,
+    )
+    (artifact_dir / "latest.json").write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (artifact_dir / "latest.md").write_text(
+        _artifact_markdown(payload),
+        encoding="utf-8",
+    )
+
+
+def _artifact_payload(
+    *,
+    paths: CanaryPaths,
+    consumer_root: Path,
+    build_plan: BuildPlan,
+    result: BuildResult,
+    manifest: ProjectionManifest,
+    structural_audit: StructuralAudit,
+    generated_stub_cache_absent: bool,
+    negative_error_count: int,
+) -> dict[str, object]:
+    status = "pass"
+    if (
+        not generated_stub_cache_absent
+        or negative_error_count == 0
+        or structural_audit.checked_provider_count == 0
+        or (
+            build_plan.requires_all_graph_providers
+            and structural_audit.graph_absent_provider_count
+        )
+        or structural_audit.missing_typeinfo_count
+        or structural_audit.mismatched_provider_count
+    ):
+        status = "fail"
+
+    return {
+        "status": status,
+        "consumer_root": str(consumer_root),
+        "work_dir": str(paths.config_path.parent),
+        "manifest": str(paths.cache_dir / "projection-manifest.json"),
+        "source_mode": build_plan.mode,
+        "requires_all_graph_providers": build_plan.requires_all_graph_providers,
+        "source_module_count": len(build_plan.sources),
+        "manifest_source_module_count": len(manifest.source_modules),
+        "projection_count": len(manifest.projections),
+        "unsupported_provider_count": len(manifest.unsupported_providers),
+        "generated_stub_cache_absent": generated_stub_cache_absent,
+        "negative_injected_error_count": negative_error_count,
+        "mypy_error_count": len(result.errors),
+        "mypy_errors": result.errors,
+        "checked_provider_count": structural_audit.checked_provider_count,
+        "graph_absent_provider_count": structural_audit.graph_absent_provider_count,
+        "missing_typeinfo_count": structural_audit.missing_typeinfo_count,
+        "mismatched_provider_count": structural_audit.mismatched_provider_count,
+        "checked_providers": structural_audit.checked_providers,
+        "graph_absent_providers": structural_audit.graph_absent_providers,
+        "missing_typeinfos": structural_audit.missing_typeinfos,
+        "mismatches": [
+            {
+                "provider": mismatch.provider,
+                "field": mismatch.field,
+                "expected": mismatch.expected,
+                "observed": mismatch.observed,
+            }
+            for mismatch in structural_audit.mismatches
+        ],
+    }
+
+
+def _artifact_markdown(payload: dict[str, object]) -> str:
+    lines = [
+        "# Consumer Structural Canary",
+        "",
+        f"- status: {payload['status']}",
+        f"- source_mode: {payload['source_mode']}",
+        f"- source_module_count: {payload['source_module_count']}",
+        f"- projection_count: {payload['projection_count']}",
+        f"- unsupported_provider_count: {payload['unsupported_provider_count']}",
+        f"- checked_provider_count: {payload['checked_provider_count']}",
+        f"- graph_absent_provider_count: {payload['graph_absent_provider_count']}",
+        f"- missing_typeinfo_count: {payload['missing_typeinfo_count']}",
+        f"- mismatched_provider_count: {payload['mismatched_provider_count']}",
+        f"- negative_injected_error_count: {payload['negative_injected_error_count']}",
+        "",
+        "## Mismatches",
+        "",
+    ]
+    mismatches = payload["mismatches"]
+    if isinstance(mismatches, list) and mismatches:
+        for mismatch in mismatches:
+            lines.extend(
+                [
+                    f"### {mismatch['provider']}",
+                    "",
+                    f"- field: {mismatch['field']}",
+                    f"- expected: `{tuple(mismatch['expected'])}`",
+                    f"- observed: `{tuple(mismatch['observed'])}`",
+                    "",
+                ]
+            )
+    else:
+        lines.append("None.")
+        lines.append("")
+    lines.extend(
+        [
+            "## Missing TypeInfos",
+            "",
+            *_markdown_items(payload["missing_typeinfos"]),
+            "",
+            "## Graph-Absent Providers",
+            "",
+            *_markdown_items(payload["graph_absent_providers"]),
+            "",
+            "## Mypy Errors",
+            "",
+            *_markdown_items(payload["mypy_errors"]),
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _markdown_items(value: object) -> list[str]:
+    if not isinstance(value, list | tuple) or not value:
+        return ["None."]
+    return [f"- `{item}`" for item in value]
 
 
 def _typeinfo_for_fullname(

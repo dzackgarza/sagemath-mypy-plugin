@@ -1,0 +1,415 @@
+# Consumer Structural Canary
+
+- status: fail
+- source_mode: representative
+- source_module_count: 5
+- projection_count: 444
+- unsupported_provider_count: 69
+- checked_provider_count: 187
+- graph_absent_provider_count: 131
+- missing_typeinfo_count: 0
+- mismatched_provider_count: 5
+- negative_injected_error_count: 1
+
+## Mismatches
+
+### category_specs.cat.autsets.CatAutCategory.ParentMethods
+
+- field: bases
+- expected: `('category_specs.homsets.autsets.UniversalAutObjectMethods', 'category_specs.cat.endsets.CatEndCategory.ParentMethods')`
+- observed: `('builtins.object',)`
+
+### category_specs.cat.autsets.CatAutCategory.ParentMethods
+
+- field: mro
+- expected: `('category_specs.cat.autsets.CatAutCategory.ParentMethods', 'category_specs.homsets.autsets.UniversalAutObjectMethods', 'category_specs.cat.endsets.CatEndCategory.ParentMethods', 'category_specs.homsets.endsets.UniversalEndObjectMethods', 'sage.categories.homsets.Homsets.Endset.ParentMethods', 'sage.categories.monoids.Monoids.ParentMethods', 'sage.categories.semigroups.Semigroups.ParentMethods', 'sage.categories.magmas.Magmas.Unital.ParentMethods', 'sage.categories.magmas.Magmas.ParentMethods', 'category_specs.cat.homsets._CatHomCategoryObjectMethods', 'category_specs.homsets.homsets.UniversalHomObjectMethods', 'sage.categories.homsets.Homsets.ParentMethods', 'sage.categories.sets_cat.Sets.ParentMethods', 'sage.categories.objects.Objects.ParentMethods')`
+- observed: `('category_specs.cat.autsets.CatAutCategory.ParentMethods',)`
+
+### category_specs.cat.endsets.CatEndCategory.ParentMethods
+
+- field: bases
+- expected: `('category_specs.homsets.endsets.UniversalEndObjectMethods', 'category_specs.cat.homsets._CatHomCategoryObjectMethods')`
+- observed: `('builtins.object',)`
+
+### category_specs.cat.endsets.CatEndCategory.ParentMethods
+
+- field: mro
+- expected: `('category_specs.cat.endsets.CatEndCategory.ParentMethods', 'category_specs.homsets.endsets.UniversalEndObjectMethods', 'sage.categories.homsets.Homsets.Endset.ParentMethods', 'sage.categories.monoids.Monoids.ParentMethods', 'sage.categories.semigroups.Semigroups.ParentMethods', 'sage.categories.magmas.Magmas.Unital.ParentMethods', 'sage.categories.magmas.Magmas.ParentMethods', 'category_specs.cat.homsets._CatHomCategoryObjectMethods', 'category_specs.homsets.homsets.UniversalHomObjectMethods', 'sage.categories.homsets.Homsets.ParentMethods', 'sage.categories.sets_cat.Sets.ParentMethods', 'sage.categories.objects.Objects.ParentMethods')`
+- observed: `('category_specs.cat.endsets.CatEndCategory.ParentMethods',)`
+
+### category_specs.rings.homsets.RingEndCategory.ParentMethods
+
+- field: bases
+- expected: `('category_specs.homsets.endsets.UniversalEndObjectMethods', 'category_specs.rings.homsets._RingHomCategoryObjectMethods')`
+- observed: `('builtins.object',)`
+
+### category_specs.rings.homsets.RingEndCategory.ParentMethods
+
+- field: mro
+- expected: `('category_specs.rings.homsets.RingEndCategory.ParentMethods', 'category_specs.homsets.endsets.UniversalEndObjectMethods', 'category_specs.sets.homsets.SetEndCategory.ParentMethods', 'sage.categories.homsets.Homsets.Endset.ParentMethods', 'sage.categories.monoids.Monoids.ParentMethods', 'sage.categories.semigroups.Semigroups.ParentMethods', 'sage.categories.magmas.Magmas.Unital.ParentMethods', 'sage.categories.magmas.Magmas.ParentMethods', 'category_specs.homsets.homsets.UniversalHomObjectMethods', 'sage.categories.homsets.Homsets.ParentMethods', 'category_specs.rings.homsets._RingHomCategoryObjectMethods', 'category_specs.sets.homsets._SetHomCategoryObjectMethods', 'sage.categories.sets_cat.Sets.ParentMethods', 'sage.categories.objects.Objects.ParentMethods')`
+- observed: `('category_specs.rings.homsets.RingEndCategory.ParentMethods',)`
+
+### category_specs.sets.homsets.SetEndCategory.ParentMethods
+
+- field: bases
+- expected: `('category_specs.homsets.endsets.UniversalEndObjectMethods', 'category_specs.sets.homsets._SetHomCategoryObjectMethods')`
+- observed: `('builtins.object',)`
+
+### category_specs.sets.homsets.SetEndCategory.ParentMethods
+
+- field: mro
+- expected: `('category_specs.sets.homsets.SetEndCategory.ParentMethods', 'category_specs.homsets.endsets.UniversalEndObjectMethods', 'sage.categories.homsets.Homsets.Endset.ParentMethods', 'sage.categories.monoids.Monoids.ParentMethods', 'sage.categories.semigroups.Semigroups.ParentMethods', 'sage.categories.magmas.Magmas.Unital.ParentMethods', 'sage.categories.magmas.Magmas.ParentMethods', 'category_specs.homsets.homsets.UniversalHomObjectMethods', 'sage.categories.homsets.Homsets.ParentMethods', 'category_specs.sets.homsets._SetHomCategoryObjectMethods', 'sage.categories.sets_cat.Sets.ParentMethods', 'sage.categories.objects.Objects.ParentMethods')`
+- observed: `('category_specs.sets.homsets.SetEndCategory.ParentMethods',)`
+
+### category_specs.topological_spaces.homsets.TopologicalSpaceEndCategory.ParentMethods
+
+- field: bases
+- expected: `('category_specs.homsets.endsets.UniversalEndObjectMethods', 'category_specs.topological_spaces.homsets._TopologicalHomCategoryObjectMethods')`
+- observed: `('builtins.object',)`
+
+### category_specs.topological_spaces.homsets.TopologicalSpaceEndCategory.ParentMethods
+
+- field: mro
+- expected: `('category_specs.topological_spaces.homsets.TopologicalSpaceEndCategory.ParentMethods', 'category_specs.homsets.endsets.UniversalEndObjectMethods', 'category_specs.sets.homsets.SetEndCategory.ParentMethods', 'sage.categories.homsets.Homsets.Endset.ParentMethods', 'sage.categories.monoids.Monoids.ParentMethods', 'sage.categories.semigroups.Semigroups.ParentMethods', 'sage.categories.magmas.Magmas.Unital.ParentMethods', 'sage.categories.magmas.Magmas.ParentMethods', 'category_specs.homsets.homsets.UniversalHomObjectMethods', 'sage.categories.homsets.Homsets.ParentMethods', 'category_specs.topological_spaces.homsets._TopologicalHomCategoryObjectMethods', 'category_specs.sets.homsets._SetHomCategoryObjectMethods', 'sage.categories.sets_cat.Sets.ParentMethods', 'sage.categories.objects.Objects.ParentMethods')`
+- observed: `('category_specs.topological_spaces.homsets.TopologicalSpaceEndCategory.ParentMethods',)`
+
+## Missing TypeInfos
+
+None.
+
+## Graph-Absent Providers
+
+- `category_specs.algebras.subcategories.commutative._CommutativeAlgebras.ParentMethods`
+- `category_specs.algebras.subcategories.commutative._CommutativeAlgebras.ElementMethods`
+- `category_specs.algebras.subcategories.finite_dimensional._FiniteDimensionalAlgebras.ParentMethods`
+- `category_specs.algebras.subcategories.finite_dimensional._FiniteDimensionalAlgebras.ElementMethods`
+- `category_specs.algebras.subcategories.finite_dimensional_with_basis._FiniteDimensionalAlgebrasWithBasis.ParentMethods`
+- `category_specs.algebras.subcategories.finite_dimensional_with_basis._FiniteDimensionalAlgebrasWithBasis.ElementMethods`
+- `category_specs.algebras.subcategories.semisimple._SemisimpleAlgebras.ParentMethods`
+- `category_specs.algebras.subcategories.semisimple._SemisimpleAlgebras.ElementMethods`
+- `category_specs.algebras.subcategories.with_basis._AlgebrasWithBasis.ParentMethods`
+- `category_specs.algebras.subcategories.with_basis._AlgebrasWithBasis.ElementMethods`
+- `category_specs.modules.subcategories.with_basis._WithBasis.HomCategory.ParentMethods`
+- `category_specs.modules.subcategories.with_basis._WithBasis.HomCategory.ElementMethods`
+- `category_specs.rings.subcategories.algebraic_closure_of_rational_field._QQbar.ParentMethods`
+- `category_specs.rings.subcategories.algebraic_closure_of_rational_field._QQbar.ElementMethods`
+- `category_specs.rings.subcategories.algebraic_field._AlgebraicFields.ParentMethods`
+- `category_specs.rings.subcategories.algebraic_field._AlgebraicFields.ElementMethods`
+- `category_specs.rings.subcategories.algebraically_closed_field._AlgebraicallyClosedFields.ParentMethods`
+- `category_specs.rings.subcategories.algebraically_closed_field._AlgebraicallyClosedFields.ElementMethods`
+- `category_specs.rings.subcategories.archimedean_global_field._ArchimedeanGlobalFields.ParentMethods`
+- `category_specs.rings.subcategories.archimedean_global_field._ArchimedeanGlobalFields.ElementMethods`
+- `category_specs.rings.subcategories.complete_discrete_valuation_object._CompleteDiscreteValuationObjects.ParentMethods`
+- `category_specs.rings.subcategories.complete_discrete_valuation_object._CompleteDiscreteValuationObjects.ElementMethods`
+- `category_specs.rings.subcategories.complete_discrete_valuation_ring._CompleteDiscreteValuationRings.ParentMethods`
+- `category_specs.rings.subcategories.complete_discrete_valuation_ring._CompleteDiscreteValuationRings.ElementMethods`
+- `category_specs.rings.subcategories.complex_ball_field._ComplexBallFields.ParentMethods`
+- `category_specs.rings.subcategories.complex_ball_field._ComplexBallFields.ElementMethods`
+- `category_specs.rings.subcategories.complex_double_field._ComplexDoubleFields.ParentMethods`
+- `category_specs.rings.subcategories.complex_double_field._ComplexDoubleFields.ElementMethods`
+- `category_specs.rings.subcategories.complex_field._ComplexFields.ParentMethods`
+- `category_specs.rings.subcategories.complex_field._ComplexFields.ElementMethods`
+- `category_specs.rings.subcategories.complex_field_53._CC.ParentMethods`
+- `category_specs.rings.subcategories.complex_field_53._CC.ElementMethods`
+- `category_specs.rings.subcategories.complex_interval_field._ComplexIntervalFields.ParentMethods`
+- `category_specs.rings.subcategories.complex_interval_field._ComplexIntervalFields.ElementMethods`
+- `category_specs.rings.subcategories.complex_precision_field._ComplexPrecisionFields.ParentMethods`
+- `category_specs.rings.subcategories.complex_precision_field._ComplexPrecisionFields.ElementMethods`
+- `category_specs.rings.subcategories.cyclotomic_field._CyclotomicFields.ParentMethods`
+- `category_specs.rings.subcategories.cyclotomic_field._CyclotomicFields.ElementMethods`
+- `category_specs.rings.subcategories.dedekind_domain._DedekindDomains.ParentMethods`
+- `category_specs.rings.subcategories.dedekind_domain._DedekindDomains.ElementMethods`
+- `category_specs.rings.subcategories.discrete_valuation_field._DiscreteValuationFields.ParentMethods`
+- `category_specs.rings.subcategories.discrete_valuation_field._DiscreteValuationFields.ElementMethods`
+- `category_specs.rings.subcategories.discrete_valuation_ring._DiscreteValuationRings.ParentMethods`
+- `category_specs.rings.subcategories.discrete_valuation_ring._DiscreteValuationRings.ElementMethods`
+- `category_specs.rings.subcategories.division._DivisionRings.ParentMethods`
+- `category_specs.rings.subcategories.division._DivisionRings.ElementMethods`
+- `category_specs.rings.subcategories.euclidean_domain._EuclideanDomains.ParentMethods`
+- `category_specs.rings.subcategories.euclidean_domain._EuclideanDomains.ElementMethods`
+- `category_specs.rings.subcategories.finite._FiniteRings.ParentMethods`
+- `category_specs.rings.subcategories.finite._FiniteRings.ElementMethods`
+- `category_specs.rings.subcategories.finite_field._FiniteFields.ParentMethods`
+- `category_specs.rings.subcategories.finite_field._FiniteFields.ElementMethods`
+- `category_specs.rings.subcategories.gcd_domain._GcdDomains.ParentMethods`
+- `category_specs.rings.subcategories.gcd_domain._GcdDomains.ElementMethods`
+- `category_specs.rings.subcategories.global_field._GlobalFields.SubcategoryMethods`
+- `category_specs.rings.subcategories.integer_mod_ring._IntegerModRings.ParentMethods`
+- `category_specs.rings.subcategories.integer_mod_ring._IntegerModRings.ElementMethods`
+- `category_specs.rings.subcategories.integer_ring._ZZ.ParentMethods`
+- `category_specs.rings.subcategories.integer_ring._ZZ.ElementMethods`
+- `category_specs.rings.subcategories.integrally_closed_domain._IntegrallyClosedDomains.ParentMethods`
+- `category_specs.rings.subcategories.integrally_closed_domain._IntegrallyClosedDomains.ElementMethods`
+- `category_specs.rings.subcategories.laurent_series_ring._LaurentSeriesRings.ParentMethods`
+- `category_specs.rings.subcategories.laurent_series_ring._LaurentSeriesRings.ElementMethods`
+- `category_specs.rings.subcategories.noetherian._NoetherianRings.ParentMethods`
+- `category_specs.rings.subcategories.noetherian._NoetherianRings.ElementMethods`
+- `category_specs.rings.subcategories.nonarchimedean_global_field._NonArchimedeanGlobalFields.ParentMethods`
+- `category_specs.rings.subcategories.nonarchimedean_global_field._NonArchimedeanGlobalFields.ElementMethods`
+- `category_specs.rings.subcategories.p_adic_integer_ring._Zp.ParentMethods`
+- `category_specs.rings.subcategories.p_adic_integer_ring._Zp.ElementMethods`
+- `category_specs.rings.subcategories.p_adic_ring._PAdicRings.ParentMethods`
+- `category_specs.rings.subcategories.p_adic_ring._PAdicRings.ElementMethods`
+- `category_specs.rings.subcategories.polynomial_ring._PolynomialRings.ParentMethods`
+- `category_specs.rings.subcategories.polynomial_ring._PolynomialRings.ElementMethods`
+- `category_specs.rings.subcategories.power_series_ring._PowerSeriesRings.ParentMethods`
+- `category_specs.rings.subcategories.power_series_ring._PowerSeriesRings.ElementMethods`
+- `category_specs.rings.subcategories.principal_ideal_domain._PrincipalIdealDomains.ParentMethods`
+- `category_specs.rings.subcategories.principal_ideal_domain._PrincipalIdealDomains.ElementMethods`
+- `category_specs.rings.subcategories.puiseux_series_ring._PuiseuxSeriesRings.ParentMethods`
+- `category_specs.rings.subcategories.puiseux_series_ring._PuiseuxSeriesRings.ElementMethods`
+- `category_specs.rings.subcategories.quadratic_number_field._QuadraticNumberFields.ParentMethods`
+- `category_specs.rings.subcategories.quadratic_number_field._QuadraticNumberFields.ElementMethods`
+- `category_specs.rings.subcategories.quotient_field._QuotientFields.ParentMethods`
+- `category_specs.rings.subcategories.quotient_field._QuotientFields.ElementMethods`
+- `category_specs.rings.subcategories.rational_field._QQ.ParentMethods`
+- `category_specs.rings.subcategories.rational_field._QQ.ElementMethods`
+- `category_specs.rings.subcategories.real_algebraic_field._AA.ParentMethods`
+- `category_specs.rings.subcategories.real_algebraic_field._AA.ElementMethods`
+- `category_specs.rings.subcategories.real_ball_field._RealBallFields.ParentMethods`
+- `category_specs.rings.subcategories.real_ball_field._RealBallFields.ElementMethods`
+- `category_specs.rings.subcategories.real_double_field._RealDoubleFields.ParentMethods`
+- `category_specs.rings.subcategories.real_double_field._RealDoubleFields.ElementMethods`
+- `category_specs.rings.subcategories.real_field._RealFields.ParentMethods`
+- `category_specs.rings.subcategories.real_field._RealFields.ElementMethods`
+- `category_specs.rings.subcategories.real_field_53._RR.ParentMethods`
+- `category_specs.rings.subcategories.real_field_53._RR.ElementMethods`
+- `category_specs.rings.subcategories.real_interval_field._RealIntervalFields.ParentMethods`
+- `category_specs.rings.subcategories.real_interval_field._RealIntervalFields.ElementMethods`
+- `category_specs.rings.subcategories.real_precision_field._RealPrecisionFields.ParentMethods`
+- `category_specs.rings.subcategories.real_precision_field._RealPrecisionFields.ElementMethods`
+- `category_specs.rings.subcategories.reduced._ReducedRings.ParentMethods`
+- `category_specs.rings.subcategories.reduced._ReducedRings.ElementMethods`
+- `category_specs.rings.subcategories.unique_factorization_domain._UniqueFactorizationDomains.ParentMethods`
+- `category_specs.rings.subcategories.unique_factorization_domain._UniqueFactorizationDomains.ElementMethods`
+- `category_specs.rings.subcategories.valued._ValuedRings.ParentMethods`
+- `category_specs.rings.subcategories.valued._ValuedRings.ElementMethods`
+- `category_specs.rings.subcategories.valued._ValuedRings.SubcategoryMethods`
+- `category_specs.topological_spaces.subcategories.compact._CompactTopologicalSpaces.ParentMethods`
+- `category_specs.topological_spaces.subcategories.compact._CompactTopologicalSpaces.ElementMethods`
+- `category_specs.topological_spaces.subcategories.complete._CompleteMetricSpaces.ParentMethods`
+- `category_specs.topological_spaces.subcategories.complete._CompleteMetricSpaces.ElementMethods`
+- `category_specs.topological_spaces.subcategories.connected._ConnectedTopologicalSpaces.ParentMethods`
+- `category_specs.topological_spaces.subcategories.connected._ConnectedTopologicalSpaces.ElementMethods`
+- `category_specs.modules.subcategories.finitely_presented._FinitelyPresented.ParentMethods`
+- `category_specs.modules.subcategories.finitely_presented._FinitelyPresented.ElementMethods`
+- `category_specs.modules.subcategories.graded._Graded.ParentMethods`
+- `category_specs.modules.subcategories.graded._Graded.ElementMethods`
+- `category_specs.modules.subcategories.over_commutative_ring._OverCommutativeRing.ParentMethods`
+- `category_specs.modules.subcategories.over_commutative_ring._OverCommutativeRing.ElementMethods`
+- `category_specs.modules.subcategories.over_complete_ring._OverCompleteRing.ParentMethods`
+- `category_specs.modules.subcategories.over_complete_ring._OverCompleteRing.ElementMethods`
+- `category_specs.modules.subcategories.over_local_ring._OverLocalRing.ParentMethods`
+- `category_specs.modules.subcategories.over_local_ring._OverLocalRing.ElementMethods`
+- `category_specs.modules.subcategories.r_ideals._RIdeals.ParentMethods`
+- `category_specs.modules.subcategories.r_ideals._RIdeals.ElementMethods`
+- `category_specs.modules.subcategories.torsionfree._Torsionfree.ParentMethods`
+- `category_specs.modules.subcategories.torsionfree._Torsionfree.ElementMethods`
+- `category_specs.modules.subcategories.with_basis._WithBasis.ParentMethods`
+- `category_specs.modules.subcategories.with_basis._WithBasis.ElementMethods`
+- `category_specs.modules.subcategories.with_basis._WithBasis.SubcategoryMethods`
+- `category_specs.modules.subcategories.with_basis._WithOrderedBasis.ParentMethods`
+- `category_specs.modules.subcategories.with_basis._WithOrderedBasis.ElementMethods`
+
+## Mypy Errors
+
+- `/home/dzack/research/category_specs/cat/__init__.py:214: error: Argument 2 of "_make_named_class" is incompatible with supertype "sage.categories.category.Category"; supertype defines the argument type as "type"  [override]`
+- `/home/dzack/research/category_specs/cat/__init__.py:214: note: This violates the Liskov substitution principle`
+- `/home/dzack/research/category_specs/cat/__init__.py:214: note: See https://mypy.readthedocs.io/en/stable/common_issues.html#incompatible-overrides`
+- `/home/dzack/research/category_specs/cat/__init__.py:250: error: Argument 1 of "join" is incompatible with supertype "sage.categories.category.Category"; supertype defines the argument type as "list[Category]"  [override]`
+- `/home/dzack/research/category_specs/cat/__init__.py:250: note: This violates the Liskov substitution principle`
+- `/home/dzack/research/category_specs/cat/__init__.py:250: note: See https://mypy.readthedocs.io/en/stable/common_issues.html#incompatible-overrides`
+- `/home/dzack/research/category_specs/cat/__init__.py:252: error: Argument 1 to "join" of "Category" has incompatible type "Iterable[category_specs.cat.base_category_types.Category]"; expected "list[sage.categories.category.Category]"  [arg-type]`
+- `/home/dzack/research/category_specs/cat/__init__.py:255: error: Argument 1 of "meet" is incompatible with supertype "sage.categories.category.Category"; supertype defines the argument type as "list[Category]"  [override]`
+- `/home/dzack/research/category_specs/cat/__init__.py:255: note: This violates the Liskov substitution principle`
+- `/home/dzack/research/category_specs/cat/__init__.py:255: note: See https://mypy.readthedocs.io/en/stable/common_issues.html#incompatible-overrides`
+- `/home/dzack/research/category_specs/cat/__init__.py:265: error: Argument 1 to "meet" of "Category" has incompatible type "tuple[category_specs.cat.base_category_types.Category, ...]"; expected "list[sage.categories.category.Category]"  [arg-type]`
+- `/home/dzack/research/category_specs/cat/__init__.py:272: error: Return type "list[category_specs.cat.base_category_types.Category]" of "super_categories" incompatible with return type "list[sage.categories.category.Category]" in supertype "sage.categories.category.Category"  [override]`
+- `/home/dzack/research/category_specs/cat/__init__.py:278: error: Method "additional_structure" is marked as an override, but no base method was found with this name  [misc]`
+- `/home/dzack/research/category_specs/cat/__init__.py:291: error: Incompatible return value type (got "JoinCategories", expected "Category")  [return-value]`
+- `/home/dzack/research/category_specs/cat/__init__.py:315: error: Incompatible types in assignment (expression has type "LazyImport", base class "Category" defined the type as "Callable[[], Category]")  [assignment]`
+- `/home/dzack/research/category_specs/cat/__init__.py:331: error: Incompatible return value type (got "EmptyCategory", expected "Category")  [return-value]`
+- `/home/dzack/research/category_specs/sets/__init__.py:78: error: Module "sage.rings.infinity" has no attribute "infinity"; maybe "MinusInfinity"?  [attr-defined]`
+- `/home/dzack/research/category_specs/sets/__init__.py:78: error: Module "sage.rings.infinity" has no attribute "minus_infinity"; maybe "MinusInfinity"?  [attr-defined]`
+- `/home/dzack/research/category_specs/sets/__init__.py:145: error: Argument 1 of "_element_constructor_" is incompatible with supertype "sage.categories.sets_cat.Sets.ParentMethods"; supertype defines the argument type as "object"  [override]`
+- `/home/dzack/research/category_specs/sets/__init__.py:145: note: This violates the Liskov substitution principle`
+- `/home/dzack/research/category_specs/sets/__init__.py:145: note: See https://mypy.readthedocs.io/en/stable/common_issues.html#incompatible-overrides`
+- `/home/dzack/research/category_specs/sets/__init__.py:304: error: Argument 2 to "Subsets" has incompatible type "Integer"; expected "int | None"  [arg-type]`
+- `/home/dzack/research/category_specs/sets/__init__.py:317: error: Argument 1 to "Modules" has incompatible type "_RingObjectMethods"; expected "CategoryObject"  [arg-type]`
+- `/home/dzack/research/category_specs/sets/__init__.py:325: error: Argument 1 to "Algebras" has incompatible type "_RingObjectMethods"; expected "CategoryObject"  [arg-type]`
+- `/home/dzack/research/category_specs/sets/__init__.py:343: error: Return type "Integer" of "__hash__" incompatible with return type "int" in supertype "builtins.object"  [override]`
+- `/home/dzack/research/category_specs/sets/__init__.py:373: error: Argument 1 to "is_subcategory" of "Category" has incompatible type "Sets"; expected "Category"  [arg-type]`
+- `/home/dzack/research/category_specs/sets/__init__.py:378: error: Method "_sage_super_categories" is marked as an override, but no base method was found with this name  [misc]`
+- `/home/dzack/research/category_specs/sets/__init__.py:379: error: Incompatible return value type (got "tuple[Sets]", expected "tuple[Category, ...]")  [return-value]`
+- `/home/dzack/research/category_specs/sets/__init__.py:383: error: Return type "list[category_specs.cat.base_category_types.Category]" of "super_categories" incompatible with return type "list[sage.categories.category.Category]" in supertype "sage.categories.category.Category"  [override]`
+- `/home/dzack/research/category_specs/sets/__init__.py:385: error: List item 0 has incompatible type "Sets"; expected "Category"  [list-item]`
+- `/home/dzack/research/category_specs/sets/__init__.py:389: error: Method "additional_structure" is marked as an override, but no base method was found with this name  [misc]`
+- `/home/dzack/research/category_specs/sets/__init__.py:400: error: Return type "Category" of "Finite" incompatible with return type "FiniteSets" in supertype "sage.categories.sets_cat.Sets.SubcategoryMethods"  [override]`
+- `/home/dzack/research/category_specs/sets/__init__.py:406: error: Return type "Category" of "Infinite" incompatible with return type "CategoryWithAxiom" in supertype "sage.categories.sets_cat.Sets.SubcategoryMethods"  [override]`
+- `/home/dzack/research/category_specs/sets/__init__.py:424: error: Return type "Category" of "Facade" incompatible with return type "FacadeSets" in supertype "sage.categories.sets_cat.Sets.SubcategoryMethods"  [override]`
+- `/home/dzack/research/category_specs/sets/__init__.py:430: error: Return type "Category" of "Topological" incompatible with return type "TopologicalSpaces" in supertype "sage.categories.sets_cat.Sets.SubcategoryMethods"  [override]`
+- `/home/dzack/research/category_specs/sets/__init__.py:436: error: Return type "Category" of "Metric" incompatible with return type "MetricSpaces" in supertype "sage.categories.sets_cat.Sets.SubcategoryMethods"  [override]`
+- `/home/dzack/research/category_specs/sets/__init__.py:464: error: Incompatible return value type (got "_GSets", expected "Category")  [return-value]`
+- `/home/dzack/research/category_specs/sets/__init__.py:464: error: Argument 2 to "_GSets" has incompatible type "SubcategoryMethods"; expected "Category | None"  [arg-type]`
+- `/home/dzack/research/category_specs/sets/__init__.py:474: error: Argument 1 to "category_of" of "FunctorialConstructionCategory" has incompatible type "SubcategoryMethods"; expected "Category"  [arg-type]`
+- `/home/dzack/research/category_specs/sets/__init__.py:484: error: Argument 1 to "category_of" of "FunctorialConstructionCategory" has incompatible type "SubcategoryMethods"; expected "Category"  [arg-type]`
+- `/home/dzack/research/category_specs/sets/__init__.py:492: error: Argument 1 to "category_of" of "FunctorialConstructionCategory" has incompatible type "SubcategoryMethods"; expected "Category"  [arg-type]`
+- `/home/dzack/research/category_specs/sets/__init__.py:537: error: List item 0 has incompatible type "Sets"; expected "Category"  [list-item]`
+- `/home/dzack/research/category_specs/sets/__init__.py:537: error: List item 2 has incompatible type "PartitionedSetsCategory"; expected "Category"  [list-item]`
+- `/home/dzack/research/category_specs/sets/__init__.py:551: error: Incompatible return value type (got "tuple[<subclass of "typing.Iterable[category_specs.sets._SetElementMethods]" and "sage.structure.category_object.CategoryObject">, list[Category]]", expected "tuple[_SetObjectMethods | tuple[_SetElementMethods, ...] | Integer, list[Category]]")  [return-value]`
+- `/home/dzack/research/category_specs/sets/__init__.py:588: error: Incompatible default for parameter "step" (default has type "int", parameter has type "Integer")  [assignment]`
+- `/home/dzack/research/category_specs/sets/__init__.py:653: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/sets/__init__.py:654: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/sets/__init__.py:656: error: Too few arguments  [call-arg]`
+- `/home/dzack/research/category_specs/sets/__init__.py:659: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/sets/__init__.py:672: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/sets/__init__.py:682: error: Value of type variable "_ParentT" of "refine_category" cannot be "ParentMethods"  [type-var]`
+- `/home/dzack/research/category_specs/sets/__init__.py:700: error: Argument 1 to "get_interval" of "ParentMethods" has incompatible type "int"; expected "Integer"  [arg-type]`
+- `/home/dzack/research/category_specs/sets/__init__.py:752: error: Module "sage.rings.real_mpfr" does not explicitly export attribute "RealField"  [attr-defined]`
+- `/home/dzack/research/category_specs/sets/__init__.py:756: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/sets/__init__.py:982: error: Argument 1 to "category_from_parents" of "_CartesianProductCallable" has incompatible type "tuple[_SetObjectMethods, ...]"; expected "Iterable[Category]"  [arg-type]`
+- `/home/dzack/research/category_specs/sets/__init__.py:986: error: Incompatible types in assignment (expression has type "tuple[Any, ...]", variable has type "Category")  [assignment]`
+- `/home/dzack/research/category_specs/sets/__init__.py:988: error: Unsupported left operand type for & ("Category")  [operator]`
+- `/home/dzack/research/category_specs/sets/__init__.py:1112: error: Module "sage.combinat.set_partition" has no attribute "SetPartitions"; maybe "SetPartition" or "Partition"?  [attr-defined]`
+- `/home/dzack/research/category_specs/sets/__init__.py:1116: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/sets/__init__.py:1133: error: Module "sage.combinat.set_partition" has no attribute "SetPartitions"; maybe "SetPartition" or "Partition"?  [attr-defined]`
+- `/home/dzack/research/category_specs/sets/__init__.py:1169: error: Module "sage.combinat.set_partition" has no attribute "SetPartitions"; maybe "SetPartition" or "Partition"?  [attr-defined]`
+- `/home/dzack/research/category_specs/sets/__init__.py:1207: error: Module "sage.combinat.set_partition" has no attribute "SetPartitions"; maybe "SetPartition" or "Partition"?  [attr-defined]`
+- `/home/dzack/research/category_specs/sets/__init__.py:1227: error: Missing positional argument "s" in call to "SetPartition"  [call-arg]`
+- `/home/dzack/research/category_specs/sets/__init__.py:1227: error: Argument 1 to "SetPartition" has incompatible type "Iterable[Iterable[_SetElementMethods]]"; expected "Parent"  [arg-type]`
+- `/home/dzack/research/category_specs/sets/__init__.py:1234: error: Module "sage.combinat.set_partition" has no attribute "SetPartitions"; maybe "SetPartition" or "Partition"?  [attr-defined]`
+- `/home/dzack/research/category_specs/sets/__init__.py:1246: error: Module "sage.combinat.set_partition" has no attribute "SetPartitions"; maybe "SetPartition" or "Partition"?  [attr-defined]`
+- `/home/dzack/research/category_specs/sets/__init__.py:1260: error: Module "sage.combinat.set_partition" has no attribute "SetPartitions"; maybe "SetPartition" or "Partition"?  [attr-defined]`
+- `/home/dzack/research/category_specs/sets/__init__.py:1274: error: Module "sage.combinat.set_partition" has no attribute "SetPartitions"; maybe "SetPartition" or "Partition"?  [attr-defined]`
+- `/home/dzack/research/category_specs/sets/__init__.py:1290: error: Module "sage.combinat.set_partition" has no attribute "SetPartitions"; maybe "SetPartition" or "Partition"?  [attr-defined]`
+- `/home/dzack/research/category_specs/sets/__init__.py:1306: error: Module "sage.combinat.set_partition" has no attribute "SetPartitions"; maybe "SetPartition" or "Partition"?  [attr-defined]`
+- `/home/dzack/research/category_specs/sets/__init__.py:1322: error: Module "sage.combinat.set_partition" has no attribute "SetPartitions"; maybe "SetPartition" or "Partition"?  [attr-defined]`
+- `/home/dzack/research/category_specs/sets/__init__.py:1336: error: Cannot override writable attribute "Constructors" with a final one  [misc]`
+- `/home/dzack/research/category_specs/sets/__init__.py:1338: error: Signature of "Constructors" incompatible with supertype "Category"  [override]`
+- `/home/dzack/research/category_specs/sets/__init__.py:1338: note:      Superclass:`
+- `/home/dzack/research/category_specs/sets/__init__.py:1338: note:          type`
+- `/home/dzack/research/category_specs/sets/__init__.py:1338: note:      Subclass:`
+- `/home/dzack/research/category_specs/sets/__init__.py:1338: note:          def Constructors(self) -> _Constructors`
+- `/home/dzack/research/category_specs/sets/__init__.py:1342: error: Incompatible types in assignment (expression has type "type[SetHomCategory]", base class "Category" defined the type as "Callable[[], Category]")  [assignment]`
+- `/home/dzack/research/category_specs/topological_spaces/__init__.py:184: error: Incompatible types in assignment (expression has type "type[TopologicalSpaceHomCategory]", base class "Category" defined the type as "Callable[[], Category]")  [assignment]`
+- `/home/dzack/research/category_specs/topological_spaces/__init__.py:199: error: Method "_sage_super_categories" is marked as an override, but no base method was found with this name  [misc]`
+- `/home/dzack/research/category_specs/topological_spaces/__init__.py:209: error: Return type "list[category_specs.cat.base_category_types.Category]" of "super_categories" incompatible with return type "list[sage.categories.category.Category]" in supertype "sage.categories.category.Category"  [override]`
+- `/home/dzack/research/category_specs/topological_spaces/__init__.py:211: error: List item 0 has incompatible type "Sets"; expected "Category"  [list-item]`
+- `/home/dzack/research/category_specs/topological_spaces/__init__.py:232: error: Cannot override writable attribute "Constructors" with a final one  [misc]`
+- `/home/dzack/research/category_specs/topological_spaces/__init__.py:234: error: Signature of "Constructors" incompatible with supertype "Category"  [override]`
+- `/home/dzack/research/category_specs/topological_spaces/__init__.py:234: note:      Superclass:`
+- `/home/dzack/research/category_specs/topological_spaces/__init__.py:234: note:          type`
+- `/home/dzack/research/category_specs/topological_spaces/__init__.py:234: note:      Subclass:`
+- `/home/dzack/research/category_specs/topological_spaces/__init__.py:234: note:          def Constructors(self) -> _Constructors`
+- `/home/dzack/research/category_specs/topological_spaces/__init__.py:251: error: Cannot override final attribute "Metric" (previously declared in base class "SubcategoryMethods")  [misc]`
+- `/home/dzack/research/category_specs/topological_spaces/__init__.py:253: error: Return type "Category" of "Metric" incompatible with return type "MetricSpaces" in supertype "sage.categories.sets_cat.Sets.SubcategoryMethods"  [override]`
+- `/home/dzack/research/category_specs/rings/__init__.py:21: error: Module "sage.rings.number_field.number_field" has no attribute "NumberField_cyclotomic"  [attr-defined]`
+- `/home/dzack/research/category_specs/rings/__init__.py:241: error: Signature of "__call__" incompatible with supertype "category_specs.sets._SetObjectMethods"  [override]`
+- `/home/dzack/research/category_specs/rings/__init__.py:241: note:      Superclass:`
+- `/home/dzack/research/category_specs/rings/__init__.py:241: note:          def __call__(self, x: _SetElementMethods) -> _SetElementMethods`
+- `/home/dzack/research/category_specs/rings/__init__.py:241: note:      Subclass:`
+- `/home/dzack/research/category_specs/rings/__init__.py:241: note:          def __call__(self, x: _RingElementMethods | Integer | int = ...) -> _RingElementMethods`
+- `/home/dzack/research/category_specs/rings/__init__.py:359: error: Incompatible return value type (got "_RModObjects", expected "ParentMethods")  [return-value]`
+- `/home/dzack/research/category_specs/rings/__init__.py:359: error: Argument 1 to "Modules" has incompatible type "_RingObjectMethods"; expected "CategoryObject"  [arg-type]`
+- `/home/dzack/research/category_specs/rings/__init__.py:508: error: Incompatible default for parameter "i" (default has type "int", parameter has type "Integer")  [assignment]`
+- `/home/dzack/research/category_specs/rings/__init__.py:596: error: Return type "list[category_specs.cat.base_category_types.Category]" of "super_categories" incompatible with return type "list[sage.categories.category.Category]" in supertype "sage.categories.category.Category"  [override]`
+- `/home/dzack/research/category_specs/rings/__init__.py:598: error: List item 0 has incompatible type "CommutativeRingIdeals"; expected "Category"  [list-item]`
+- `/home/dzack/research/category_specs/rings/__init__.py:598: error: Argument 1 to "CommutativeRingIdeals" has incompatible type "_RingObjectMethods"; expected "Parent"  [arg-type]`
+- `/home/dzack/research/category_specs/rings/__init__.py:598: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:598: error: Argument 1 to "Modules" has incompatible type "_RingObjectMethods"; expected "CategoryObject"  [arg-type]`
+- `/home/dzack/research/category_specs/rings/__init__.py:608: error: Argument 1 to "_RingIdeals" has incompatible type "_RingObjectMethods"; expected "CategoryObject"  [arg-type]`
+- `/home/dzack/research/category_specs/rings/__init__.py:608: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:608: error: Argument 1 to "Modules" has incompatible type "_RingObjectMethods"; expected "CategoryObject"  [arg-type]`
+- `/home/dzack/research/category_specs/rings/__init__.py:662: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:668: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:678: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:686: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:692: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:698: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:704: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:710: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:716: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:722: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:729: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:734: error: Incompatible default for parameter "prec" (default has type "int", parameter has type "Integer")  [assignment]`
+- `/home/dzack/research/category_specs/rings/__init__.py:739: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:741: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:745: error: Incompatible default for parameter "prec" (default has type "int", parameter has type "Integer")  [assignment]`
+- `/home/dzack/research/category_specs/rings/__init__.py:749: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:751: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:755: error: Incompatible default for parameter "prec" (default has type "int", parameter has type "Integer")  [assignment]`
+- `/home/dzack/research/category_specs/rings/__init__.py:760: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:764: error: Incompatible default for parameter "prec" (default has type "int", parameter has type "Integer")  [assignment]`
+- `/home/dzack/research/category_specs/rings/__init__.py:770: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:777: error: Incompatible default for parameter "order" (default has type "int", parameter has type "Integer")  [assignment]`
+- `/home/dzack/research/category_specs/rings/__init__.py:787: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:794: error: Incompatible default for parameter "order" (default has type "int", parameter has type "Integer")  [assignment]`
+- `/home/dzack/research/category_specs/rings/__init__.py:804: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:811: error: Incompatible default for parameter "order" (default has type "int", parameter has type "Integer")  [assignment]`
+- `/home/dzack/research/category_specs/rings/__init__.py:821: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:858: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:895: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:928: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:930: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:932: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:947: error: Module "sage.rings.number_field.number_field" has no attribute "NumberFieldTower"; maybe "NumberField" or "NumberFieldOrder"?  [attr-defined]`
+- `/home/dzack/research/category_specs/rings/__init__.py:959: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:982: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:989: error: Incompatible default for parameter "n" (default has type "int", parameter has type "Integer")  [assignment]`
+- `/home/dzack/research/category_specs/rings/__init__.py:999: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1040: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1085: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1125: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1166: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1211: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1251: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1298: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1346: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1393: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1475: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1523: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1570: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1766: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1794: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1824: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1854: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1882: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1896: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1924: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1940: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1954: error: Argument 1 to "MatrixSpace" has incompatible type "_RingObjectMethods"; expected "CommutativeRing"  [arg-type]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1954: error: Argument 2 to "MatrixSpace" has incompatible type "Integer"; expected "int"  [arg-type]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1954: error: Argument 3 to "MatrixSpace" has incompatible type "Integer"; expected "int"  [arg-type]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1954: error: Argument "implementation" to "MatrixSpace" has incompatible type "str | type[Matrix] | None"; expected "type"  [arg-type]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1958: error: Value of type variable "_ParentT" of "refine_category" cannot be "MatrixSpace"  [type-var]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1960: error: Argument 1 to "_MatrixAlgebras" has incompatible type "CommutativeRing"; expected "_RingObjectMethods"  [arg-type]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1960: error: Argument 2 to "_MatrixAlgebras" has incompatible type "int"; expected "Integer"  [arg-type]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1960: error: Argument 3 to "_MatrixAlgebras" has incompatible type "int"; expected "Integer"  [arg-type]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1965: error: Cannot override writable attribute "Constructors" with a final one  [misc]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1967: error: Signature of "Constructors" incompatible with supertype "Category"  [override]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1967: note:      Superclass:`
+- `/home/dzack/research/category_specs/rings/__init__.py:1967: note:          type`
+- `/home/dzack/research/category_specs/rings/__init__.py:1967: note:      Subclass:`
+- `/home/dzack/research/category_specs/rings/__init__.py:1967: note:          def Constructors(self) -> _Constructors`
+- `/home/dzack/research/category_specs/rings/__init__.py:1973: error: Method "_sage_super_categories" is marked as an override, but no base method was found with this name  [misc]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1974: error: Incompatible return value type (got "tuple[Rings]", expected "tuple[Category, ...]")  [return-value]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1978: error: Return type "list[category_specs.cat.base_category_types.Category]" of "super_categories" incompatible with return type "list[sage.categories.category.Category]" in supertype "sage.categories.category.Category"  [override]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1981: error: List item 0 has incompatible type "Sets"; expected "Category"  [list-item]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1981: error: List item 1 has incompatible type "Rings"; expected "Category"  [list-item]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1985: error: Method "additional_structure" is marked as an override, but no base method was found with this name  [misc]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1988: error: Cannot override final attribute "Finite" (previously declared in base class "SubcategoryMethods")  [misc]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1988: error: Definition of "Finite" in base class "SubcategoryMethods" is incompatible with definition in base class "SubcategoryMethods"  [misc]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1988: error: Cannot override final attribute "Topological" (previously declared in base class "SubcategoryMethods")  [misc]`
+- `/home/dzack/research/category_specs/rings/__init__.py:1988: error: Definition of "Topological" in base class "SubcategoryMethods" is incompatible with definition in base class "SubcategoryMethods"  [misc]`
+- `/home/dzack/research/category_specs/rings/__init__.py:2004: error: "LazyImport" not callable  [operator]`
+- `/home/dzack/research/category_specs/rings/__init__.py:2050: error: Argument 1 to "category_of" of "FunctorialConstructionCategory" has incompatible type "SubcategoryMethods"; expected "Category"  [arg-type]`
+- `/home/dzack/research/category_specs/rings/__init__.py:2057: error: Argument 1 to "category_of" of "FunctorialConstructionCategory" has incompatible type "SubcategoryMethods"; expected "Category"  [arg-type]`
+- `/home/dzack/research/category_specs/rings/__init__.py:2064: error: Argument 1 to "Algebras" has incompatible type "_RingObjectMethods"; expected "CategoryObject"  [arg-type]`
+- `/home/dzack/research/category_specs/rings/__init__.py:2074: error: "Category" has no attribute "RingsUnder"  [attr-defined]`
+- `/home/dzack/research/category_specs/rings/__init__.py:2089: error: "Category" has no attribute "RingsUnder"  [attr-defined]`
+- `/home/dzack/research/category_specs/rings/__init__.py:2104: error: "Category" has no attribute "RingsUnder"  [attr-defined]`
+- `/home/dzack/research/category_specs/rings/__init__.py:2119: error: "Category" has no attribute "RingsUnder"  [attr-defined]`
+- `/home/dzack/research/category_specs/rings/__init__.py:2130: error: "Category" has no attribute "Quotients"  [attr-defined]`
+- `/home/dzack/research/category_specs/rings/__init__.py:2142: error: "Category" has no attribute "Subobjects"  [attr-defined]`
+- `/home/dzack/research/category_specs/rings/__init__.py:2167: error: Incompatible types in assignment (expression has type "type[RingHomCategory]", base class "Category" defined the type as "Callable[[], Category]")  [assignment]`
+- `/tmp/tmp.k6sKqD5zhX/negative_consumer_probe.py:5: error: Incompatible types in assignment (expression has type "int", variable has type "_SetObjectMethods")  [assignment]`
