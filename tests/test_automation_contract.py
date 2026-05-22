@@ -6,7 +6,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_PACKAGE = REPO_ROOT / "sage_mypy_category_plugin"
-SAGE_STUBS_COMMIT = "6301c85a38357808d76a07c2b8f082efcda3aa30"
+SAGE_STUBS_COMMIT = "1bb285047beacbdd2b44fef011233b024e8f7631"
 
 
 def test_justfile_exposes_final_state_validation_recipes() -> None:
