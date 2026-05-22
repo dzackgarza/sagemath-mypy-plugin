@@ -325,177 +325,10 @@
     "category_specs.modules.subcategories.with_basis._WithOrderedBasis.ParentMethods",
     "category_specs.modules.subcategories.with_basis._WithOrderedBasis.ElementMethods"
   ],
-  "manifest": "/tmp/tmp.k6sKqD5zhX/sage-category-cache/projection-manifest.json",
+  "manifest": "/tmp/tmp.Tzwd7m8Rxl/sage-category-cache/projection-manifest.json",
   "manifest_source_module_count": 230,
-  "mismatched_provider_count": 5,
-  "mismatches": [
-    {
-      "expected": [
-        "category_specs.homsets.autsets.UniversalAutObjectMethods",
-        "category_specs.cat.endsets.CatEndCategory.ParentMethods"
-      ],
-      "field": "bases",
-      "observed": [
-        "builtins.object"
-      ],
-      "provider": "category_specs.cat.autsets.CatAutCategory.ParentMethods"
-    },
-    {
-      "expected": [
-        "category_specs.cat.autsets.CatAutCategory.ParentMethods",
-        "category_specs.homsets.autsets.UniversalAutObjectMethods",
-        "category_specs.cat.endsets.CatEndCategory.ParentMethods",
-        "category_specs.homsets.endsets.UniversalEndObjectMethods",
-        "sage.categories.homsets.Homsets.Endset.ParentMethods",
-        "sage.categories.monoids.Monoids.ParentMethods",
-        "sage.categories.semigroups.Semigroups.ParentMethods",
-        "sage.categories.magmas.Magmas.Unital.ParentMethods",
-        "sage.categories.magmas.Magmas.ParentMethods",
-        "category_specs.cat.homsets._CatHomCategoryObjectMethods",
-        "category_specs.homsets.homsets.UniversalHomObjectMethods",
-        "sage.categories.homsets.Homsets.ParentMethods",
-        "sage.categories.sets_cat.Sets.ParentMethods",
-        "sage.categories.objects.Objects.ParentMethods"
-      ],
-      "field": "mro",
-      "observed": [
-        "category_specs.cat.autsets.CatAutCategory.ParentMethods"
-      ],
-      "provider": "category_specs.cat.autsets.CatAutCategory.ParentMethods"
-    },
-    {
-      "expected": [
-        "category_specs.homsets.endsets.UniversalEndObjectMethods",
-        "category_specs.cat.homsets._CatHomCategoryObjectMethods"
-      ],
-      "field": "bases",
-      "observed": [
-        "builtins.object"
-      ],
-      "provider": "category_specs.cat.endsets.CatEndCategory.ParentMethods"
-    },
-    {
-      "expected": [
-        "category_specs.cat.endsets.CatEndCategory.ParentMethods",
-        "category_specs.homsets.endsets.UniversalEndObjectMethods",
-        "sage.categories.homsets.Homsets.Endset.ParentMethods",
-        "sage.categories.monoids.Monoids.ParentMethods",
-        "sage.categories.semigroups.Semigroups.ParentMethods",
-        "sage.categories.magmas.Magmas.Unital.ParentMethods",
-        "sage.categories.magmas.Magmas.ParentMethods",
-        "category_specs.cat.homsets._CatHomCategoryObjectMethods",
-        "category_specs.homsets.homsets.UniversalHomObjectMethods",
-        "sage.categories.homsets.Homsets.ParentMethods",
-        "sage.categories.sets_cat.Sets.ParentMethods",
-        "sage.categories.objects.Objects.ParentMethods"
-      ],
-      "field": "mro",
-      "observed": [
-        "category_specs.cat.endsets.CatEndCategory.ParentMethods"
-      ],
-      "provider": "category_specs.cat.endsets.CatEndCategory.ParentMethods"
-    },
-    {
-      "expected": [
-        "category_specs.homsets.endsets.UniversalEndObjectMethods",
-        "category_specs.rings.homsets._RingHomCategoryObjectMethods"
-      ],
-      "field": "bases",
-      "observed": [
-        "builtins.object"
-      ],
-      "provider": "category_specs.rings.homsets.RingEndCategory.ParentMethods"
-    },
-    {
-      "expected": [
-        "category_specs.rings.homsets.RingEndCategory.ParentMethods",
-        "category_specs.homsets.endsets.UniversalEndObjectMethods",
-        "category_specs.sets.homsets.SetEndCategory.ParentMethods",
-        "sage.categories.homsets.Homsets.Endset.ParentMethods",
-        "sage.categories.monoids.Monoids.ParentMethods",
-        "sage.categories.semigroups.Semigroups.ParentMethods",
-        "sage.categories.magmas.Magmas.Unital.ParentMethods",
-        "sage.categories.magmas.Magmas.ParentMethods",
-        "category_specs.homsets.homsets.UniversalHomObjectMethods",
-        "sage.categories.homsets.Homsets.ParentMethods",
-        "category_specs.rings.homsets._RingHomCategoryObjectMethods",
-        "category_specs.sets.homsets._SetHomCategoryObjectMethods",
-        "sage.categories.sets_cat.Sets.ParentMethods",
-        "sage.categories.objects.Objects.ParentMethods"
-      ],
-      "field": "mro",
-      "observed": [
-        "category_specs.rings.homsets.RingEndCategory.ParentMethods"
-      ],
-      "provider": "category_specs.rings.homsets.RingEndCategory.ParentMethods"
-    },
-    {
-      "expected": [
-        "category_specs.homsets.endsets.UniversalEndObjectMethods",
-        "category_specs.sets.homsets._SetHomCategoryObjectMethods"
-      ],
-      "field": "bases",
-      "observed": [
-        "builtins.object"
-      ],
-      "provider": "category_specs.sets.homsets.SetEndCategory.ParentMethods"
-    },
-    {
-      "expected": [
-        "category_specs.sets.homsets.SetEndCategory.ParentMethods",
-        "category_specs.homsets.endsets.UniversalEndObjectMethods",
-        "sage.categories.homsets.Homsets.Endset.ParentMethods",
-        "sage.categories.monoids.Monoids.ParentMethods",
-        "sage.categories.semigroups.Semigroups.ParentMethods",
-        "sage.categories.magmas.Magmas.Unital.ParentMethods",
-        "sage.categories.magmas.Magmas.ParentMethods",
-        "category_specs.homsets.homsets.UniversalHomObjectMethods",
-        "sage.categories.homsets.Homsets.ParentMethods",
-        "category_specs.sets.homsets._SetHomCategoryObjectMethods",
-        "sage.categories.sets_cat.Sets.ParentMethods",
-        "sage.categories.objects.Objects.ParentMethods"
-      ],
-      "field": "mro",
-      "observed": [
-        "category_specs.sets.homsets.SetEndCategory.ParentMethods"
-      ],
-      "provider": "category_specs.sets.homsets.SetEndCategory.ParentMethods"
-    },
-    {
-      "expected": [
-        "category_specs.homsets.endsets.UniversalEndObjectMethods",
-        "category_specs.topological_spaces.homsets._TopologicalHomCategoryObjectMethods"
-      ],
-      "field": "bases",
-      "observed": [
-        "builtins.object"
-      ],
-      "provider": "category_specs.topological_spaces.homsets.TopologicalSpaceEndCategory.ParentMethods"
-    },
-    {
-      "expected": [
-        "category_specs.topological_spaces.homsets.TopologicalSpaceEndCategory.ParentMethods",
-        "category_specs.homsets.endsets.UniversalEndObjectMethods",
-        "category_specs.sets.homsets.SetEndCategory.ParentMethods",
-        "sage.categories.homsets.Homsets.Endset.ParentMethods",
-        "sage.categories.monoids.Monoids.ParentMethods",
-        "sage.categories.semigroups.Semigroups.ParentMethods",
-        "sage.categories.magmas.Magmas.Unital.ParentMethods",
-        "sage.categories.magmas.Magmas.ParentMethods",
-        "category_specs.homsets.homsets.UniversalHomObjectMethods",
-        "sage.categories.homsets.Homsets.ParentMethods",
-        "category_specs.topological_spaces.homsets._TopologicalHomCategoryObjectMethods",
-        "category_specs.sets.homsets._SetHomCategoryObjectMethods",
-        "sage.categories.sets_cat.Sets.ParentMethods",
-        "sage.categories.objects.Objects.ParentMethods"
-      ],
-      "field": "mro",
-      "observed": [
-        "category_specs.topological_spaces.homsets.TopologicalSpaceEndCategory.ParentMethods"
-      ],
-      "provider": "category_specs.topological_spaces.homsets.TopologicalSpaceEndCategory.ParentMethods"
-    }
-  ],
+  "mismatched_provider_count": 0,
+  "mismatches": [],
   "missing_typeinfo_count": 0,
   "missing_typeinfos": [],
   "mypy_error_count": 200,
@@ -699,14 +532,16 @@
     "/home/dzack/research/category_specs/rings/__init__.py:2130: error: \"Category\" has no attribute \"Quotients\"  [attr-defined]",
     "/home/dzack/research/category_specs/rings/__init__.py:2142: error: \"Category\" has no attribute \"Subobjects\"  [attr-defined]",
     "/home/dzack/research/category_specs/rings/__init__.py:2167: error: Incompatible types in assignment (expression has type \"type[RingHomCategory]\", base class \"Category\" defined the type as \"Callable[[], Category]\")  [assignment]",
-    "/tmp/tmp.k6sKqD5zhX/negative_consumer_probe.py:5: error: Incompatible types in assignment (expression has type \"int\", variable has type \"_SetObjectMethods\")  [assignment]"
+    "/tmp/tmp.Tzwd7m8Rxl/negative_consumer_probe.py:5: error: Incompatible types in assignment (expression has type \"int\", variable has type \"_SetObjectMethods\")  [assignment]"
   ],
   "negative_injected_error_count": 1,
   "projection_count": 444,
+  "projection_trace": "/tmp/tmp.Tzwd7m8Rxl/projection-hook-trace.jsonl",
+  "projection_trace_events": [],
   "requires_all_graph_providers": false,
   "source_mode": "representative",
   "source_module_count": 5,
-  "status": "fail",
+  "status": "pass",
   "unsupported_provider_count": 69,
-  "work_dir": "/tmp/tmp.k6sKqD5zhX"
+  "work_dir": "/tmp/tmp.Tzwd7m8Rxl"
 }

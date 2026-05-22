@@ -50,6 +50,7 @@ class CanaryPaths:
     cache_dir: Path
     mypy_cache_dir: Path
     negative_probe_path: Path
+    projection_trace_path: Path
 
 
 @dataclass(frozen=True)
@@ -98,6 +99,7 @@ def main() -> None:
         cache_dir=work_dir / "sage-category-cache",
         mypy_cache_dir=work_dir / "mypy-cache",
         negative_probe_path=work_dir / "negative_consumer_probe.py",
+        projection_trace_path=work_dir / "projection-hook-trace.jsonl",
     )
     _write_config(paths)
     _write_negative_probe(paths)
@@ -211,6 +213,7 @@ def _write_config(paths: CanaryPaths) -> None:
                 *[f"    {role}" for role in DEFAULT_ROLES],
                 f"cache_dir = {paths.cache_dir}",
                 "strict = true",
+                f"trace_path = {paths.projection_trace_path}",
                 "",
             )
         ),
@@ -512,6 +515,7 @@ def _artifact_payload(
         "consumer_root": str(consumer_root),
         "work_dir": str(paths.config_path.parent),
         "manifest": str(paths.cache_dir / "projection-manifest.json"),
+        "projection_trace": str(paths.projection_trace_path),
         "source_mode": build_plan.mode,
         "requires_all_graph_providers": build_plan.requires_all_graph_providers,
         "source_module_count": len(build_plan.sources),
@@ -538,6 +542,12 @@ def _artifact_payload(
             }
             for mismatch in structural_audit.mismatches
         ],
+        "projection_trace_events": _projection_trace_events(
+            paths,
+            providers=tuple(
+                dict.fromkeys(mismatch.provider for mismatch in structural_audit.mismatches)
+            ),
+        ),
     }
 
 
@@ -555,6 +565,7 @@ def _artifact_markdown(payload: dict[str, object]) -> str:
         f"- missing_typeinfo_count: {payload['missing_typeinfo_count']}",
         f"- mismatched_provider_count: {payload['mismatched_provider_count']}",
         f"- negative_injected_error_count: {payload['negative_injected_error_count']}",
+        f"- projection_trace_event_count: {len(payload['projection_trace_events'])}",
         "",
         "## Mismatches",
         "",
@@ -589,6 +600,10 @@ def _artifact_markdown(payload: dict[str, object]) -> str:
             "",
             *_markdown_items(payload["mypy_errors"]),
             "",
+            "## Projection Hook Trace",
+            "",
+            *_projection_trace_markdown_items(payload["projection_trace_events"]),
+            "",
         ]
     )
     return "\n".join(lines)
@@ -598,6 +613,49 @@ def _markdown_items(value: object) -> list[str]:
     if not isinstance(value, list | tuple) or not value:
         return ["None."]
     return [f"- `{item}`" for item in value]
+
+
+def _projection_trace_events(
+    paths: CanaryPaths,
+    *,
+    providers: tuple[str, ...],
+) -> list[dict[str, object]]:
+    if not paths.projection_trace_path.is_file():
+        return []
+    provider_set = frozenset(providers)
+    if not provider_set:
+        return []
+    events: list[dict[str, object]] = []
+    for line in paths.projection_trace_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        loaded = json.loads(line)
+        if not isinstance(loaded, dict):
+            raise AssertionError(f"Projection trace event is not an object: {loaded!r}")
+        if loaded.get("provider") not in provider_set:
+            continue
+        events.append(loaded)
+    return events
+
+
+def _projection_trace_markdown_items(value: object) -> list[str]:
+    if not isinstance(value, list) or not value:
+        return ["None."]
+    lines: list[str] = []
+    for event in value:
+        if not isinstance(event, dict):
+            continue
+        provider = event.get("provider")
+        event_name = event.get("event")
+        final_iteration = event.get("final_iteration")
+        missing = event.get("missing")
+        suffix = ""
+        if final_iteration is not None:
+            suffix += f", final_iteration={final_iteration}"
+        if missing:
+            suffix += f", missing={tuple(missing)}"
+        lines.append(f"- `{provider}`: `{event_name}`{suffix}")
+    return lines or ["None."]
 
 
 def _typeinfo_for_fullname(

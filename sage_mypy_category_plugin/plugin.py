@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from configparser import ConfigParser
 from dataclasses import dataclass, field
@@ -36,6 +37,7 @@ class PluginConfig:
     roles: tuple[ProviderRole, ...] = DEFAULT_ROLES
     cache_dir: Path | None = None
     strict: bool = False
+    trace_path: Path | None = None
 
 
 class SageCategoryProjectionPlugin(Plugin):
@@ -55,9 +57,11 @@ class SageCategoryProjectionPlugin(Plugin):
             self._manifest_digest = ""
             self._projection_by_provider: dict[str, ProviderProjection] = {}
             self._source_modules: tuple[str, ...] = ()
+            self._trace_path = config.trace_path
             return
 
         self._strict = config.strict
+        self._trace_path = config.trace_path
         self._manifest, self._manifest_path = _generate_and_cache(config)
         self._manifest = load_manifest(self._manifest_path)
 
@@ -74,6 +78,11 @@ class SageCategoryProjectionPlugin(Plugin):
     ) -> Callable[[ClassDefContext], None] | None:
         if fullname not in self._projection_by_provider:
             return None
+        self._trace_projection_hook(
+            "hook_selected",
+            fullname,
+            projection=self._projection_by_provider[fullname],
+        )
         return self._customize_provider_mro
 
     def get_additional_deps(self, file: MypyFile) -> list[tuple[int, str, int]]:
@@ -125,13 +134,37 @@ class SageCategoryProjectionPlugin(Plugin):
     def _customize_provider_mro(self, ctx: ClassDefContext) -> None:
         info = ctx.cls.info
         projection = self._projection_by_provider[info.fullname]
+        self._trace_projection_hook(
+            "hook_entered",
+            info.fullname,
+            projection=projection,
+            ctx=ctx,
+        )
         base_infos = _lookup_provider_bases(ctx, projection, strict=self._strict)
         if base_infos is None:
+            self._trace_projection_hook(
+                "hook_deferred_or_missing",
+                info.fullname,
+                projection=projection,
+                ctx=ctx,
+                projection_field="provider_bases",
+                missing=_missing_typeinfo_names(ctx, projection.provider_bases),
+            )
             return
 
         mro_infos = _lookup_provider_mro(ctx, projection, strict=self._strict)
         object_info = _lookup_typeinfo(ctx, MYPY_OBJECT)
         if mro_infos is None or object_info is None:
+            missing_mro = _missing_typeinfo_names(ctx, projection.provider_mro)
+            missing_object = () if object_info is not None else (MYPY_OBJECT,)
+            self._trace_projection_hook(
+                "hook_deferred_or_missing",
+                info.fullname,
+                projection=projection,
+                ctx=ctx,
+                projection_field="provider_mro",
+                missing=(*missing_mro, *missing_object),
+            )
             return
 
         info.bases = [Instance(base_info, []) for base_info in base_infos]
@@ -142,6 +175,12 @@ class SageCategoryProjectionPlugin(Plugin):
             for mro_info in info.mro
             if mro_info.fullname != MYPY_OBJECT
         )
+        self._trace_projection_hook(
+            "hook_installed",
+            info.fullname,
+            projection=projection,
+            ctx=ctx,
+        )
         if observed_provider_mro != projection.provider_mro:
             if self._strict:
                 ctx.api.fail(
@@ -150,6 +189,41 @@ class SageCategoryProjectionPlugin(Plugin):
                     f"observed {observed_provider_mro!r}",
                     ctx.cls,
                 )
+
+    def _trace_projection_hook(
+        self,
+        event: str,
+        fullname: str,
+        *,
+        projection: ProviderProjection,
+        ctx: ClassDefContext | None = None,
+        projection_field: str | None = None,
+        missing: tuple[str, ...] = (),
+    ) -> None:
+        if self._trace_path is None:
+            return
+        payload: dict[str, object] = {
+            "event": event,
+            "provider": fullname,
+            "projection_bases": projection.provider_bases,
+            "projection_mro": projection.provider_mro,
+        }
+        if projection_field is not None:
+            payload["projection_field"] = projection_field
+        if missing:
+            payload["missing"] = missing
+        if ctx is not None:
+            info = ctx.cls.info
+            payload["final_iteration"] = bool(ctx.api.final_iteration)
+            payload["observed_bases"] = tuple(base.type.fullname for base in info.bases)
+            payload["observed_mro"] = tuple(
+                mro_info.fullname
+                for mro_info in info.mro
+                if mro_info.fullname != MYPY_OBJECT
+            )
+        self._trace_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._trace_path.open("a", encoding="utf-8") as trace_file:
+            trace_file.write(json.dumps(payload, sort_keys=True) + "\n")
 
 
 def _lookup_provider_bases(
@@ -233,6 +307,17 @@ def _lookup_typeinfo(
     return symbol.node
 
 
+def _missing_typeinfo_names(
+    ctx: ClassDefContext,
+    fullnames: tuple[str, ...],
+) -> tuple[str, ...]:
+    return tuple(
+        fullname
+        for fullname in fullnames
+        if _lookup_typeinfo(ctx, fullname, report_missing=False) is None
+    )
+
+
 # ── Config parsing ───────────────────────────────────────────────────────────
 
 
@@ -284,11 +369,19 @@ def _read_plugin_config(options: Options) -> PluginConfig:
     if parser.has_option(CONFIG_SECTION, "strict"):
         strict = parser.getboolean(CONFIG_SECTION, "strict")
 
+    trace_path: Path | None = None
+    if parser.has_option(CONFIG_SECTION, "trace_path"):
+        raw_trace_path = parser.get(CONFIG_SECTION, "trace_path")
+        trace_path = Path(raw_trace_path)
+        if not trace_path.is_absolute():
+            trace_path = config_path.parent / trace_path
+
     return PluginConfig(
         packages=packages,
         roles=roles,
         cache_dir=cache_dir,
         strict=strict,
+        trace_path=trace_path,
     )
 
 

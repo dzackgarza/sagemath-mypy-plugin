@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from sage.categories.category import Category  # type: ignore[import-untyped]
+
 from tests.fixtures.invariant_core.local_wrapper import LocalCategoryBase
 
 
 class TopCategory(LocalCategoryBase):
-    def super_categories(self) -> list[LocalCategoryBase]:
+    def super_categories(self) -> list[Category]:
         return []
 
     class ElementMethods:
@@ -21,7 +23,7 @@ class TopCategory(LocalCategoryBase):
 
 
 class LeftCategory(LocalCategoryBase):
-    def super_categories(self) -> list[LocalCategoryBase]:
+    def super_categories(self) -> list[Category]:
         return [TopCategory.an_instance()]
 
     class ElementMethods:
@@ -38,7 +40,7 @@ class LeftCategory(LocalCategoryBase):
 
 
 class RightCategory(LocalCategoryBase):
-    def super_categories(self) -> list[LocalCategoryBase]:
+    def super_categories(self) -> list[Category]:
         return [TopCategory.an_instance()]
 
     class ElementMethods:
@@ -55,7 +57,7 @@ class RightCategory(LocalCategoryBase):
 
 
 class BottomCategory(LocalCategoryBase):
-    def super_categories(self) -> list[LocalCategoryBase]:
+    def super_categories(self) -> list[Category]:
         return [LeftCategory.an_instance(), RightCategory.an_instance()]
 
     class ElementMethods:

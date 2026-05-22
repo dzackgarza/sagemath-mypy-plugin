@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import Any, Protocol, cast, final
 
 import sage.all  # type: ignore[import-untyped] # noqa: F401
@@ -26,11 +25,11 @@ def _sage_homsets_endset() -> Category:
 
 
 class TopCategory(LocalCategoryBase):
-    def super_categories(self) -> list[object]:
-        return [Objects()]
+    def super_categories(self) -> list[Category]:
+        return [cast(Category, Objects())]
 
     class Homsets(HomsetsCategory):
-        def extra_super_categories(self) -> Sequence[Category]:
+        def extra_super_categories(self) -> list[Category]:
             return []
 
         class ParentMethods:
@@ -43,14 +42,14 @@ class TopCategory(LocalCategoryBase):
 
 
 class BottomCategory(LocalCategoryBase):
-    def super_categories(self) -> list[LocalCategoryBase]:
+    def super_categories(self) -> list[Category]:
         return [TopCategory.an_instance()]
 
     def is_full_subcategory(self, category: object) -> bool:
         return category is TopCategory.an_instance()
 
     class Homsets(HomsetsCategory):
-        def extra_super_categories(self) -> Sequence[Category]:
+        def extra_super_categories(self) -> list[Category]:
             return []
 
         class ParentMethods:
@@ -67,7 +66,7 @@ class _SingletonClasscallMixin:
     @final
     def __classcall__(cls: type[Category_singleton]) -> object:
         if isinstance(cls, DynamicMetaclass):
-            cls = cls.__base__
+            cls = cast(type[Category_singleton], cls.__base__)
         obj = cast(Any, super(Category_singleton, cls)).__classcall__(cls)
         cast(Any, cls)._set_classcall(ConstantFunction(obj))
         cast(Any, obj.__class__)._set_classcall(ConstantFunction(obj))
@@ -84,32 +83,32 @@ class SharedHomsetParentMethods:
 
 
 class SharedStandaloneHomCategory(LocalHomsetsBase):
-    def super_categories(self) -> list[object]:
-        return [Objects()]
+    def super_categories(self) -> list[Category]:
+        return [cast(Category, Objects())]
 
     ParentMethods = cast(type[SageHomsets.ParentMethods], SharedHomsetParentMethods)
 
 
 class SharedHomsetProviderCategory(LocalCategoryBase):
-    def super_categories(self) -> list[object]:
-        return [Objects()]
+    def super_categories(self) -> list[Category]:
+        return [cast(Category, Objects())]
 
     class Homsets(HomsetsCategory):
-        def super_categories(self) -> list[object]:
+        def super_categories(self) -> list[Category]:
             return [SharedStandaloneHomCategory()]
 
         ParentMethods = cast(type[SageHomsets.ParentMethods], SharedHomsetParentMethods)
 
 
 class RefinedSharedHomsetProviderCategory(LocalCategoryBase):
-    def super_categories(self) -> list[LocalCategoryBase]:
+    def super_categories(self) -> list[Category]:
         return [SharedHomsetProviderCategory.an_instance()]
 
     def is_full_subcategory(self, category: object) -> bool:
         return category is SharedHomsetProviderCategory.an_instance()
 
     class Homsets(HomsetsCategory):
-        def extra_super_categories(self) -> Sequence[Category]:
+        def extra_super_categories(self) -> list[Category]:
             return []
 
         class ParentMethods:
@@ -118,8 +117,8 @@ class RefinedSharedHomsetProviderCategory(LocalCategoryBase):
 
 
 class StandaloneHomCategory(LocalHomsetsBase):
-    def super_categories(self) -> list[object]:
-        return [Objects()]
+    def super_categories(self) -> list[Category]:
+        return [cast(Category, Objects())]
 
     class ParentMethods:
         def local_hom_parent(self) -> int:
@@ -141,7 +140,7 @@ class StandaloneHomCategory(LocalHomsetsBase):
 class LocalEndHomCategory(CategoryWithAxiom_singleton):
     _base_category_class_and_axiom = (StandaloneHomCategory, "Endset")
 
-    def extra_super_categories(self) -> Sequence[Category]:
+    def extra_super_categories(self) -> list[Category]:
         return [_sage_homsets_endset()]
 
     class ParentMethods:
@@ -164,7 +163,7 @@ class LocalEndHomCategory(CategoryWithAxiom_singleton):
 class LocalFiniteEndHomCategory(CategoryWithAxiom_singleton):
     _base_category_class_and_axiom = (LocalEndHomCategory, "Finite")
 
-    def extra_super_categories(self) -> Sequence[Category]:
+    def extra_super_categories(self) -> list[Category]:
         return [LocalEndHomCategory()]
 
     class ParentMethods:

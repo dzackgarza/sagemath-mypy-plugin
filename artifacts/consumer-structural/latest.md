@@ -1,6 +1,6 @@
 # Consumer Structural Canary
 
-- status: fail
+- status: pass
 - source_mode: representative
 - source_module_count: 5
 - projection_count: 444
@@ -8,70 +8,13 @@
 - checked_provider_count: 187
 - graph_absent_provider_count: 131
 - missing_typeinfo_count: 0
-- mismatched_provider_count: 5
+- mismatched_provider_count: 0
 - negative_injected_error_count: 1
+- projection_trace_event_count: 0
 
 ## Mismatches
 
-### category_specs.cat.autsets.CatAutCategory.ParentMethods
-
-- field: bases
-- expected: `('category_specs.homsets.autsets.UniversalAutObjectMethods', 'category_specs.cat.endsets.CatEndCategory.ParentMethods')`
-- observed: `('builtins.object',)`
-
-### category_specs.cat.autsets.CatAutCategory.ParentMethods
-
-- field: mro
-- expected: `('category_specs.cat.autsets.CatAutCategory.ParentMethods', 'category_specs.homsets.autsets.UniversalAutObjectMethods', 'category_specs.cat.endsets.CatEndCategory.ParentMethods', 'category_specs.homsets.endsets.UniversalEndObjectMethods', 'sage.categories.homsets.Homsets.Endset.ParentMethods', 'sage.categories.monoids.Monoids.ParentMethods', 'sage.categories.semigroups.Semigroups.ParentMethods', 'sage.categories.magmas.Magmas.Unital.ParentMethods', 'sage.categories.magmas.Magmas.ParentMethods', 'category_specs.cat.homsets._CatHomCategoryObjectMethods', 'category_specs.homsets.homsets.UniversalHomObjectMethods', 'sage.categories.homsets.Homsets.ParentMethods', 'sage.categories.sets_cat.Sets.ParentMethods', 'sage.categories.objects.Objects.ParentMethods')`
-- observed: `('category_specs.cat.autsets.CatAutCategory.ParentMethods',)`
-
-### category_specs.cat.endsets.CatEndCategory.ParentMethods
-
-- field: bases
-- expected: `('category_specs.homsets.endsets.UniversalEndObjectMethods', 'category_specs.cat.homsets._CatHomCategoryObjectMethods')`
-- observed: `('builtins.object',)`
-
-### category_specs.cat.endsets.CatEndCategory.ParentMethods
-
-- field: mro
-- expected: `('category_specs.cat.endsets.CatEndCategory.ParentMethods', 'category_specs.homsets.endsets.UniversalEndObjectMethods', 'sage.categories.homsets.Homsets.Endset.ParentMethods', 'sage.categories.monoids.Monoids.ParentMethods', 'sage.categories.semigroups.Semigroups.ParentMethods', 'sage.categories.magmas.Magmas.Unital.ParentMethods', 'sage.categories.magmas.Magmas.ParentMethods', 'category_specs.cat.homsets._CatHomCategoryObjectMethods', 'category_specs.homsets.homsets.UniversalHomObjectMethods', 'sage.categories.homsets.Homsets.ParentMethods', 'sage.categories.sets_cat.Sets.ParentMethods', 'sage.categories.objects.Objects.ParentMethods')`
-- observed: `('category_specs.cat.endsets.CatEndCategory.ParentMethods',)`
-
-### category_specs.rings.homsets.RingEndCategory.ParentMethods
-
-- field: bases
-- expected: `('category_specs.homsets.endsets.UniversalEndObjectMethods', 'category_specs.rings.homsets._RingHomCategoryObjectMethods')`
-- observed: `('builtins.object',)`
-
-### category_specs.rings.homsets.RingEndCategory.ParentMethods
-
-- field: mro
-- expected: `('category_specs.rings.homsets.RingEndCategory.ParentMethods', 'category_specs.homsets.endsets.UniversalEndObjectMethods', 'category_specs.sets.homsets.SetEndCategory.ParentMethods', 'sage.categories.homsets.Homsets.Endset.ParentMethods', 'sage.categories.monoids.Monoids.ParentMethods', 'sage.categories.semigroups.Semigroups.ParentMethods', 'sage.categories.magmas.Magmas.Unital.ParentMethods', 'sage.categories.magmas.Magmas.ParentMethods', 'category_specs.homsets.homsets.UniversalHomObjectMethods', 'sage.categories.homsets.Homsets.ParentMethods', 'category_specs.rings.homsets._RingHomCategoryObjectMethods', 'category_specs.sets.homsets._SetHomCategoryObjectMethods', 'sage.categories.sets_cat.Sets.ParentMethods', 'sage.categories.objects.Objects.ParentMethods')`
-- observed: `('category_specs.rings.homsets.RingEndCategory.ParentMethods',)`
-
-### category_specs.sets.homsets.SetEndCategory.ParentMethods
-
-- field: bases
-- expected: `('category_specs.homsets.endsets.UniversalEndObjectMethods', 'category_specs.sets.homsets._SetHomCategoryObjectMethods')`
-- observed: `('builtins.object',)`
-
-### category_specs.sets.homsets.SetEndCategory.ParentMethods
-
-- field: mro
-- expected: `('category_specs.sets.homsets.SetEndCategory.ParentMethods', 'category_specs.homsets.endsets.UniversalEndObjectMethods', 'sage.categories.homsets.Homsets.Endset.ParentMethods', 'sage.categories.monoids.Monoids.ParentMethods', 'sage.categories.semigroups.Semigroups.ParentMethods', 'sage.categories.magmas.Magmas.Unital.ParentMethods', 'sage.categories.magmas.Magmas.ParentMethods', 'category_specs.homsets.homsets.UniversalHomObjectMethods', 'sage.categories.homsets.Homsets.ParentMethods', 'category_specs.sets.homsets._SetHomCategoryObjectMethods', 'sage.categories.sets_cat.Sets.ParentMethods', 'sage.categories.objects.Objects.ParentMethods')`
-- observed: `('category_specs.sets.homsets.SetEndCategory.ParentMethods',)`
-
-### category_specs.topological_spaces.homsets.TopologicalSpaceEndCategory.ParentMethods
-
-- field: bases
-- expected: `('category_specs.homsets.endsets.UniversalEndObjectMethods', 'category_specs.topological_spaces.homsets._TopologicalHomCategoryObjectMethods')`
-- observed: `('builtins.object',)`
-
-### category_specs.topological_spaces.homsets.TopologicalSpaceEndCategory.ParentMethods
-
-- field: mro
-- expected: `('category_specs.topological_spaces.homsets.TopologicalSpaceEndCategory.ParentMethods', 'category_specs.homsets.endsets.UniversalEndObjectMethods', 'category_specs.sets.homsets.SetEndCategory.ParentMethods', 'sage.categories.homsets.Homsets.Endset.ParentMethods', 'sage.categories.monoids.Monoids.ParentMethods', 'sage.categories.semigroups.Semigroups.ParentMethods', 'sage.categories.magmas.Magmas.Unital.ParentMethods', 'sage.categories.magmas.Magmas.ParentMethods', 'category_specs.homsets.homsets.UniversalHomObjectMethods', 'sage.categories.homsets.Homsets.ParentMethods', 'category_specs.topological_spaces.homsets._TopologicalHomCategoryObjectMethods', 'category_specs.sets.homsets._SetHomCategoryObjectMethods', 'sage.categories.sets_cat.Sets.ParentMethods', 'sage.categories.objects.Objects.ParentMethods')`
-- observed: `('category_specs.topological_spaces.homsets.TopologicalSpaceEndCategory.ParentMethods',)`
+None.
 
 ## Missing TypeInfos
 
@@ -412,4 +355,8 @@ None.
 - `/home/dzack/research/category_specs/rings/__init__.py:2130: error: "Category" has no attribute "Quotients"  [attr-defined]`
 - `/home/dzack/research/category_specs/rings/__init__.py:2142: error: "Category" has no attribute "Subobjects"  [attr-defined]`
 - `/home/dzack/research/category_specs/rings/__init__.py:2167: error: Incompatible types in assignment (expression has type "type[RingHomCategory]", base class "Category" defined the type as "Callable[[], Category]")  [assignment]`
-- `/tmp/tmp.k6sKqD5zhX/negative_consumer_probe.py:5: error: Incompatible types in assignment (expression has type "int", variable has type "_SetObjectMethods")  [assignment]`
+- `/tmp/tmp.Tzwd7m8Rxl/negative_consumer_probe.py:5: error: Incompatible types in assignment (expression has type "int", variable has type "_SetObjectMethods")  [assignment]`
+
+## Projection Hook Trace
+
+None.
