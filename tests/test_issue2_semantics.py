@@ -41,6 +41,7 @@ def test_issue2_method_container_receiver_behavior_matrix(tmp_path: Path) -> Non
         "source_backed_parent_method",
         "no base method was found",
     )
+    assert _contains(without_plugin, "ParentMethods", "an_element", "[attr-defined]")
     assert _contains(without_plugin, "ParentMethods", "[assignment]")
     assert _contains(without_plugin, "BoundSubcategory", "[attr-defined]")
     assert _contains(invalid_with_plugin, "ParentMethods", "category", "[attr-defined]")
@@ -76,6 +77,105 @@ def test_issue2_strict_mode_reports_missing_receiver_typeinfo(tmp_path: Path) ->
     )
 
 
+def test_issue2_classcall_private_keyword_is_sidecar_surface(
+    tmp_path: Path,
+) -> None:
+    config_path = _write_plugin_config(tmp_path)
+    missing_dispatch_stubs = _write_classcall_sage_stubs(
+        tmp_path / "missing-dispatch-stubs",
+        include_dispatch=False,
+    )
+    visible_dispatch_stubs = _write_classcall_sage_stubs(
+        tmp_path / "visible-dispatch-stubs",
+        include_dispatch=True,
+    )
+
+    missing_with_plugin = _run_mypy(config_path, tmp_path, missing_dispatch_stubs)
+    visible_with_plugin = _run_mypy(config_path, tmp_path, visible_dispatch_stubs)
+
+    assert _contains(missing_with_plugin, "Unexpected keyword argument", "dispatch")
+    assert not visible_with_plugin.errors, visible_with_plugin.errors
+
+
+def _write_classcall_sage_stubs(
+    stub_root: Path,
+    *,
+    include_dispatch: bool,
+) -> Path:
+    categories = stub_root / "sage" / "categories"
+    structure = stub_root / "sage" / "structure"
+    categories.mkdir(parents=True)
+    structure.mkdir(parents=True)
+    (stub_root / "sage" / "__init__.pyi").write_text("")
+    (categories / "__init__.pyi").write_text("")
+    (structure / "__init__.pyi").write_text("")
+    (categories / "category.pyi").write_text(
+        "\n".join(
+            (
+                "class Category:",
+                "    def super_categories(self) -> list[Category]: ...",
+                "    def base_category(self) -> Category: ...",
+                "",
+            )
+        )
+    )
+    (categories / "covariant_functorial_construction.pyi").write_text(
+        "\n".join(
+            (
+                "from sage.categories.category import Category",
+                "",
+                "class FunctorialConstructionCategory(Category):",
+                "    @classmethod",
+                "    def category_of(cls, category: Category) -> Category: ...",
+                "",
+            )
+        )
+    )
+    (structure / "element.pyi").write_text(
+        "\n".join(
+            (
+                "from sage.structure.parent import Parent",
+                "",
+                "class Element:",
+                "    def parent(self) -> Parent: ...",
+                "",
+            )
+        )
+    )
+    (structure / "parent.pyi").write_text(
+        "\n".join(
+            (
+                "from sage.categories.category import Category",
+                "from sage.structure.element import Element",
+                "",
+                "class Parent:",
+                "    def category(self) -> Category: ...",
+                "    def an_element(self) -> Element: ...",
+                "",
+            )
+        )
+    )
+    dispatch_arg = ", dispatch: bool = True" if include_dispatch else ""
+    modules_init = (
+        f"    def __init__(self, base_ring: Parent | Category{dispatch_arg})"
+        " -> None: ..."
+    )
+    (categories / "modules.pyi").write_text(
+        "\n".join(
+            (
+                "from sage.categories.category import Category",
+                "from sage.structure.parent import Parent",
+                "",
+                "class Modules(Category):",
+                modules_init,
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    return stub_root
+
+
 def _write_missing_receiver_sage_stubs(tmp_path: Path) -> Path:
     stub_root = tmp_path / "missing-receiver-sage-stubs"
     categories = stub_root / "sage" / "categories"
@@ -103,6 +203,22 @@ def _write_missing_receiver_sage_stubs(tmp_path: Path) -> Path:
                 "class FunctorialConstructionCategory(Category):",
                 "    @classmethod",
                 "    def category_of(cls, category: Category) -> Category: ...",
+                "",
+            )
+        )
+    )
+    (categories / "modules.pyi").write_text(
+        "\n".join(
+            (
+                "from sage.categories.category import Category",
+                "from sage.structure.parent import Parent",
+                "",
+                "class Modules(Category):",
+                "    def __init__(",
+                "        self,",
+                "        base_ring: Parent | Category,",
+                "        dispatch: bool = True,",
+                "    ) -> None: ...",
                 "",
             )
         )
@@ -164,6 +280,22 @@ def _write_visible_sage_stubs(tmp_path: Path) -> Path:
                 "class FunctorialConstructionCategory(Category):",
                 "    @classmethod",
                 "    def category_of(cls, category: Category) -> Category: ...",
+                "",
+            )
+        )
+    )
+    (categories / "modules.pyi").write_text(
+        "\n".join(
+            (
+                "from sage.categories.category import Category",
+                "from sage.structure.parent import Parent",
+                "",
+                "class Modules(Category):",
+                "    def __init__(",
+                "        self,",
+                "        base_ring: Parent | Category,",
+                "        dispatch: bool = True,",
+                "    ) -> None: ...",
                 "",
             )
         )

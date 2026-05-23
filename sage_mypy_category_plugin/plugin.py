@@ -401,6 +401,10 @@ def _install_subcategory_methods_on_category(
 
 def _receiver_fullname_for_role(projection: ProviderProjection) -> str | None:
     if projection.role == "parent":
+        # Sage builds a category's ``parent_class`` from ``ParentMethods`` and
+        # installs those methods on objects whose runtime receiver is a Sage
+        # ``Parent``. This is the canonical Sage receiver surface, not a
+        # consumer namespace shortcut.
         return SAGE_PARENT
     if projection.role == "subcategory":
         return projection.provider.rsplit(".", maxsplit=1)[0]
