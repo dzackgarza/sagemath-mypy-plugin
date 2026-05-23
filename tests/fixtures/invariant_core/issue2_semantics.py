@@ -6,6 +6,7 @@ from sage.categories.category import Category
 from sage.categories.covariant_functorial_construction import (
     FunctorialConstructionCategory,
 )
+from sage.categories.modules import Modules
 from sage.structure.parent import Parent
 
 from tests.fixtures.invariant_core.local_wrapper import LocalCategoryBase
@@ -52,6 +53,9 @@ class Issue2Child(LocalCategoryBase):
 
         def parent_self_delegate(self) -> Parent:
             return self.an_element().parent()
+
+        def classcall_private_keyword_surface(self, base_ring: Parent) -> Category:
+            return Modules(base_ring, dispatch=False)
 
     class SubcategoryMethods:
         def category_self_attribute_child(self) -> Category:
