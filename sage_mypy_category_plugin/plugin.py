@@ -25,7 +25,6 @@ from sage_mypy_category_plugin.projection import ProviderProjection, ProviderRol
 
 CONFIG_SECTION = "sage-mypy-category-plugin"
 MYPY_OBJECT = "builtins.object"
-SAGE_CATEGORY = ".".join(("sage", "categories", "category", "Category"))
 SAGE_PARENT = "sage.structure.parent.Parent"
 MYPY_DEP_PRIORITY = 10
 
@@ -357,7 +356,7 @@ def _install_provider_receiver_surface(
         promotion_type = Instance(promotion_info, [])
         if promotion_type not in ctx.cls.info._promote:
             ctx.cls.info._promote.append(promotion_type)
-    for receiver_base in reversed(receiver_info.mro):
+    for receiver_base in receiver_info.mro:
         for name, symbol in receiver_base.names.items():
             if not name.startswith("_") and name not in ctx.cls.info.names:
                 ctx.cls.info.names[name] = symbol
@@ -404,7 +403,7 @@ def _promotion_typeinfo(
     if projection.role == "parent":
         return receiver_info
     if projection.role == "subcategory":
-        return _lookup_typeinfo(ctx, SAGE_CATEGORY, report_missing=False)
+        return receiver_info
     return None
 
 

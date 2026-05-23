@@ -16,6 +16,9 @@ class Issue2Root(LocalCategoryBase):
     def super_categories(self) -> list[Category]:
         return []
 
+    def root_category_surface(self) -> int:
+        return 3
+
     class ParentMethods:
         def source_backed_parent_method(self) -> int:
             return 1
@@ -29,6 +32,9 @@ class Issue2Root(LocalCategoryBase):
 
         def category_self_attribute(self) -> Category:
             return self.base_category()
+
+        def category_specific_self_attribute(self) -> int:
+            return self.root_category_surface()
 
 
 class Issue2Child(LocalCategoryBase):
