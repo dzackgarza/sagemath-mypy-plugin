@@ -50,6 +50,12 @@ def _class_fullname(cls: type[object]) -> str:
     return f"{cls.__module__}.{cls.__qualname__}"
 
 
+def _runtime_class(owner: object, attr: str) -> type[object]:
+    runtime_class = getattr(owner, attr)
+    assert isinstance(runtime_class, type)
+    return runtime_class
+
+
 class RuntimeProviderResolutionFixtures:
     class WithProvider:
         class ParentMethods:
@@ -431,26 +437,28 @@ def test_cartesian_products_projection_matches_sage_runtime_mro() -> None:
     )
 
     category = CartesianProductsCategory
+    category_parent_class = _runtime_class(category, "parent_class")
+    category_element_class = _runtime_class(category, "element_class")
     runtime_to_provider = {
         "parent": {
-            category.parent_class: type(category).ParentMethods,
-            Sets().parent_class: Sets.ParentMethods,
-            Objects().parent_class: Objects.ParentMethods,
+            category_parent_class: type(category).ParentMethods,
+            _runtime_class(Sets(), "parent_class"): Sets.ParentMethods,
+            _runtime_class(Objects(), "parent_class"): Objects.ParentMethods,
         },
         "element": {
-            category.element_class: type(category).ElementMethods,
-            Sets().element_class: Sets.ElementMethods,
+            category_element_class: type(category).ElementMethods,
+            _runtime_class(Sets(), "element_class"): Sets.ElementMethods,
         },
     }
     expected = {
         "parent": (
             "sage.categories.sets_cat.Sets.CartesianProducts.ParentMethods",
-            category.parent_class,
+            category_parent_class,
             runtime_to_provider["parent"],
         ),
         "element": (
             "sage.categories.sets_cat.Sets.CartesianProducts.ElementMethods",
-            category.element_class,
+            category_element_class,
             runtime_to_provider["element"],
         ),
     }
@@ -514,7 +522,7 @@ def test_tensor_products_projection_records_projectable_runtime_bases() -> None:
     )
 
     projection = projections["sage.categories.modules.Modules.TensorProducts.ParentMethods"]
-    runtime_class = TensorProductsCategory.parent_class.__bases__[0]
+    runtime_class = _runtime_class(TensorProductsCategory, "parent_class").__bases__[0]
 
     assert _class_fullname(runtime_class) == (
         "sage.categories.modules.Modules.TensorProducts.parent_class"
@@ -573,16 +581,22 @@ def test_parameterized_projection_uses_sage_runtime_named_class_identity() -> No
     modules_projection = projections[modules_provider]
     vector_spaces_projection = projections[vector_spaces_provider]
 
-    assert ModulesOverRationals.parent_class is VectorSpacesOverRationals.parent_class
-    assert ModulesOverIntegers.parent_class is not ModulesOverRationals.parent_class
+    modules_over_rationals_parent = _runtime_class(ModulesOverRationals, "parent_class")
+    vector_spaces_over_rationals_parent = _runtime_class(
+        VectorSpacesOverRationals, "parent_class"
+    )
+    modules_over_integers_parent = _runtime_class(ModulesOverIntegers, "parent_class")
+
+    assert modules_over_rationals_parent is vector_spaces_over_rationals_parent
+    assert modules_over_integers_parent is not modules_over_rationals_parent
     assert modules_projection.runtime_class == _class_fullname(
-        ModulesOverIntegers.parent_class
+        modules_over_integers_parent
     )
     assert vector_spaces_projection.runtime_class == _class_fullname(
-        VectorSpacesOverRationals.parent_class
+        vector_spaces_over_rationals_parent
     )
     assert vector_spaces_projection.runtime_class == _class_fullname(
-        ModulesOverRationals.parent_class
+        modules_over_rationals_parent
     )
     assert vector_spaces_projection.provider_bases == (modules_provider,)
     assert vector_spaces_projection.provider_mro[:2] == (

@@ -64,16 +64,20 @@ class BottomCategory(LocalCategoryBase):
 class _SingletonClasscallMixin:
     @staticmethod
     @final
-    def __classcall__(cls: type[Category_singleton]) -> object:
+    def __classcall__(
+        cls: object,
+        *args: object,
+        **options: object,
+    ) -> Category:  # type: ignore[misc]
         if isinstance(cls, DynamicMetaclass):
             cls = cast(type[Category_singleton], cls.__base__)
         obj = cast(Any, super(Category_singleton, cls)).__classcall__(cls)
         cast(Any, cls)._set_classcall(ConstantFunction(obj))
         cast(Any, obj.__class__)._set_classcall(ConstantFunction(obj))
-        return obj
+        return cast(Category, obj)
 
 
-class LocalHomsetsBase(_SingletonClasscallMixin, SageHomsets):
+class LocalHomsetsBase(_SingletonClasscallMixin, SageHomsets):  # type: ignore[misc]
     pass
 
 

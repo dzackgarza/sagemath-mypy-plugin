@@ -15,7 +15,10 @@ the explicit-override rule — a standard mypy rule, not plugin-specific logic.
 
 from __future__ import annotations
 
+from typing import override
+
 import sage.all  # type: ignore[import-untyped]  # noqa: F401
+from sage.categories.category import Category
 from sage.categories.category_singleton import Category_singleton  # type: ignore[import-untyped]
 
 from tests.real_categories.finite_small_groups import FiniteGroupsOfOrderLessThanTwenty
@@ -24,7 +27,8 @@ from tests.real_categories.finite_small_groups import FiniteGroupsOfOrderLessTha
 class MissingExplicitOverrideCategory(Category_singleton):
     """Subcategory that overrides order() without the @override decorator."""
 
-    def super_categories(self) -> list[object]:
+    @override
+    def super_categories(self) -> list[Category]:
         return [FiniteGroupsOfOrderLessThanTwenty()]
 
     class ParentMethods:

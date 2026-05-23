@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Literal, override
 
 import sage.all  # type: ignore[import-untyped]  # noqa: F401
+from sage.categories.category import Category
 from sage.categories.category_singleton import Category_singleton  # type: ignore[import-untyped]
 
 from tests.fixtures.e5_renamed_consumer.categories import RenamedRootGroupCategory
@@ -19,7 +20,8 @@ from tests.fixtures.e5_renamed_consumer.categories import RenamedRootGroupCatego
 class ValidRenamedConsumer(Category_singleton):
     """Valid subcategory: overrides cardinality() with a subtype return type."""
 
-    def super_categories(self) -> list[object]:
+    @override
+    def super_categories(self) -> list[Category]:
         return [RenamedRootGroupCategory()]
 
     class ParentMethods:
