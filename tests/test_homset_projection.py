@@ -22,6 +22,18 @@ def _class_fullname(cls: type[object]) -> str:
     return f"{cls.__module__}.{cls.__qualname__}"
 
 
+def _runtime_class(owner: object, attr: str) -> type[object]:
+    runtime_class = getattr(owner, attr)
+    assert isinstance(runtime_class, type)
+    return runtime_class
+
+
+def _runtime_category(owner: object, attr: str) -> object:
+    factory = getattr(owner, attr)
+    assert callable(factory)
+    return factory()
+
+
 def test_homset_parent_projection_matches_sage_runtime_mro() -> None:
     projections = provider_projections_for_categories(
         ("tests.fixtures.invariant_core.provider_roles.homsets.BottomCategory",),
@@ -29,34 +41,37 @@ def test_homset_parent_projection_matches_sage_runtime_mro() -> None:
     )
 
     category = BottomCategory.an_instance()
-    homsets = category.Homsets()
+    homsets = _runtime_category(category, "Homsets")
+    homsets_parent_class = _runtime_class(homsets, "parent_class")
     provider = (
         "tests.fixtures.invariant_core.provider_roles.homsets."
         "BottomCategory.Homsets.ParentMethods"
     )
     projection = projections[provider]
     runtime_to_provider = {
-        homsets.parent_class: BottomCategory.Homsets.ParentMethods,
-        TopCategory.an_instance().Homsets().parent_class: (
+        homsets_parent_class: BottomCategory.Homsets.ParentMethods,
+        _runtime_class(
+            _runtime_category(TopCategory.an_instance(), "Homsets"), "parent_class"
+        ): (
             TopCategory.Homsets.ParentMethods
         ),
-        Homsets().parent_class: Homsets.ParentMethods,
-        Sets().parent_class: Sets.ParentMethods,
-        Objects().parent_class: Objects.ParentMethods,
+        _runtime_class(Homsets(), "parent_class"): Homsets.ParentMethods,
+        _runtime_class(Sets(), "parent_class"): Sets.ParentMethods,
+        _runtime_class(Objects(), "parent_class"): Objects.ParentMethods,
     }
     projected_runtime_bases = tuple(
         _class_fullname(runtime_to_provider[runtime_class])
-        for runtime_class in homsets.parent_class.__bases__
+        for runtime_class in homsets_parent_class.__bases__
         if runtime_class in runtime_to_provider
     )
     projected_runtime_mro = tuple(
         _class_fullname(runtime_to_provider[runtime_class])
-        for runtime_class in homsets.parent_class.__mro__
+        for runtime_class in homsets_parent_class.__mro__
         if runtime_class in runtime_to_provider
     )
     unprojected_runtime_mro = tuple(
         _class_fullname(runtime_class)
-        for runtime_class in homsets.parent_class.__mro__
+        for runtime_class in homsets_parent_class.__mro__
         if runtime_class not in runtime_to_provider and runtime_class is not object
     )
 
@@ -64,11 +79,11 @@ def test_homset_parent_projection_matches_sage_runtime_mro() -> None:
     assert projection.role == "homset_parent"
     assert projection.runtime_bases == tuple(
         _class_fullname(runtime_class)
-        for runtime_class in homsets.parent_class.__bases__
+        for runtime_class in homsets_parent_class.__bases__
     )
     assert projection.runtime_mro == tuple(
         _class_fullname(runtime_class)
-        for runtime_class in homsets.parent_class.__mro__
+        for runtime_class in homsets_parent_class.__mro__
     )
     assert projection.provider_bases == projected_runtime_bases
     assert projection.provider_mro == projected_runtime_mro
@@ -98,32 +113,35 @@ def test_homset_element_projection_matches_sage_runtime_mro() -> None:
     )
 
     category = BottomCategory.an_instance()
-    homsets = category.Homsets()
+    homsets = _runtime_category(category, "Homsets")
+    homsets_element_class = _runtime_class(homsets, "element_class")
     provider = (
         "tests.fixtures.invariant_core.provider_roles.homsets."
         "BottomCategory.Homsets.ElementMethods"
     )
     projection = projections[provider]
     runtime_to_provider = {
-        homsets.element_class: BottomCategory.Homsets.ElementMethods,
-        TopCategory.an_instance().Homsets().element_class: (
+        homsets_element_class: BottomCategory.Homsets.ElementMethods,
+        _runtime_class(
+            _runtime_category(TopCategory.an_instance(), "Homsets"), "element_class"
+        ): (
             TopCategory.Homsets.ElementMethods
         ),
-        Sets().element_class: Sets.ElementMethods,
+        _runtime_class(Sets(), "element_class"): Sets.ElementMethods,
     }
     projected_runtime_bases = tuple(
         _class_fullname(runtime_to_provider[runtime_class])
-        for runtime_class in homsets.element_class.__bases__
+        for runtime_class in homsets_element_class.__bases__
         if runtime_class in runtime_to_provider
     )
     projected_runtime_mro = tuple(
         _class_fullname(runtime_to_provider[runtime_class])
-        for runtime_class in homsets.element_class.__mro__
+        for runtime_class in homsets_element_class.__mro__
         if runtime_class in runtime_to_provider
     )
     unprojected_runtime_mro = tuple(
         _class_fullname(runtime_class)
-        for runtime_class in homsets.element_class.__mro__
+        for runtime_class in homsets_element_class.__mro__
         if runtime_class not in runtime_to_provider and runtime_class is not object
     )
 
@@ -131,11 +149,11 @@ def test_homset_element_projection_matches_sage_runtime_mro() -> None:
     assert projection.role == "homset_element"
     assert projection.runtime_bases == tuple(
         _class_fullname(runtime_class)
-        for runtime_class in homsets.element_class.__bases__
+        for runtime_class in homsets_element_class.__bases__
     )
     assert projection.runtime_mro == tuple(
         _class_fullname(runtime_class)
-        for runtime_class in homsets.element_class.__mro__
+        for runtime_class in homsets_element_class.__mro__
     )
     assert projection.provider_bases == projected_runtime_bases
     assert projection.provider_mro == projected_runtime_mro
@@ -170,7 +188,9 @@ def test_homset_projection_classifies_shared_provider_with_distinct_runtime_mros
         trace.provider: trace for trace in unsupported_provider_traces()
     }[provider]
     standalone_runtime_class = SharedStandaloneHomCategory().parent_class
-    homset_runtime_class = category.an_instance().Homsets().parent_class
+    homset_runtime_class = _runtime_class(
+        _runtime_category(category.an_instance(), "Homsets"), "parent_class"
+    )
 
     assert provider not in projections
     assert unsupported_provider.role == "homset_parent"
@@ -210,7 +230,12 @@ def test_dependent_homset_projection_keeps_unsupported_shared_provider_base() ->
         trace.provider: trace for trace in unsupported_provider_traces()
     }[shared_provider]
     runtime_class = (
-        RefinedSharedHomsetProviderCategory.an_instance().Homsets().parent_class
+        _runtime_class(
+            _runtime_category(
+                RefinedSharedHomsetProviderCategory.an_instance(), "Homsets"
+            ),
+            "parent_class",
+        )
     )
 
     assert unsupported_provider.reason == "ambiguous_runtime_mro"

@@ -31,44 +31,61 @@ def _class_fullname(cls: type[object]) -> str:
     return f"{cls.__module__}.{cls.__qualname__}"
 
 
+def _runtime_class(owner: object, attr: str) -> type[object]:
+    runtime_class = getattr(owner, attr)
+    assert isinstance(runtime_class, type)
+    return runtime_class
+
+
+def _runtime_category(owner: object, attr: str) -> object:
+    factory = getattr(owner, attr)
+    assert callable(factory)
+    return factory()
+
+
 def test_nested_axiom_projection_matches_sage_runtime_mro() -> None:
     projections = provider_projections_for_categories(
         (NESTED_AXIOM_CATEGORY,),
         roles=("parent",),
     )
 
-    category = AxiomRootCategory.an_instance().Finite()
+    category = _runtime_category(AxiomRootCategory.an_instance(), "Finite")
+    category_parent_class = _runtime_class(category, "parent_class")
     projection = projections[NESTED_AXIOM_PROVIDER]
     runtime_to_provider = {
-        category.parent_class: AxiomRootCategory.Finite.ParentMethods,
-        FiniteSets().parent_class: FiniteSets.ParentMethods,
-        AxiomRootCategory.an_instance().parent_class: AxiomRootCategory.ParentMethods,
-        Sets().parent_class: Sets.ParentMethods,
-        Objects().parent_class: Objects.ParentMethods,
+        category_parent_class: AxiomRootCategory.Finite.ParentMethods,
+        _runtime_class(FiniteSets(), "parent_class"): FiniteSets.ParentMethods,
+        _runtime_class(AxiomRootCategory.an_instance(), "parent_class"): (
+            AxiomRootCategory.ParentMethods
+        ),
+        _runtime_class(Sets(), "parent_class"): Sets.ParentMethods,
+        _runtime_class(Objects(), "parent_class"): Objects.ParentMethods,
     }
     projected_runtime_bases = tuple(
         _class_fullname(runtime_to_provider[runtime_class])
-        for runtime_class in category.parent_class.__bases__
+        for runtime_class in category_parent_class.__bases__
         if runtime_class in runtime_to_provider
     )
     projected_runtime_mro = tuple(
         _class_fullname(runtime_to_provider[runtime_class])
-        for runtime_class in category.parent_class.__mro__
+        for runtime_class in category_parent_class.__mro__
         if runtime_class in runtime_to_provider
     )
     unprojected_runtime_mro = tuple(
         _class_fullname(runtime_class)
-        for runtime_class in category.parent_class.__mro__
+        for runtime_class in category_parent_class.__mro__
         if runtime_class not in runtime_to_provider and runtime_class is not object
     )
 
     assert projection.provider == NESTED_AXIOM_PROVIDER
     assert projection.role == "parent"
     assert projection.runtime_bases == tuple(
-        _class_fullname(runtime_class) for runtime_class in category.parent_class.__bases__
+        _class_fullname(runtime_class)
+        for runtime_class in category_parent_class.__bases__
     )
     assert projection.runtime_mro == tuple(
-        _class_fullname(runtime_class) for runtime_class in category.parent_class.__mro__
+        _class_fullname(runtime_class)
+        for runtime_class in category_parent_class.__mro__
     )
     assert projection.provider_bases == projected_runtime_bases
     assert projection.provider_mro == projected_runtime_mro
@@ -92,41 +109,44 @@ def test_linked_axiom_projection_matches_sage_runtime_mro() -> None:
         roles=("parent",),
     )
 
-    category = LinkedAxiomRootCategory.an_instance().Finite()
+    category = _runtime_category(LinkedAxiomRootCategory.an_instance(), "Finite")
+    category_parent_class = _runtime_class(category, "parent_class")
     projection = projections[LINKED_AXIOM_PROVIDER]
     runtime_to_provider = {
-        category.parent_class: LinkedFiniteAxiomCategory.ParentMethods,
-        FiniteSets().parent_class: FiniteSets.ParentMethods,
-        LinkedAxiomRootCategory.an_instance().parent_class: (
+        category_parent_class: LinkedFiniteAxiomCategory.ParentMethods,
+        _runtime_class(FiniteSets(), "parent_class"): FiniteSets.ParentMethods,
+        _runtime_class(LinkedAxiomRootCategory.an_instance(), "parent_class"): (
             LinkedAxiomRootCategory.ParentMethods
         ),
-        Sets().parent_class: Sets.ParentMethods,
-        Objects().parent_class: Objects.ParentMethods,
+        _runtime_class(Sets(), "parent_class"): Sets.ParentMethods,
+        _runtime_class(Objects(), "parent_class"): Objects.ParentMethods,
     }
     projected_runtime_bases = tuple(
         _class_fullname(runtime_to_provider[runtime_class])
-        for runtime_class in category.parent_class.__bases__
+        for runtime_class in category_parent_class.__bases__
         if runtime_class in runtime_to_provider
     )
     projected_runtime_mro = tuple(
         _class_fullname(runtime_to_provider[runtime_class])
-        for runtime_class in category.parent_class.__mro__
+        for runtime_class in category_parent_class.__mro__
         if runtime_class in runtime_to_provider
     )
     unprojected_runtime_mro = tuple(
         _class_fullname(runtime_class)
-        for runtime_class in category.parent_class.__mro__
+        for runtime_class in category_parent_class.__mro__
         if runtime_class not in runtime_to_provider and runtime_class is not object
     )
 
-    assert LinkedAxiomRootCategory.Finite is LinkedFiniteAxiomCategory
+    assert _runtime_class(LinkedAxiomRootCategory, "Finite") is LinkedFiniteAxiomCategory
     assert projection.provider == LINKED_AXIOM_PROVIDER
     assert projection.role == "parent"
     assert projection.runtime_bases == tuple(
-        _class_fullname(runtime_class) for runtime_class in category.parent_class.__bases__
+        _class_fullname(runtime_class)
+        for runtime_class in category_parent_class.__bases__
     )
     assert projection.runtime_mro == tuple(
-        _class_fullname(runtime_class) for runtime_class in category.parent_class.__mro__
+        _class_fullname(runtime_class)
+        for runtime_class in category_parent_class.__mro__
     )
     assert projection.provider_bases == projected_runtime_bases
     assert projection.provider_mro == projected_runtime_mro

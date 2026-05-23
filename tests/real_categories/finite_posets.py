@@ -13,9 +13,10 @@ method names.
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Literal, override
+from typing import Literal, cast, override
 
 import sage.all  # type: ignore[import-untyped]  # noqa: F401
+from sage.categories.category import Category
 from sage.categories.category_singleton import Category_singleton  # type: ignore[import-untyped]
 from sage.categories.finite_sets import FiniteSets  # type: ignore[import-untyped]
 
@@ -27,8 +28,9 @@ class FinitePosets(Category_singleton):
     but intentionally uses the same method name 'order' (= size of the poset).
     """
 
-    def super_categories(self) -> list[object]:
-        return [FiniteSets()]
+    @override
+    def super_categories(self) -> list[Category]:
+        return [cast(Category, FiniteSets())]
 
     class ParentMethods:
         @abstractmethod
@@ -41,7 +43,8 @@ class FinitePosets(Category_singleton):
 class SmallFinitePosets(Category_singleton):
     """Category of finite posets of small size (order ≤ 10)."""
 
-    def super_categories(self) -> list[object]:
+    @override
+    def super_categories(self) -> list[Category]:
         return [FinitePosets()]
 
     class ParentMethods:

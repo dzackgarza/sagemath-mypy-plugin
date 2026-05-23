@@ -7,7 +7,7 @@ from importlib import import_module
 from inspect import signature
 import logging
 from types import FunctionType
-from typing import Literal, Protocol, Self as TypingSelf, runtime_checkable
+from typing import Literal, Protocol, Self as TypingSelf, cast, runtime_checkable
 
 try:
     from typing_extensions import Self as _TypingExtSelf  # type: ignore[import-untyped]
@@ -988,9 +988,9 @@ def _trace_make_named_class(
         picklable: bool = True,
     ) -> type[object]:
         runtime_class = original_make_named_class(
-            self,
+            cast(Category, self),
             name,
-            method_provider,
+            cast(type, method_provider),
             cache=cache,
             picklable=picklable,
         )

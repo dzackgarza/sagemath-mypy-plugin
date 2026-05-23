@@ -13,6 +13,12 @@ def _class_fullname(cls: type[object]) -> str:
     return f"{cls.__module__}.{cls.__qualname__}"
 
 
+def _runtime_class(category: object, attr: str) -> type[object]:
+    runtime_class = getattr(category, attr)
+    assert isinstance(runtime_class, type)
+    return runtime_class
+
+
 def test_diamond_element_projection_matches_sage_runtime_mro() -> None:
     projections = provider_projections_for_categories(
         ("tests.fixtures.invariant_core.provider_roles.diamond.BottomCategory",),
@@ -25,24 +31,31 @@ def test_diamond_element_projection_matches_sage_runtime_mro() -> None:
     )
     projection = projections[element_provider]
 
+    category_element_class = _runtime_class(category, "element_class")
     runtime_to_provider = {
-        category.element_class: BottomCategory.ElementMethods,
-        RightCategory.an_instance().element_class: RightCategory.ElementMethods,
-        LeftCategory.an_instance().element_class: LeftCategory.ElementMethods,
-        TopCategory.an_instance().element_class: TopCategory.ElementMethods,
+        category_element_class: BottomCategory.ElementMethods,
+        _runtime_class(RightCategory.an_instance(), "element_class"): (
+            RightCategory.ElementMethods
+        ),
+        _runtime_class(LeftCategory.an_instance(), "element_class"): (
+            LeftCategory.ElementMethods
+        ),
+        _runtime_class(TopCategory.an_instance(), "element_class"): (
+            TopCategory.ElementMethods
+        ),
     }
     projected_runtime_bases = tuple(
         _class_fullname(runtime_to_provider[runtime_class])
-        for runtime_class in category.element_class.__bases__
+        for runtime_class in category_element_class.__bases__
     )
     projected_runtime_mro = tuple(
         _class_fullname(runtime_to_provider[runtime_class])
-        for runtime_class in category.element_class.__mro__
+        for runtime_class in category_element_class.__mro__
         if runtime_class in runtime_to_provider
     )
     unprojected_runtime_mro = tuple(
         runtime_class
-        for runtime_class in category.element_class.__mro__
+        for runtime_class in category_element_class.__mro__
         if runtime_class not in runtime_to_provider
     )
 
@@ -86,24 +99,31 @@ def test_diamond_subcategory_projection_matches_sage_runtime_mro() -> None:
     )
     projection = projections[subcategory_provider]
 
+    category_subcategory_class = _runtime_class(category, "subcategory_class")
     runtime_to_provider = {
-        category.subcategory_class: BottomCategory.SubcategoryMethods,
-        RightCategory.an_instance().subcategory_class: RightCategory.SubcategoryMethods,
-        LeftCategory.an_instance().subcategory_class: LeftCategory.SubcategoryMethods,
-        TopCategory.an_instance().subcategory_class: TopCategory.SubcategoryMethods,
+        category_subcategory_class: BottomCategory.SubcategoryMethods,
+        _runtime_class(RightCategory.an_instance(), "subcategory_class"): (
+            RightCategory.SubcategoryMethods
+        ),
+        _runtime_class(LeftCategory.an_instance(), "subcategory_class"): (
+            LeftCategory.SubcategoryMethods
+        ),
+        _runtime_class(TopCategory.an_instance(), "subcategory_class"): (
+            TopCategory.SubcategoryMethods
+        ),
     }
     projected_runtime_bases = tuple(
         _class_fullname(runtime_to_provider[runtime_class])
-        for runtime_class in category.subcategory_class.__bases__
+        for runtime_class in category_subcategory_class.__bases__
     )
     projected_runtime_mro = tuple(
         _class_fullname(runtime_to_provider[runtime_class])
-        for runtime_class in category.subcategory_class.__mro__
+        for runtime_class in category_subcategory_class.__mro__
         if runtime_class in runtime_to_provider
     )
     unprojected_runtime_mro = tuple(
         runtime_class
-        for runtime_class in category.subcategory_class.__mro__
+        for runtime_class in category_subcategory_class.__mro__
         if runtime_class not in runtime_to_provider
     )
 
@@ -147,24 +167,31 @@ def test_diamond_morphism_projection_matches_sage_runtime_mro() -> None:
     )
     projection = projections[morphism_provider]
 
+    category_morphism_class = _runtime_class(category, "morphism_class")
     runtime_to_provider = {
-        category.morphism_class: BottomCategory.MorphismMethods,
-        RightCategory.an_instance().morphism_class: RightCategory.MorphismMethods,
-        LeftCategory.an_instance().morphism_class: LeftCategory.MorphismMethods,
-        TopCategory.an_instance().morphism_class: TopCategory.MorphismMethods,
+        category_morphism_class: BottomCategory.MorphismMethods,
+        _runtime_class(RightCategory.an_instance(), "morphism_class"): (
+            RightCategory.MorphismMethods
+        ),
+        _runtime_class(LeftCategory.an_instance(), "morphism_class"): (
+            LeftCategory.MorphismMethods
+        ),
+        _runtime_class(TopCategory.an_instance(), "morphism_class"): (
+            TopCategory.MorphismMethods
+        ),
     }
     projected_runtime_bases = tuple(
         _class_fullname(runtime_to_provider[runtime_class])
-        for runtime_class in category.morphism_class.__bases__
+        for runtime_class in category_morphism_class.__bases__
     )
     projected_runtime_mro = tuple(
         _class_fullname(runtime_to_provider[runtime_class])
-        for runtime_class in category.morphism_class.__mro__
+        for runtime_class in category_morphism_class.__mro__
         if runtime_class in runtime_to_provider
     )
     unprojected_runtime_mro = tuple(
         runtime_class
-        for runtime_class in category.morphism_class.__mro__
+        for runtime_class in category_morphism_class.__mro__
         if runtime_class not in runtime_to_provider
     )
 

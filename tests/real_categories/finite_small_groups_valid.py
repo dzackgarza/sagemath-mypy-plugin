@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Literal, override
 
 import sage.all  # type: ignore[import-untyped]  # noqa: F401
+from sage.categories.category import Category
 from sage.categories.category_singleton import Category_singleton  # type: ignore[import-untyped]
 
 from tests.real_categories.finite_small_groups import FiniteGroupsOfOrderLessThanTwenty
@@ -25,7 +26,8 @@ from tests.real_categories.finite_small_groups import FiniteGroupsOfOrderLessTha
 class ValidHasEvenOrderCategory(Category_singleton):
     """Subcategory of groups of even order < 20; provides a valid override."""
 
-    def super_categories(self) -> list[object]:
+    @override
+    def super_categories(self) -> list[Category]:
         return [FiniteGroupsOfOrderLessThanTwenty()]
 
     class ParentMethods:

@@ -12,9 +12,10 @@ that projected provider graph.
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Literal, final, override
+from typing import Literal, cast, final, override
 
 import sage.all  # type: ignore[import-untyped]  # noqa: F401
+from sage.categories.category import Category
 from sage.categories.category_singleton import Category_singleton  # type: ignore[import-untyped]
 from sage.categories.groups import Groups  # type: ignore[import-untyped]
 
@@ -22,8 +23,9 @@ from sage.categories.groups import Groups  # type: ignore[import-untyped]
 class FiniteGroupsOfOrderLessThanTwenty(Category_singleton):
     """Category of finite groups whose order is at most 20."""
 
-    def super_categories(self) -> list[object]:
-        return [Groups().Finite()]  # type: ignore[attr-defined]
+    @override
+    def super_categories(self) -> list[Category]:
+        return [cast(Category, Groups().Finite())]  # type: ignore[attr-defined]
 
     class ParentMethods:
         @abstractmethod
@@ -36,7 +38,8 @@ class FiniteGroupsOfOrderLessThanTwenty(Category_singleton):
 class EvenOrderGroupsOfOrderLessThanTwenty(Category_singleton):
     """Category of finite groups of even order at most 20."""
 
-    def super_categories(self) -> list[object]:
+    @override
+    def super_categories(self) -> list[Category]:
         return [FiniteGroupsOfOrderLessThanTwenty()]
 
     class ParentMethods:
@@ -51,7 +54,8 @@ class EvenOrderGroupsOfOrderLessThanTwenty(Category_singleton):
 class GroupsOfOrderFour(Category_singleton):
     """Category of groups of order exactly 4."""
 
-    def super_categories(self) -> list[object]:
+    @override
+    def super_categories(self) -> list[Category]:
         return [EvenOrderGroupsOfOrderLessThanTwenty()]
 
     class ParentMethods:
@@ -66,7 +70,8 @@ class GroupsOfOrderFour(Category_singleton):
 class KleinFourGroups(Category_singleton):
     """Category of groups isomorphic to the Klein four-group."""
 
-    def super_categories(self) -> list[object]:
+    @override
+    def super_categories(self) -> list[Category]:
         return [GroupsOfOrderFour()]
 
     class ParentMethods:

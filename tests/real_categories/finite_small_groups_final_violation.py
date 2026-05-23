@@ -10,7 +10,10 @@ when a subcategory tries to override it.
 
 from __future__ import annotations
 
+from typing import override
+
 import sage.all  # type: ignore[import-untyped]  # noqa: F401
+from sage.categories.category import Category
 from sage.categories.category_singleton import Category_singleton  # type: ignore[import-untyped]
 
 from tests.real_categories.finite_small_groups import KleinFourGroups
@@ -19,7 +22,8 @@ from tests.real_categories.finite_small_groups import KleinFourGroups
 class InvalidFinalOverrideCategory(Category_singleton):
     """Subcategory that illegally overrides a @final method from KleinFourGroups."""
 
-    def super_categories(self) -> list[object]:
+    @override
+    def super_categories(self) -> list[Category]:
         return [KleinFourGroups()]
 
     class ParentMethods:
