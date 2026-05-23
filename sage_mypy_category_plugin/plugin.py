@@ -171,7 +171,11 @@ class SageCategoryProjectionPlugin(Plugin):
         info.bases = [Instance(base_info, []) for base_info in base_infos]
         info.mro = [*mro_infos, object_info]
         if _is_source_projection(projection, source_modules=self._source_modules):
-            _install_provider_receiver_surface(ctx, projection)
+            _install_provider_receiver_surface(
+                ctx,
+                projection,
+                strict=self._strict,
+            )
 
         observed_provider_mro = tuple(
             mro_info.fullname
@@ -337,12 +341,20 @@ def _is_source_projection(
 def _install_provider_receiver_surface(
     ctx: ClassDefContext,
     projection: ProviderProjection,
+    *,
+    strict: bool,
 ) -> None:
     receiver_fullname = _receiver_fullname_for_role(projection)
     if receiver_fullname is None:
         return
     receiver_info = _lookup_typeinfo(ctx, receiver_fullname, report_missing=False)
     if receiver_info is None:
+        if strict:
+            ctx.api.fail(
+                "Sage category receiver TypeInfo is missing: "
+                f"{receiver_fullname}",
+                ctx.cls,
+            )
         return
     if (
         projection.role == "subcategory"

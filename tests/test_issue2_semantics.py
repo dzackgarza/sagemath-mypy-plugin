@@ -63,6 +63,55 @@ def test_issue2_method_container_receiver_behavior_matrix(tmp_path: Path) -> Non
     )
 
 
+def test_issue2_strict_mode_reports_missing_receiver_typeinfo(tmp_path: Path) -> None:
+    visible_sage_stubs = _write_missing_receiver_sage_stubs(tmp_path)
+    config_path = _write_plugin_config(tmp_path)
+
+    result = _run_mypy(config_path, tmp_path, visible_sage_stubs)
+
+    assert _contains(
+        result,
+        "Sage category receiver TypeInfo is missing",
+        "sage.structure.parent.Parent",
+    )
+
+
+def _write_missing_receiver_sage_stubs(tmp_path: Path) -> Path:
+    stub_root = tmp_path / "missing-receiver-sage-stubs"
+    categories = stub_root / "sage" / "categories"
+    structure = stub_root / "sage" / "structure"
+    categories.mkdir(parents=True)
+    structure.mkdir(parents=True)
+    (stub_root / "sage" / "__init__.pyi").write_text("")
+    (categories / "__init__.pyi").write_text("")
+    (structure / "__init__.pyi").write_text("")
+    (categories / "category.pyi").write_text(
+        "\n".join(
+            (
+                "class Category:",
+                "    def super_categories(self) -> list[Category]: ...",
+                "    def base_category(self) -> Category: ...",
+                "",
+            )
+        )
+    )
+    (categories / "covariant_functorial_construction.pyi").write_text(
+        "\n".join(
+            (
+                "from sage.categories.category import Category",
+                "",
+                "class FunctorialConstructionCategory(Category):",
+                "    @classmethod",
+                "    def category_of(cls, category: Category) -> Category: ...",
+                "",
+            )
+        )
+    )
+    (structure / "element.pyi").write_text("class Element: ...\n")
+    (structure / "parent.pyi").write_text("")
+    return stub_root
+
+
 def _write_plugin_config(tmp_path: Path) -> Path:
     cache_dir = tmp_path / "sage-category-cache"
     config_path = tmp_path / "mypy.ini"
