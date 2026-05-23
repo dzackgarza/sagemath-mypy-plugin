@@ -41,6 +41,7 @@ def test_issue2_method_container_receiver_behavior_matrix(tmp_path: Path) -> Non
         "source_backed_parent_method",
         "no base method was found",
     )
+    assert _contains(without_plugin, "ParentMethods", "an_element", "[attr-defined]")
     assert _contains(without_plugin, "ParentMethods", "[assignment]")
     assert _contains(without_plugin, "BoundSubcategory", "[attr-defined]")
     assert _contains(invalid_with_plugin, "ParentMethods", "category", "[attr-defined]")
@@ -74,6 +75,89 @@ def test_issue2_strict_mode_reports_missing_receiver_typeinfo(tmp_path: Path) ->
         "Sage category receiver TypeInfo is missing",
         "sage.structure.parent.Parent",
     )
+
+
+def test_issue2_classcall_private_keyword_is_sidecar_surface(
+    tmp_path: Path,
+) -> None:
+    config_path = _write_plugin_config(tmp_path)
+    source = _write_classcall_source(tmp_path)
+    missing_dispatch_stubs = _write_classcall_sage_stubs(
+        tmp_path / "missing-dispatch-stubs",
+        include_dispatch=False,
+    )
+    visible_dispatch_stubs = _write_classcall_sage_stubs(
+        tmp_path / "visible-dispatch-stubs",
+        include_dispatch=True,
+    )
+
+    missing_with_plugin = _run_mypy(config_path, tmp_path, missing_dispatch_stubs, source=source)
+    missing_without_plugin = _run_mypy_without_plugin(
+        tmp_path, missing_dispatch_stubs, source=source
+    )
+    visible_with_plugin = _run_mypy(config_path, tmp_path, visible_dispatch_stubs, source=source)
+    visible_without_plugin = _run_mypy_without_plugin(
+        tmp_path, visible_dispatch_stubs, source=source
+    )
+
+    assert _contains(missing_with_plugin, "Unexpected keyword argument", "dispatch")
+    assert _contains(missing_without_plugin, "Unexpected keyword argument", "dispatch")
+    assert not visible_with_plugin.errors, visible_with_plugin.errors
+    assert not visible_without_plugin.errors, visible_without_plugin.errors
+
+
+def _write_classcall_source(tmp_path: Path) -> BuildSource:
+    source_path = tmp_path / "issue2_classcall_dispatch.py"
+    source_path.write_text(
+        "\n".join(
+            (
+                "from sage.categories.modules import Modules",
+                "from sage.structure.parent import Parent",
+                "",
+                "def category_with_private_keyword(base_ring: Parent) -> object:",
+                "    return Modules(base_ring, dispatch=False)",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    return BuildSource(str(source_path), "issue2_classcall_dispatch", None)
+
+
+def _write_classcall_sage_stubs(
+    stub_root: Path,
+    *,
+    include_dispatch: bool,
+) -> Path:
+    categories = stub_root / "sage" / "categories"
+    structure = stub_root / "sage" / "structure"
+    categories.mkdir(parents=True)
+    structure.mkdir(parents=True)
+    (stub_root / "sage" / "__init__.pyi").write_text("")
+    (categories / "__init__.pyi").write_text("")
+    (structure / "__init__.pyi").write_text("")
+    (categories / "category.pyi").write_text("class Category: ...\n")
+    (structure / "parent.pyi").write_text("class Parent: ...\n")
+    modules_init = (
+        "    def __init__(self, base_ring: Parent | Category, "
+        "dispatch: bool = True) -> None: ..."
+        if include_dispatch
+        else "    def __init__(self, base_ring: Parent | Category) -> None: ..."
+    )
+    (categories / "modules.pyi").write_text(
+        "\n".join(
+            (
+                "from sage.categories.category import Category",
+                "from sage.structure.parent import Parent",
+                "",
+                "class Modules:",
+                modules_init,
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    return stub_root
 
 
 def _write_missing_receiver_sage_stubs(tmp_path: Path) -> Path:
