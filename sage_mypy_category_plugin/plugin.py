@@ -25,6 +25,7 @@ from sage_mypy_category_plugin.projection import ProviderProjection, ProviderRol
 
 CONFIG_SECTION = "sage-mypy-category-plugin"
 MYPY_OBJECT = "builtins.object"
+SAGE_PARENT = "sage.structure.parent.Parent"
 MYPY_DEP_PRIORITY = 10
 IGNORED_FORWARDED_METHODS = frozenset(
     {"__class__", "__dict__", "__doc__", "__init__", "__module__", "__weakref__"}
@@ -124,6 +125,7 @@ class SageCategoryProjectionPlugin(Plugin):
         return {
             "manifest_path": str(self._manifest_path),
             "manifest_digest": self._manifest_digest,
+            "manifest_projection_oracle": self._manifest.projection_oracle,
             "manifest_semantic_projection_digest": (
                 self._manifest.semantic_projection_digest
             ),
@@ -167,6 +169,34 @@ class SageCategoryProjectionPlugin(Plugin):
                 projection_field="provider_mro",
                 missing=missing_mro,
             )
+            return
+        if self._manifest.projection_oracle == "sage_runtime":
+            object_info = _lookup_typeinfo(ctx, MYPY_OBJECT)
+            if object_info is None:
+                return
+            info.bases = [Instance(base_info, []) for base_info in base_infos]
+            info.mro = [*mro_infos, object_info]
+            if _is_source_projection(
+                projection,
+                source_modules=self._source_modules,
+            ):
+                _install_provider_receiver_surface(
+                    ctx,
+                    projection,
+                    strict=self._strict,
+                )
+            observed_provider_mro = tuple(
+                mro_info.fullname
+                for mro_info in info.mro
+                if mro_info.fullname != MYPY_OBJECT
+            )
+            if self._strict and observed_provider_mro != projection.provider_mro:
+                ctx.api.fail(
+                    "Sage category provider MRO mismatch: "
+                    f"expected {projection.provider_mro!r}, "
+                    f"observed {observed_provider_mro!r}",
+                    ctx.cls,
+                )
             return
         promoted_infos = _lookup_typeinfos(
             ctx=ctx,
@@ -320,6 +350,97 @@ def _missing_typeinfo_names(
         for fullname in fullnames
         if _lookup_typeinfo(ctx, fullname, report_missing=False) is None
     )
+
+
+def _is_source_projection(
+    projection: ProviderProjection,
+    *,
+    source_modules: tuple[str, ...],
+) -> bool:
+    provider_module = projection.provider.rsplit(".", maxsplit=1)[0]
+    return any(
+        provider_module == source_module
+        or provider_module.startswith(f"{source_module}.")
+        for source_module in source_modules
+    )
+
+
+def _install_provider_receiver_surface(
+    ctx: ClassDefContext,
+    projection: ProviderProjection,
+    *,
+    strict: bool,
+) -> None:
+    receiver_fullname = _receiver_fullname_for_role(projection)
+    if receiver_fullname is None:
+        return
+    receiver_info = _lookup_typeinfo(ctx, receiver_fullname, report_missing=False)
+    if receiver_info is None:
+        if strict:
+            ctx.api.fail(
+                "Sage category receiver TypeInfo is missing: "
+                f"{receiver_fullname}",
+                ctx.cls,
+            )
+        return
+    if (
+        projection.role == "subcategory"
+        and not ctx.api.final_iteration
+        and not _public_provider_methods(ctx.cls.info)
+    ):
+        ctx.api.defer()
+        return
+    promotion_info = _promotion_typeinfo(projection, receiver_info)
+    if promotion_info is not None:
+        promotion_type = Instance(promotion_info, [])
+        if promotion_type not in ctx.cls.info._promote:
+            ctx.cls.info._promote.append(promotion_type)
+    for receiver_base in receiver_info.mro:
+        for name, symbol in receiver_base.names.items():
+            if not name.startswith("_") and name not in ctx.cls.info.names:
+                ctx.cls.info.names[name] = symbol
+    if projection.role == "subcategory":
+        _install_subcategory_methods_on_category(receiver_info, ctx.cls.info)
+
+
+def _public_provider_methods(provider_info: TypeInfo) -> tuple[str, ...]:
+    method_names: list[str] = []
+    for name, symbol in provider_info.names.items():
+        if name.startswith("_"):
+            continue
+        node = symbol.node
+        if isinstance(node, Decorator):
+            node = node.func
+        if isinstance(node, FuncDef):
+            method_names.append(name)
+    return tuple(method_names)
+
+
+def _install_subcategory_methods_on_category(
+    category_info: TypeInfo,
+    provider_info: TypeInfo,
+) -> None:
+    public_methods = set(_public_provider_methods(provider_info))
+    for name, symbol in provider_info.names.items():
+        if name in public_methods and name not in category_info.names:
+            category_info.names[name] = symbol
+
+
+def _receiver_fullname_for_role(projection: ProviderProjection) -> str | None:
+    if projection.role == "parent":
+        return SAGE_PARENT
+    if projection.role == "subcategory":
+        return projection.provider.rsplit(".", maxsplit=1)[0]
+    return None
+
+
+def _promotion_typeinfo(
+    projection: ProviderProjection,
+    receiver_info: TypeInfo,
+) -> TypeInfo | None:
+    if projection.role in {"parent", "subcategory"}:
+        return receiver_info
+    return None
 
 
 def _install_forwarded_methods(

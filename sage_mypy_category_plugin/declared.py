@@ -20,6 +20,7 @@ from __future__ import annotations
 from importlib import import_module
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
+from sage_mypy_category_plugin.imports import importable_module_name_or_none
 from sage_mypy_category_plugin.projection import ProviderProjection, ProviderRole
 
 if TYPE_CHECKING:
@@ -51,7 +52,12 @@ def compiler_in(package_names: Sequence[str]) -> DeclaringCompiler | None:
     module or attribute name.
     """
     configured = tuple(package_names)
-    for module in _imported_modules(package_names):
+    module_names = tuple(
+        name
+        for name in configured
+        if "." not in name or importable_module_name_or_none(name) == name
+    )
+    for module in _imported_modules(module_names):
         for name in dir(module):
             member = getattr(module, name)
             if isinstance(member, DeclaringCompiler):

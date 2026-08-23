@@ -158,6 +158,7 @@ class ProjectionManifest(BaseModel):
 
     schema_version: Literal[1]
     generated_by: StrictStr
+    projection_oracle: Literal["sage_runtime", "declared_compiler"] = "sage_runtime"
     plugin_schema_version: Literal["1"] = CURRENT_PLUGIN_SCHEMA_VERSION
     sage_version: StrictStr
     sage_git_revision: StrictStr | None = None

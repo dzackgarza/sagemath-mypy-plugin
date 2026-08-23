@@ -194,7 +194,7 @@ def test_diamond_parent_projection_matches_sage_runtime_mro() -> None:
     provider = "tests.fixtures.invariant_core.diamond_runtime.BottomCategory.ParentMethods"
     projection = projections[provider]
     category = BottomCategory.an_instance()
-    runtime_to_provider = {
+    runtime_to_provider: dict[type, type] = {
         category.parent_class: BottomCategory.ParentMethods,
         RightCategory.an_instance().parent_class: RightCategory.ParentMethods,
         LeftCategory.an_instance().parent_class: LeftCategory.ParentMethods,
@@ -403,7 +403,7 @@ def test_category_specs_like_parent_projection_uses_local_wrapper_alias() -> Non
     )
     projection = projections[commutative_provider]
     category = _CommutativeRings.an_instance()
-    runtime_to_provider = {
+    runtime_to_provider: dict[type, type] = {
         category.parent_class: _CommutativeRings.ParentMethods,
         Rings.an_instance().parent_class: Rings.ParentMethods,
     }
@@ -439,7 +439,7 @@ def test_cartesian_products_projection_matches_sage_runtime_mro() -> None:
     category = CartesianProductsCategory
     category_parent_class = _runtime_class(category, "parent_class")
     category_element_class = _runtime_class(category, "element_class")
-    runtime_to_provider = {
+    runtime_to_provider: dict[str, dict[type, type]] = {
         "parent": {
             category_parent_class: type(category).ParentMethods,
             _runtime_class(Sets(), "parent_class"): Sets.ParentMethods,
