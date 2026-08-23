@@ -1,7 +1,17 @@
 set shell := ["bash", "-uc"]
+export SAGE_BIN := env_var_or_default("SAGE_BIN", "/home/dzack/gitclones/sage-dev-allopts/.venv/bin/sage")
 
 @default:
   just --list
+
+[private]
+test-commit:
+  just typecheck
+
+[private]
+test-push:
+  just test-commit
+  just test -q
 
 @test *args:
   #!/usr/bin/env bash
