@@ -43,6 +43,9 @@ class DeclaringCompiler(Protocol):
     def declared_inheritance(self) -> dict[str, dict[str, tuple[str, ...]]]:
         pass
 
+    def declared_subtyping(self) -> dict[str, dict[str, tuple[str, ...]]]:
+        pass
+
 
 def compiler_in(package_names: Sequence[str]) -> DeclaringCompiler | None:
     """Return the reporting compiler reached from the configured packages.
@@ -90,10 +93,7 @@ def declared_projections(
         return ()
     selected = frozenset(roles)
     reported = compiler.declared_inheritance()
-    element_relations = reported.get("element", {})
-    element_implementations = frozenset(
-        (*element_relations, *(base for bases in element_relations.values() for base in bases))
-    )
+    subtyping = compiler.declared_subtyping()
     # One implementation class can serve more than one surface: a category that
     # declares its element type as its object type reports the class under both.
     # The manifest holds one record per provider, so the surfaces merge into the
@@ -112,7 +112,7 @@ def declared_projections(
                 promoted_for_provider[provider] = ()
             recorded = bases_for_provider[provider]
             bases_for_provider[provider] = recorded + tuple(base for base in bases if base not in recorded and base != provider)
-            promotable = tuple(base for base in bases if base in element_implementations)
+            promotable = subtyping.get(surface, {}).get(provider, ())
             if promotable:
                 promoted = promoted_for_provider[provider]
                 promoted_for_provider[provider] = promoted + tuple(
