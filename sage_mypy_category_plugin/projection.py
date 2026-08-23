@@ -74,6 +74,7 @@ class ProviderProjection(BaseModel):
     runtime_mro: tuple[StrictStr, ...]
     provider_bases: tuple[StrictStr, ...]
     provider_mro: tuple[StrictStr, ...]
+    promoted_bases: tuple[StrictStr, ...] = ()
     unprojected_runtime_mro: tuple[StrictStr, ...] = ()
 
     @field_validator("provider", "runtime_class")
@@ -86,13 +87,14 @@ class ProviderProjection(BaseModel):
         "runtime_mro",
         "provider_bases",
         "provider_mro",
+        "promoted_bases",
         "unprojected_runtime_mro",
     )
     @classmethod
     def _validate_fullname_tuple(cls, value: tuple[str, ...]) -> tuple[str, ...]:
         return validate_dotted_fullnames(value)
 
-    @field_validator("provider_bases", "provider_mro")
+    @field_validator("provider_bases", "provider_mro", "promoted_bases")
     @classmethod
     def _validate_unique_fullname_tuple(
         cls,

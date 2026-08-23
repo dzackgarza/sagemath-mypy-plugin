@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable
 
 from mypy.errors import CompileError
-from mypy.nodes import MypyFile, TypeInfo
+from mypy.nodes import Decorator, FuncDef, MypyFile, TypeInfo
 from mypy.options import Options
 from mypy.plugin import ClassDefContext, Plugin, ReportConfigContext
 from mypy.types import Instance
@@ -26,6 +26,9 @@ from sage_mypy_category_plugin.projection import ProviderProjection, ProviderRol
 CONFIG_SECTION = "sage-mypy-category-plugin"
 MYPY_OBJECT = "builtins.object"
 MYPY_DEP_PRIORITY = 10
+IGNORED_FORWARDED_METHODS = frozenset(
+    {"__class__", "__dict__", "__doc__", "__init__", "__module__", "__weakref__"}
+)
 
 DEFAULT_CACHE_DIR = ".mypy_cache/sage-category-plugin"
 DEFAULT_ROLES: tuple[ProviderRole, ...] = ("parent",)
@@ -101,6 +104,7 @@ class SageCategoryProjectionPlugin(Plugin):
             for base_fullname in (
                 *projection.provider_bases,
                 *projection.provider_mro,
+                *projection.promoted_bases,
             )
             if _provider_module(
                 base_fullname,
@@ -153,41 +157,41 @@ class SageCategoryProjectionPlugin(Plugin):
             return
 
         mro_infos = _lookup_provider_mro(ctx, projection, strict=self._strict)
-        object_info = _lookup_typeinfo(ctx, MYPY_OBJECT)
-        if mro_infos is None or object_info is None:
+        if mro_infos is None:
             missing_mro = _missing_typeinfo_names(ctx, projection.provider_mro)
-            missing_object = () if object_info is not None else (MYPY_OBJECT,)
             self._trace_projection_hook(
                 "hook_deferred_or_missing",
                 info.fullname,
                 projection=projection,
                 ctx=ctx,
                 projection_field="provider_mro",
-                missing=(*missing_mro, *missing_object),
+                missing=missing_mro,
             )
             return
-
-        info.bases = [Instance(base_info, []) for base_info in base_infos]
-        info.mro = [*mro_infos, object_info]
-        observed_provider_mro = tuple(
-            mro_info.fullname
-            for mro_info in info.mro
-            if mro_info.fullname != MYPY_OBJECT
+        promoted_infos = _lookup_typeinfos(
+            ctx=ctx,
+            fullnames=projection.promoted_bases,
+            projection_field="promoted_bases",
+            projection_fullname=projection.provider,
+            strict=self._strict,
         )
+        if promoted_infos is None:
+            return
+        if not ctx.api.final_iteration:
+            ctx.api.defer()
+            return
+
+        for promoted_info in promoted_infos:
+            promotion = Instance(promoted_info, [])
+            if promotion not in info._promote:
+                info._promote.append(promotion)
+        _install_forwarded_methods(info, mro_infos[1:])
         self._trace_projection_hook(
             "hook_installed",
             info.fullname,
             projection=projection,
             ctx=ctx,
         )
-        if observed_provider_mro != projection.provider_mro:
-            if self._strict:
-                ctx.api.fail(
-                    "Sage category provider MRO mismatch: "
-                    f"expected {projection.provider_mro!r}, "
-                    f"observed {observed_provider_mro!r}",
-                    ctx.cls,
-                )
 
     def _trace_projection_hook(
         self,
@@ -206,6 +210,7 @@ class SageCategoryProjectionPlugin(Plugin):
             "provider": fullname,
             "projection_bases": projection.provider_bases,
             "projection_mro": projection.provider_mro,
+            "promoted_bases": projection.promoted_bases,
         }
         if projection_field is not None:
             payload["projection_field"] = projection_field
@@ -315,6 +320,27 @@ def _missing_typeinfo_names(
         for fullname in fullnames
         if _lookup_typeinfo(ctx, fullname, report_missing=False) is None
     )
+
+
+def _install_forwarded_methods(
+    provider_info: TypeInfo,
+    inherited_infos: tuple[TypeInfo, ...],
+) -> None:
+    """Expose the methods that the runtime compiler forwards."""
+    runtime_names = frozenset(
+        name for runtime_info in provider_info.mro for name in runtime_info.names
+    )
+    for inherited_info in inherited_infos:
+        for name, symbol in inherited_info.names.items():
+            if name in IGNORED_FORWARDED_METHODS:
+                continue
+            if name.startswith("_") and not name.startswith("__"):
+                continue
+            node = symbol.node
+            if isinstance(node, Decorator):
+                node = node.func
+            if isinstance(node, FuncDef) and name not in runtime_names:
+                provider_info.names[name] = symbol
 
 
 # ── Config parsing ───────────────────────────────────────────────────────────
