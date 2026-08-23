@@ -10,7 +10,7 @@ set shell := ["bash", "-uc"]
   args=({{args}})
   for arg in "${args[@]}"; do
     if [[ "$arg" != -* ]]; then
-      sage -python -m pytest "${args[@]}"
+      "$(dirname "${SAGE_BIN:?SAGE_BIN must name the Sage executable}")/python" -m pytest "${args[@]}"
       exit
     fi
   done
@@ -41,7 +41,7 @@ set shell := ["bash", "-uc"]
     label="${labels[$index]}"
     read -r -a files <<< "${commands[$index]}"
     (
-      sage -python -m pytest "${files[@]}" "${args[@]}"
+      "$(dirname "${SAGE_BIN:?SAGE_BIN must name the Sage executable}")/python" -m pytest "${files[@]}" "${args[@]}"
     ) >"${output_dir}/${label}.log" 2>&1 &
     printf '%s\n' "$!" >"${output_dir}/${label}.pid"
   done
@@ -119,7 +119,7 @@ test-performance max_seconds="180":
 test-supported-mypy:
   #!/usr/bin/env bash
   set -euo pipefail
-  sage -python - <<'PY'
+  "$(dirname "${SAGE_BIN:?SAGE_BIN must name the Sage executable}")/python" - <<'PY'
   from __future__ import annotations
 
   from pathlib import Path
@@ -157,7 +157,7 @@ release-check:
 install-sidecar:
   #!/usr/bin/env bash
   set -euo pipefail
-  sage -python -m pip install --force-reinstall "git+https://github.com/dzackgarza/sage-stubs@main"
+  "$(dirname "${SAGE_BIN:?SAGE_BIN must name the Sage executable}")/python" -m pip install --force-reinstall "git+https://github.com/dzackgarza/sage-stubs@main"
 
 [group('build')]
 generate-manifest *args:
@@ -165,7 +165,7 @@ generate-manifest *args:
   set -euo pipefail
   export PYTHONPATH="${PWD}${PYTHONPATH:+:${PYTHONPATH}}"
   args=({{args}})
-  sage -python -m sage_mypy_category_plugin.resolver "${args[@]}"
+  "$(dirname "${SAGE_BIN:?SAGE_BIN must name the Sage executable}")/python" -m sage_mypy_category_plugin.resolver "${args[@]}"
 
 [group('validate')]
 typecheck *args:
@@ -173,7 +173,7 @@ typecheck *args:
   set -euo pipefail
   export PYTHONPATH="${PWD}${PYTHONPATH:+:${PYTHONPATH}}"
   args=({{args}})
-  sage -python -m mypy --config-file=/dev/null --ignore-missing-imports --explicit-package-bases sage_mypy_category_plugin tests/test_*.py "${args[@]}"
+  "$(dirname "${SAGE_BIN:?SAGE_BIN must name the Sage executable}")/python" -m mypy --config-file=/dev/null --ignore-missing-imports --explicit-package-bases sage_mypy_category_plugin tests/test_*.py "${args[@]}"
 
 [group('validate')]
 consumer-structural *args:
@@ -182,7 +182,7 @@ consumer-structural *args:
   consumer_root="${SAGE_MYPY_CONSUMER_ROOT:-/home/dzack/research}"
   export PYTHONPATH="${PWD}:${consumer_root}${PYTHONPATH:+:${PYTHONPATH}}"
   args=({{args}})
-  sage -python devtools/consumer_structural_canary.py \
+  "$(dirname "${SAGE_BIN:?SAGE_BIN must name the Sage executable}")/python" devtools/consumer_structural_canary.py \
     --consumer-root "$consumer_root" \
     --work-dir ".mypy_cache/sage-category-plugin-consumer-canary" \
     "${args[@]}"
@@ -196,7 +196,7 @@ consumer-structural-fresh *args:
   args=({{args}})
   work_dir="$(mktemp -d)"
   trap 'rm -rf "${work_dir}"' EXIT
-  sage -python devtools/consumer_structural_canary.py \
+  "$(dirname "${SAGE_BIN:?SAGE_BIN must name the Sage executable}")/python" devtools/consumer_structural_canary.py \
     --consumer-root "$consumer_root" \
     --work-dir "${work_dir}" \
     "${args[@]}"
@@ -210,7 +210,7 @@ consumer-structural-all-fresh *args:
   args=({{args}})
   work_dir="$(mktemp -d)"
   trap 'rm -rf "${work_dir}"' EXIT
-  sage -python devtools/consumer_structural_canary.py \
+  "$(dirname "${SAGE_BIN:?SAGE_BIN must name the Sage executable}")/python" devtools/consumer_structural_canary.py \
     --consumer-root "$consumer_root" \
     --work-dir "${work_dir}" \
     --all-consumer-modules \
