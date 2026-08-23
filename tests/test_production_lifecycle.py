@@ -1,7 +1,7 @@
 """Production lifecycle test: normal config via subprocess shellout.
 
 This test proves the plugin works with the final production contract:
-``sage -python -m mypy`` plus plugin configuration, with upstream Sage provider
+the Sage environment's Python plus plugin configuration, with upstream Sage provider
 visibility supplied by the installed Sage-version sidecar stubs.  The config
 does not predeclare ``cache_dir/stubs`` and does not point at a pre-generated
 manifest.
@@ -14,6 +14,7 @@ Behavioral conjunction verified:
 """
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -29,11 +30,11 @@ def _run_sage_mypy(
     *,
     cwd: Path,
 ) -> subprocess.CompletedProcess[str]:
-    """Shell out to ``sage -python -m mypy`` exactly as the README prescribes."""
+    """Run mypy with the Python interpreter beside the selected Sage launcher."""
+    sage_python = Path(os.environ["SAGE_BIN"]).parent / "python"
     return subprocess.run(
         [
-            "sage",
-            "-python",
+            str(sage_python),
             "-m",
             "mypy",
             "--config-file",
