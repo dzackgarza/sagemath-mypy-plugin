@@ -448,9 +448,9 @@ def _install_forwarded_methods(
     inherited_infos: tuple[TypeInfo, ...],
 ) -> None:
     """Expose the methods that the runtime compiler forwards."""
-    runtime_names = frozenset(
+    available_names = {
         name for runtime_info in provider_info.mro for name in runtime_info.names
-    )
+    }
     for inherited_info in inherited_infos:
         for name, symbol in inherited_info.names.items():
             if name in IGNORED_FORWARDED_METHODS:
@@ -460,8 +460,9 @@ def _install_forwarded_methods(
             node = symbol.node
             if isinstance(node, Decorator):
                 node = node.func
-            if isinstance(node, FuncDef) and name not in runtime_names:
+            if isinstance(node, FuncDef) and name not in available_names:
                 provider_info.names[name] = symbol
+                available_names.add(name)
 
 
 # ── Config parsing ───────────────────────────────────────────────────────────
