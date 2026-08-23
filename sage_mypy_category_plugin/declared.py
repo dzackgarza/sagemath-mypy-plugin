@@ -84,24 +84,93 @@ def declared_projections(
         return ()
     selected = frozenset(roles)
     reported = compiler.declared_inheritance()
-    projections: list[ProviderProjection] = []
+    # One implementation class can serve more than one surface: a category that
+    # declares its element type as its object type reports the class under both.
+    # The manifest holds one record per provider, so the surfaces merge into the
+    # role that named it first, carrying every base either one reached.
+    role_for_provider: dict[str, ProviderRole] = {}
+    bases_for_provider: dict[str, tuple[str, ...]] = {}
     for surface, relations in reported.items():
         role = ROLE_FOR_SURFACE.get(surface)
         if role is None or role not in selected:
             continue
         for provider, bases in relations.items():
-            projections.append(
-                ProviderProjection(
-                    provider=provider,
-                    role=role,
-                    runtime_class=provider,
-                    runtime_bases=tuple(bases),
-                    runtime_mro=(provider, *bases),
-                    provider_bases=tuple(bases),
-                    provider_mro=(provider, *bases),
-                )
-            )
-    return tuple(projections)
+            if provider not in role_for_provider:
+                role_for_provider[provider] = role
+                bases_for_provider[provider] = ()
+            recorded = bases_for_provider[provider]
+            bases_for_provider[provider] = recorded + tuple(base for base in bases if base not in recorded and base != provider)
+    # Sage's named class carries the whole provider surface in its own bases, so
+    # the projection replaces them. Here the source class is ordinary Python with
+    # real bases of its own, and the declared relation is what the compiler adds
+    # on top. Dropping those bases would take the class's own surface with them,
+    # so each record keeps them and appends what the functors declare. A class
+    # can appear both ways, so the union keeps one entry per base.
+    combined_for_provider: dict[str, tuple[str, ...]] = {}
+    for provider, declared in bases_for_provider.items():
+        source = _source_bases(provider)
+        combined_for_provider[provider] = source + tuple(
+            base for base in declared if base not in source
+        )
+
+    # The manifest holds a closed graph: every class named as a base carries its
+    # own record, and so does every class those records name in turn.
+    pending = [base for bases in combined_for_provider.values() for base in bases]
+    while pending:
+        base = pending.pop()
+        if base in combined_for_provider:
+            continue
+        combined_for_provider[base] = _source_bases(base)
+        if base not in role_for_provider:
+            role_for_provider[base] = "parent"
+        pending.extend(combined_for_provider[base])
+
+    return tuple(
+        ProviderProjection(
+            provider=provider,
+            role=role_for_provider[provider],
+            runtime_class=provider,
+            runtime_bases=bases,
+            runtime_mro=_linearized(provider, combined_for_provider),
+            provider_bases=bases,
+            provider_mro=_linearized(provider, combined_for_provider),
+        )
+        for provider, bases in combined_for_provider.items()
+    )
+
+
+def _linearized(
+    provider: str,
+    bases_for_provider: dict[str, tuple[str, ...]],
+) -> tuple[str, ...]:
+    """Return the whole ancestry, since the plugin assigns it as the MRO.
+
+    Listing only the direct bases would cut every class off from its
+    grandparents, so a type would stop satisfying the interfaces it inherits.
+    """
+    order: list[str] = [provider]
+    pending = list(bases_for_provider.get(provider, ()))
+    while pending:
+        ancestor = pending.pop(0)
+        if ancestor in order:
+            continue
+        order.append(ancestor)
+        pending.extend(bases_for_provider.get(ancestor, ()))
+    return tuple(order)
+
+
+def _source_bases(provider: str) -> tuple[str, ...]:
+    """Return the class's own bases, which the declared relation adds to."""
+    from sage_mypy_category_plugin.imports import import_fullname
+
+    implementation = import_fullname(provider)
+    if not isinstance(implementation, type):
+        return ()
+    return tuple(
+        f"{base.__module__}.{base.__qualname__}"
+        for base in implementation.__bases__
+        if base is not object
+    )
 
 
 def _imported_modules(package_names: Sequence[str]) -> tuple[ModuleType, ...]:

@@ -28,6 +28,7 @@ from sage_mypy_category_plugin.oracle import (
     provider_projections_for_categories,
     unsupported_provider_traces,
 )
+from sage_mypy_category_plugin.declared import compiler_in, declared_projections
 from sage_mypy_category_plugin.projection import (
     ConcreteParentRecord,
     ExternalRuntimeClassRecord,
@@ -42,52 +43,23 @@ def resolve_projection_manifest(
     *,
     category_fullnames: Sequence[str],
     roles: Sequence[ProviderRole],
-    concrete_parent_fullnames: Sequence[str] = (),
     generated_by: str = "sage-mypy-category-plugin",
     sage_version: str | None = None,
     sage_git_revision: str | None = None,
     mypy_min_version: str = MYPY_VERSION,
     mypy_max_version: str = MYPY_VERSION,
 ) -> ProjectionManifest:
+    """Return the manifest projecting the framework's declared inheritance.
+
+    ``category_fullnames`` names the packages whose compiler reports those
+    declarations. The compiler is the oracle, so nothing here reads source.
+    """
     if sage_version is None:
         from sage.version import version as _sage_version  # type: ignore[import-untyped]
 
         sage_version = str(_sage_version)
 
-    projections = provider_projections_for_categories(
-        category_fullnames,
-        roles=roles,
-    )
-    projection_providers = frozenset(projections)
-
-    concrete_parent_records, concrete_parent_projections = (
-        concrete_parent_records_and_provider_projections_for_factories(
-            concrete_parent_fullnames
-        )
-    )
-    for provider, projection in concrete_parent_projections.items():
-        existing_projection = projections.get(provider)
-        if existing_projection is not None:
-            role_normalized_projection = projection
-            if roles_share_projection(existing_projection.role, projection.role):
-                role_normalized_projection = projection.model_copy(
-                    update={"role": existing_projection.role}
-                )
-            assert existing_projection == role_normalized_projection, (
-                f"Conflicting projection for concrete parent provider {provider}: "
-                f"{existing_projection!r} vs {projection!r}"
-            )
-            continue
-        projections[provider] = projection
-    concrete_parents = tuple(
-        concrete_parent_records.values()
-    )
-    external_runtime_classes = _external_runtime_class_records(
-        projections=projections.values(),
-        concrete_parents=concrete_parents,
-    )
-    unsupported_providers = _unsupported_provider_records()
-
+    projections = declared_projections(category_fullnames, roles)
     return ProjectionManifest(
         schema_version=1,
         generated_by=generated_by,
@@ -96,22 +68,16 @@ def resolve_projection_manifest(
         python_version=f"{version_info.major}.{version_info.minor}.{version_info.micro}",
         mypy_min_version=mypy_min_version,
         mypy_max_version=mypy_max_version,
-        named_classes=_named_class_records(),
-        unsupported_providers=unsupported_providers,
-        projections=tuple(projections.values()),
-        provider_methods=provider_method_records_for_projections(
-            projections.values(),
-            concrete_parents=concrete_parents,
-        ),
-        concrete_parents=concrete_parents,
-        external_runtime_classes=external_runtime_classes,
-        source_modules=_source_module_records(
-            category_fullnames,
-            projections=projections.values(),
-            unsupported_providers=unsupported_providers,
-            concrete_parents=concrete_parents,
-        ),
+        projections=projections,
+        source_modules=_source_module_records((), projections=projections),
     )
+
+
+def discover_category_fullnames(package_names: Sequence[str]) -> tuple[str, ...]:
+    """Return the configured packages whose compiler reports declarations."""
+    if compiler_in(package_names) is None:
+        return ()
+    return tuple(package_names)
 
 
 def _named_class_records() -> tuple[NamedClassRecord, ...]:
@@ -168,16 +134,6 @@ def write_projection_manifest(
     )
     write_manifest(output, manifest)
     return manifest
-
-
-def discover_category_fullnames(package_names: Sequence[str]) -> tuple[str, ...]:
-    return tuple(
-        dict.fromkeys(
-            fullname
-            for module in _import_package_modules(package_names)
-            for fullname in _category_fullnames_defined_in_module(module)
-        )
-    )
 
 
 def _import_package_modules(package_names: Sequence[str]) -> tuple[ModuleType, ...]:
