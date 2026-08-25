@@ -1,7 +1,9 @@
 name: Compiler discovery regression
 
 on:
-  pull_request: {}
+  push:
+    branches:
+      - fix/compiler-discovery-first-pass
 
 jobs:
   test:
