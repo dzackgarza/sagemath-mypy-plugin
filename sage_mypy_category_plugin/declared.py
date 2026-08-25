@@ -52,7 +52,9 @@ def compiler_in(package_names: Sequence[str]) -> DeclaringCompiler | None:
 
     Invariant I3 forbids matching a namespace by name, so this asks each member
     whether it satisfies the reporting protocol rather than looking for a known
-    module or attribute name.
+    module or attribute name. Existing compiler objects are inspected across the
+    complete package before any nullary accessor is invoked: mathematical
+    constructors are not discovery probes.
     """
     configured = tuple(package_names)
     module_names = tuple(
@@ -60,11 +62,18 @@ def compiler_in(package_names: Sequence[str]) -> DeclaringCompiler | None:
         for name in configured
         if "." not in name or importable_module_name_or_none(name) == name
     )
-    for module in _imported_modules(module_names):
+    modules = _imported_modules(module_names)
+    for module in modules:
         for name in dir(module):
             member = getattr(module, name)
-            if isinstance(member, DeclaringCompiler):
+            if not isinstance(member, type) and isinstance(
+                member,
+                DeclaringCompiler,
+            ):
                 return member
+    for module in modules:
+        for name in dir(module):
+            member = getattr(module, name)
             if not callable(member) or isinstance(member, type):
                 continue
             # Only accessors the configured packages define. A re-exported name
@@ -73,7 +82,10 @@ def compiler_in(package_names: Sequence[str]) -> DeclaringCompiler | None:
             if not _defined_in(member, configured):
                 continue
             produced = _called_without_argument(member)
-            if isinstance(produced, DeclaringCompiler):
+            if not isinstance(produced, type) and isinstance(
+                produced,
+                DeclaringCompiler,
+            ):
                 return produced
     return None
 
@@ -111,12 +123,18 @@ def declared_projections(
                 bases_for_provider[provider] = ()
                 promoted_for_provider[provider] = ()
             recorded = bases_for_provider[provider]
-            bases_for_provider[provider] = recorded + tuple(base for base in bases if base not in recorded and base != provider)
+            bases_for_provider[provider] = recorded + tuple(
+                base
+                for base in bases
+                if base not in recorded and base != provider
+            )
             promotable = subtyping.get(surface, {}).get(provider, ())
             if promotable:
                 promoted = promoted_for_provider[provider]
                 promoted_for_provider[provider] = promoted + tuple(
-                    base for base in promotable if base not in promoted and base != provider
+                    base
+                    for base in promotable
+                    if base not in promoted and base != provider
                 )
     # The manifest keeps the ordinary Python class graph distinct from the
     # compiler relation. The latter supplies forwarded methods and subtyping; it
