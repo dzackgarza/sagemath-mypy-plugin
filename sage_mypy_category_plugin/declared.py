@@ -63,16 +63,18 @@ def compiler_in(package_names: Sequence[str]) -> DeclaringCompiler | None:
     for module in _imported_modules(module_names):
         for name in dir(module):
             member = getattr(module, name)
-            if isinstance(member, DeclaringCompiler):
+            # The compiler is an instance. A class defining those two methods
+            # satisfies the protocol too, because an unbound method is an
+            # attribute of the class, and calling one is missing `self`.
+            if not isinstance(member, type) and isinstance(member, DeclaringCompiler):
                 return member
             if not callable(member) or isinstance(member, type):
                 continue
-            # Only accessors the configured packages define. A re-exported name
-            # such as a typing construct also reads as callable without an
-            # argument, and calling it raises.
+            # A framework publishes its own compiler, so the accessor is one the
+            # configured packages define rather than one they re-export.
             if not _defined_in(member, configured):
                 continue
-            produced = _called_without_argument(member)
+            produced = _compiler_from_accessor(member)
             if isinstance(produced, DeclaringCompiler):
                 return produced
     return None
@@ -208,35 +210,39 @@ def _submodule_names(package: ModuleType) -> tuple[str, ...]:
     return tuple(found.name for found in walk_packages(search_path, f"{package.__name__}."))
 
 
-def _called_without_argument(member: object) -> object | None:
-    """Return what a no-argument accessor produces, or None when it needs one.
+def _compiler_from_accessor(member: object) -> object | None:
+    """Return what a compiler accessor produces, or None when this is not one.
 
-    An accessor takes nothing and returns something, and the signature decides
-    both before anything is called:
+    A signature says how a callable may be called. It never says that calling it
+    is safe. Every package has a `bootstrap()`, `main()`, `reset()`, or
+    `shutdown()` that takes nothing and is no accessor, and calling one runs
+    whatever it does: a one-shot initializer raises on its second call, and a CLI
+    entry point raises `SystemExit`, which would end the type-checking process.
 
-    - a parameter with no default, and a `*args` or `**kwargs` parameter, each
-      say the callable accepts an argument. A variadic parameter is the runtime
-      signature of every `@overload`-dispatched function, whose implementation
-      raises on an arity it does not accept;
-    - a declared `None` result says the callable is a command, so calling it
-      cannot produce a compiler and runs its side effect for nothing. A one-shot
-      initializer raises on its second call, and a CLI entry point raises
-      `SystemExit`, which would end the type-checking process.
-
-    `from __future__ import annotations` leaves the annotation as the string
-    `"None"`, so both spellings count.
+    So the member must itself declare that it returns a compiler. That is a
+    structural declaration by the member, which is why it keeps invariant I3: it
+    matches no module or attribute name. An argument the call cannot supply, and
+    a return annotation that names anything else or does not resolve, each mean
+    this is not the accessor.
     """
     from inspect import Parameter, signature
+    from typing import get_type_hints
 
     if not callable(member):
-        return None
-    declared = signature(member)
-    if declared.return_annotation in (None, "None"):
         return None
     variadic = (Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD)
     if any(
         parameter.default is Parameter.empty or parameter.kind in variadic
-        for parameter in declared.parameters.values()
+        for parameter in signature(member).parameters.values()
     ):
+        return None
+    # `from __future__ import annotations` leaves the annotation a string, and
+    # `get_type_hints` resolves it against the member's own module. It raises
+    # when the name does not resolve there, which is not an accessor either.
+    try:
+        returned = get_type_hints(member).get("return")
+    except (NameError, TypeError):
+        return None
+    if not isinstance(returned, type) or not issubclass(returned, DeclaringCompiler):
         return None
     return member()
