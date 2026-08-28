@@ -211,18 +211,32 @@ def _submodule_names(package: ModuleType) -> tuple[str, ...]:
 def _called_without_argument(member: object) -> object | None:
     """Return what a no-argument accessor produces, or None when it needs one.
 
-    A framework publishes its compiler through an accessor. Selecting by
-    signature keeps this from calling anything that expects arguments.
+    An accessor takes nothing and returns something, and the signature decides
+    both before anything is called:
+
+    - a parameter with no default, and a `*args` or `**kwargs` parameter, each
+      say the callable accepts an argument. A variadic parameter is the runtime
+      signature of every `@overload`-dispatched function, whose implementation
+      raises on an arity it does not accept;
+    - a declared `None` result says the callable is a command, so calling it
+      cannot produce a compiler and runs its side effect for nothing. A one-shot
+      initializer raises on its second call, and a CLI entry point raises
+      `SystemExit`, which would end the type-checking process.
+
+    `from __future__ import annotations` leaves the annotation as the string
+    `"None"`, so both spellings count.
     """
     from inspect import Parameter, signature
 
     if not callable(member):
         return None
-    parameters = signature(member).parameters.values()
+    declared = signature(member)
+    if declared.return_annotation in (None, "None"):
+        return None
+    variadic = (Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD)
     if any(
-        parameter.default is Parameter.empty
-        and parameter.kind not in (Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD)
-        for parameter in parameters
+        parameter.default is Parameter.empty or parameter.kind in variadic
+        for parameter in declared.parameters.values()
     ):
         return None
     return member()
