@@ -30,6 +30,7 @@ from sage_mypy_category_plugin.plugin import (
     _source_modules_stale_reason,
 )
 from sage_mypy_category_plugin.projection import ProviderProjection, ProviderRole
+from sage_mypy_category_plugin.resolver import discover_category_fullnames
 from tests.manifest_helpers import external_runtime_class_records_for_test_manifest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -687,6 +688,13 @@ def test_package_discovery_projects_a_category_over_a_base_ring(
     provider = "tests.fixtures.parametrized_consumer.PointedModules.ParentMethods"
     assert "sage.categories.modules.Modules.ParentMethods" in (
         plugin._projection_by_provider[provider].provider_mro
+    )
+    # `PointedMonoids.Algebras` also inherits `an_instance()` from
+    # `Category_over_base`, but it is a construction over a base category, so
+    # it is not a discovery root.
+    assert discover_category_fullnames(("tests.fixtures.parametrized_consumer",)) == (
+        "tests.fixtures.parametrized_consumer.PointedModules",
+        "tests.fixtures.parametrized_consumer.PointedMonoids",
     )
 
 

@@ -11,6 +11,9 @@ import sage.all  # type: ignore[import-untyped]  # noqa: F401
 from sage.categories.category import Category  # type: ignore[import-untyped]
 from sage.categories.category_types import Category_over_base_ring  # type: ignore[import-untyped]
 from sage.categories.modules import Modules  # type: ignore[import-untyped]
+from sage.categories.monoids import Monoids  # type: ignore[import-untyped]
+from sage.categories.algebra_functor import AlgebrasCategory  # type: ignore[import-untyped]
+from sage.categories.category_singleton import Category_singleton  # type: ignore[import-untyped]
 
 
 class LocalCategoryOverBaseRing(Category_over_base_ring):
@@ -26,3 +29,13 @@ class PointedModules(LocalCategoryOverBaseRing):
     class ParentMethods:
         def base_point(self) -> object:
             return self.zero()  # type: ignore[attr-defined]
+
+
+class PointedMonoids(Category_singleton):
+    """Monoids with a chosen base point; its algebras are a construction."""
+
+    def super_categories(self) -> list[Category]:
+        return [Monoids()]
+
+    class Algebras(AlgebrasCategory):
+        """Algebras of pointed monoids over a base ring: a construction category."""

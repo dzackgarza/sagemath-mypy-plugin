@@ -305,7 +305,15 @@ def _declares_an_instance(candidate: type[object]) -> bool:
     discovered roots.
     """
     from sage.categories.category import Category  # type: ignore[import-untyped]
+    from sage.categories.covariant_functorial_construction import (  # type: ignore[import-untyped]
+        FunctorialConstructionCategory,
+    )
 
+    # A construction such as `AlgebrasCategory` is also a category over a base
+    # ring, so it inherits `Category_over_base.an_instance()`, but it needs its
+    # base category and is reached from it instead.
+    if issubclass(candidate, FunctorialConstructionCategory):
+        return False
     below_category = candidate.__mro__[: candidate.__mro__.index(Category)]
     return any("an_instance" in vars(cls) for cls in below_category)
 
