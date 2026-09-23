@@ -192,10 +192,25 @@ def test_contract_no_banned_broad_hooks_in_plugin() -> None:
     may only appear with explicit justification in GOALS.md Suppression Registry.
     """
     plugin_file = PLUGIN_PACKAGE / "plugin.py"
-    hits = _rg_count(
-        r"get_function_hook|get_method_hook|get_attribute_hook|get_base_class_hook",
-        plugin_file,
-    )
+    registry = (REPO_ROOT / "GOALS.md").read_text().split("## Suppression Registry")[1]
+    registered = {
+        hook
+        for hook in (
+            "get_function_hook",
+            "get_method_hook",
+            "get_attribute_hook",
+            "get_base_class_hook",
+        )
+        if f"`{hook}`" in registry.split("## Known Limitations")[0]
+    }
+    hits = [
+        hit
+        for hit in _rg_count(
+            r"get_function_hook|get_method_hook|get_attribute_hook|get_base_class_hook",
+            plugin_file,
+        )
+        if not any(hook in hit for hook in registered)
+    ]
     assert hits == [], (
         "Found banned broad hook(s) in plugin.py — "
         "CONTRACT.md BP7 restricts hooks to get_customize_class_mro_hook, "

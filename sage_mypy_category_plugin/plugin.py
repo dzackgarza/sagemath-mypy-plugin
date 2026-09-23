@@ -14,6 +14,7 @@ from mypy.options import Options
 from mypy.plugin import ClassDefContext, MethodContext, Plugin, ReportConfigContext
 from mypy.types import Instance, Type, get_proper_type
 from pydantic import ValidationError
+from sage.categories.category import Category as _SageCategory  # type: ignore[import-untyped]
 
 from sage_mypy_category_plugin.manifest import (
     ProjectionManifest,
@@ -26,7 +27,8 @@ from sage_mypy_category_plugin.projection import ProviderProjection, ProviderRol
 CONFIG_SECTION = "sage-mypy-category-plugin"
 MYPY_OBJECT = "builtins.object"
 SAGE_PARENT = "sage.structure.parent.Parent"
-SAGE_CATEGORY = "sage.categories.category.Category"
+# The class that defines `Category.__call__`, named from the class itself.
+SAGE_CATEGORY = f"{_SageCategory.__module__}.{_SageCategory.__qualname__}"
 MYPY_DEP_PRIORITY = 10
 IGNORED_FORWARDED_METHODS = frozenset(
     {"__class__", "__dict__", "__doc__", "__init__", "__module__", "__weakref__"}
