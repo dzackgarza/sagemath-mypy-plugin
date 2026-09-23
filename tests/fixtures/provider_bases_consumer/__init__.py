@@ -16,8 +16,10 @@ from sage.structure.dynamic_class import dynamic_class  # type: ignore[import-un
 from sage.structure.element import Element  # type: ignore[import-untyped]
 from sage.structure.parent import Parent  # type: ignore[import-untyped]
 
+from tests.fixtures.invariant_core.local_wrapper import LocalCategoryBase
 
-class ContainerBasesCategory(Category):
+
+class ContainerBasesCategory(LocalCategoryBase):
     """Local wrapper: the element container is a base of `element_class`."""
 
     def _make_named_class(
