@@ -570,6 +570,49 @@ def test_plugin_projects_categories_of_a_package_exporting_a_callable_parent(
     )
 
 
+def test_container_bases_in_the_runtime_mro_stay_in_the_provider_typeinfo(
+    tmp_path: Path,
+) -> None:
+    """A container that is a base of its named class keeps its own bases.
+
+    The fixture puts `PointedSets.ElementMethods(Element)` into the bases of
+    `PointedSets().element_class`, so `Element` and `SageObject` are in the
+    runtime MRO and `self.parent()` resolves at runtime. The projected TypeInfo
+    must keep them, in runtime order, or the container body does not type-check.
+    """
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                f"[{CONFIG_SECTION}]",
+                "packages = tests.fixtures.provider_bases_consumer",
+                "roles = element",
+                f"cache_dir = {tmp_path / 'cache'}",
+                "",
+            )
+        )
+    )
+    module = "tests.fixtures.provider_bases_consumer"
+    result = _build_fixture(
+        config_path,
+        tmp_path,
+        fixture_sources=(
+            (REPO_ROOT / "tests" / "fixtures" / "provider_bases_consumer" / "__init__.py", module),
+        ),
+    )
+
+    assert result.errors == []
+    info = _typeinfo_for_fullname(result, f"{module}.PointedSets.ElementMethods")
+    assert tuple(mro_info.fullname for mro_info in info.mro)[:3] == (
+        f"{module}.PointedSets.ElementMethods",
+        "sage.structure.element.Element",
+        "sage.structure.sage_object.SageObject",
+    )
+
+
 def test_plugin_generates_manifest_from_packages_config(tmp_path: Path) -> None:
     """Package config auto-generates the production projection manifest."""
     cache_dir = tmp_path / "sage-category-cache"

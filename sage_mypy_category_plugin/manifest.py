@@ -462,8 +462,12 @@ class ProjectionManifest(BaseModel):
             )
 
         declared_providers = frozenset(providers)
-        declared_reference_providers = declared_providers | frozenset(
-            record.provider for record in self.unsupported_providers
+        # A provider MRO also keeps the declared external runtime classes a
+        # consumer's containers put into the runtime MRO, such as `Element`.
+        declared_reference_providers = (
+            declared_providers
+            | frozenset(record.provider for record in self.unsupported_providers)
+            | declared_external_runtime_classes
         )
         referenced_providers = frozenset(
             provider

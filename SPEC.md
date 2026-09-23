@@ -52,14 +52,24 @@ as visible in the Python source file defining `C`.
 The partial function from runtime named classes to source provider classes for role `r`.  
 Defined by: π_r(`K`) = `P(C, r)` if `K` is `K(C, r)` for some `C`; undefined otherwise.
 
+**σ_r**  
+The extension of `π_r` to every class of a runtime MRO: σ_r(`K`) = π_r(`K`) where
+that is defined; otherwise σ_r(`K`) = `K` when `K` is a source class, that is, not
+`object` and the class its own fullname imports; otherwise undefined.
+
 **provider_mro(P(C, r))**  
 The sequence produced by the oracle:
 
 ```
-provider_mro(P(C, r)) = [π_r(K) for K in K(C, r).__mro__ if π_r(K) is defined]
+provider_mro(P(C, r)) = dedupe([σ_r(K) for K in K(C, r).__mro__ if σ_r(K) is defined])
 ```
 
-This is the image of the Sage runtime MRO under the projection `π_r`.
+This is the image of the runtime MRO under `σ_r`. Sage's own
+`_make_named_class` copies a container's `__dict__` into `K(C, r)`, so for Sage
+categories the only source classes are providers and `σ_r` agrees with `π_r`. A
+consumer may instead put the container into the bases of `K(C, r)`. Then the
+container's own bases (such as `Element`) are in the runtime MRO, `σ_r` keeps
+them, and `provider_bases` takes the container's bases in its place.
 
 **The manifest**  
 A validated `ProjectionManifest` (JSON) produced by `resolver.py` at plugin
@@ -174,8 +184,9 @@ The `ProjectionManifest` Pydantic model (manifest.py) enforces three graph invar
 that together prevent the plugin from projecting a graph that contradicts Sage runtime:
 
 **Closed-world reference check** (`_validate_projection_graph`).  
-Every provider name in any `provider_mro` or `provider_bases` field must itself be a
-declared `ProviderProjection` entry. A manifest that references an undeclared provider
+Every name in any `provider_mro` or `provider_bases` field must itself be a declared
+`ProviderProjection` entry or a declared `external_runtime_classes` record (the
+source classes `σ_r` keeps). A manifest that references an undeclared class
 fails Pydantic validation at load time, before the plugin hook runs. This prevents
 injecting synthetic bases that were not resolved from Sage runtime.
 

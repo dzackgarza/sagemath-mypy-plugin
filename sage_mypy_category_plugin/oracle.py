@@ -410,11 +410,12 @@ def _provider_projection(
     provider_bases = _provider_bases_without_self(
         provider,
         _project_runtime_classes(
-            runtime_class.__bases__,
+            _runtime_bases_through_provider(runtime_class, provider),
             runtime_to_provider,
             allow_unmapped=frozenset(
                 {object, *_UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role]}
             ),
+            keep_source_classes=True,
         ),
     )
     provider_mro = _project_runtime_classes(
@@ -423,6 +424,7 @@ def _provider_projection(
         allow_unmapped=frozenset(
             {object, *_UNPROJECTED_RUNTIME_CLASSES_BY_ROLE[role]}
         ),
+        keep_source_classes=True,
     )
 
     assert provider_mro[0] == provider, (
@@ -466,15 +468,17 @@ def _provider_projection_from_runtime_class(
     provider_bases = _provider_bases_without_self(
         provider,
         _project_runtime_classes(
-            runtime_class.__bases__,
+            _runtime_bases_through_provider(runtime_class, provider),
             runtime_to_provider,
             allow_unmapped=allow_unmapped,
+            keep_source_classes=True,
         ),
     )
     provider_mro = _project_runtime_classes(
         runtime_class.__mro__,
         runtime_to_provider,
         allow_unmapped=allow_unmapped,
+        keep_source_classes=True,
     )
     assert provider_mro[0] == provider, (
         f"Projected MRO for {provider} must start with the provider itself; "
@@ -511,22 +515,53 @@ def _project_runtime_classes(
     runtime_to_provider: Mapping[type[object], str],
     *,
     allow_unmapped: frozenset[type[object]],
+    keep_source_classes: bool = False,
 ) -> tuple[str, ...]:
-    unmapped = tuple(
-        runtime_class
-        for runtime_class in runtime_classes
-        if runtime_class not in runtime_to_provider
-        and runtime_class not in allow_unmapped
-    )
+    """Project runtime classes to the classes mypy sees, in runtime order.
+
+    A named class projects to its provider. With `keep_source_classes`, a class
+    that is not a named class but is importable under its own name, such as
+    `Element` when a consumer puts its containers into the named classes' bases,
+    projects to itself: it is in the runtime MRO, and mypy has its TypeInfo.
+    """
+    projected: dict[str, None] = {}
+    unmapped: list[type[object]] = []
+    for runtime_class in runtime_classes:
+        if runtime_class in runtime_to_provider:
+            projected.setdefault(runtime_to_provider[runtime_class], None)
+        elif keep_source_classes and _is_source_class(runtime_class):
+            projected.setdefault(_class_fullname(runtime_class), None)
+        elif runtime_class not in allow_unmapped:
+            unmapped.append(runtime_class)
     assert not unmapped, (
         "Could not project runtime classes to provider classes: "
         f"{tuple(_class_fullname(runtime_class) for runtime_class in unmapped)!r}"
     )
+    return tuple(projected)
+
+
+def _is_source_class(runtime_class: type[object]) -> bool:
+    """Whether the class is the one its own fullname imports, other than `object`."""
+    return runtime_class is not object and (
+        _importable_runtime_class_or_none(_class_fullname(runtime_class))
+        is runtime_class
+    )
+
+
+def _runtime_bases_through_provider(
+    runtime_class: type[object],
+    provider: str,
+) -> tuple[type[object], ...]:
+    """The named class's bases, with its own container replaced by the container's bases.
+
+    A consumer that puts the container into the named class's bases makes the
+    container's bases the provider's bases in the runtime MRO.
+    """
     return tuple(
-        dict.fromkeys(
-            runtime_to_provider[runtime_class]
-            for runtime_class in runtime_classes
-            if runtime_class in runtime_to_provider
+        ancestor
+        for base in runtime_class.__bases__
+        for ancestor in (
+            base.__bases__ if _class_fullname(base) == provider else (base,)
         )
     )
 
@@ -990,7 +1025,7 @@ def _trace_make_named_class(
         runtime_class = original_make_named_class(
             cast(Category, self),
             name,
-            cast(type, method_provider),
+            method_provider,
             cache=cache,
             picklable=picklable,
         )
