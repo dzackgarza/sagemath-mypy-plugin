@@ -689,10 +689,19 @@ def test_package_discovery_projects_a_category_over_a_base_ring(
     assert "sage.categories.modules.Modules.ParentMethods" in (
         plugin._projection_by_provider[provider].provider_mro
     )
+    # The axiom category is built as `PointedModules(QQ).FiniteDimensional()`.
+    axiom_provider = (
+        "tests.fixtures.parametrized_consumer.PointedModules.FiniteDimensional.ParentMethods"
+    )
+    assert plugin._projection_by_provider[axiom_provider].provider_mro[:2] == (
+        axiom_provider,
+        provider,
+    )
     # `PointedMonoids.Algebras` also inherits `an_instance()` from
     # `Category_over_base`, but it is a construction over a base category, so
     # it is not a discovery root.
     assert discover_category_fullnames(("tests.fixtures.parametrized_consumer",)) == (
+        "tests.fixtures.parametrized_consumer.PointedModules.FiniteDimensional",
         "tests.fixtures.parametrized_consumer.PointedModules",
         "tests.fixtures.parametrized_consumer.PointedMonoids",
     )

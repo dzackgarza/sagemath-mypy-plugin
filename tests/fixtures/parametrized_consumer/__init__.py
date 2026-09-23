@@ -14,6 +14,7 @@ from sage.categories.modules import Modules  # type: ignore[import-untyped]
 from sage.categories.monoids import Monoids  # type: ignore[import-untyped]
 from sage.categories.algebra_functor import AlgebrasCategory  # type: ignore[import-untyped]
 from sage.categories.category_singleton import Category_singleton  # type: ignore[import-untyped]
+from sage.categories.category_with_axiom import CategoryWithAxiom_over_base_ring  # type: ignore[import-untyped]
 
 
 class LocalCategoryOverBaseRing(Category_over_base_ring):
@@ -29,6 +30,13 @@ class PointedModules(LocalCategoryOverBaseRing):
     class ParentMethods:
         def base_point(self) -> object:
             return self.zero()  # type: ignore[attr-defined]
+
+    class FiniteDimensional(CategoryWithAxiom_over_base_ring):
+        """An axiom over a category that takes a base ring."""
+
+        class ParentMethods:
+            def is_finite_dimensional_pointed(self) -> bool:
+                return True
 
 
 class PointedMonoids(Category_singleton):
