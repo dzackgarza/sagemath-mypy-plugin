@@ -531,6 +531,43 @@ def test_plugin_fails_clearly_when_no_categories_found_in_packages(
     ), raised.value.messages
 
 
+def test_plugin_projects_categories_of_a_package_exporting_a_callable_parent(
+    tmp_path: Path,
+) -> None:
+    """A package that binds a parent instance at module level still projects.
+
+    A parent is callable, and its Cython class has no signature `inspect` can
+    read. Compiler discovery must pass over it and fall through to the Sage
+    oracle, which projects the package's category onto Sage's `Sets`.
+    """
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                f"[{CONFIG_SECTION}]",
+                "packages = tests.fixtures.callable_parent_consumer",
+                "roles = parent",
+                f"cache_dir = {tmp_path / 'cache'}",
+                "",
+            )
+        )
+    )
+    options = Options()
+    options.config_file = str(config_path)
+
+    plugin = SageCategoryProjectionPlugin(options)
+
+    provider = "tests.fixtures.callable_parent_consumer.PointedSets.ParentMethods"
+    assert plugin._manifest.projection_oracle == "sage_runtime"
+    assert plugin._projection_by_provider[provider].provider_mro[:2] == (
+        provider,
+        "sage.categories.sets_cat.Sets.ParentMethods",
+    )
+
+
 def test_plugin_generates_manifest_from_packages_config(tmp_path: Path) -> None:
     """Package config auto-generates the production projection manifest."""
     cache_dir = tmp_path / "sage-category-cache"

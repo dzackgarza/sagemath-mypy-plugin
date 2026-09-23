@@ -52,7 +52,9 @@ def compiler_in(package_names: Sequence[str]) -> DeclaringCompiler | None:
 
     Invariant I3 forbids matching a namespace by name, so this asks each member
     whether it satisfies the reporting protocol rather than looking for a known
-    module or attribute name.
+    module or attribute name. Existing compiler objects are inspected across the
+    complete package before any nullary accessor is invoked: mathematical
+    constructors are not discovery probes.
     """
     configured = tuple(package_names)
     module_names = tuple(
@@ -60,7 +62,8 @@ def compiler_in(package_names: Sequence[str]) -> DeclaringCompiler | None:
         for name in configured
         if "." not in name or importable_module_name_or_none(name) == name
     )
-    for module in _imported_modules(module_names):
+    modules = _imported_modules(module_names)
+    for module in modules:
         for name in dir(module):
             member = getattr(module, name)
             # The compiler is an instance. A class defining those two methods
@@ -68,6 +71,9 @@ def compiler_in(package_names: Sequence[str]) -> DeclaringCompiler | None:
             # attribute of the class, and calling one is missing `self`.
             if not isinstance(member, type) and isinstance(member, DeclaringCompiler):
                 return member
+    for module in modules:
+        for name in dir(module):
+            member = getattr(module, name)
             if not callable(member) or isinstance(member, type):
                 continue
             # A framework publishes its own compiler, so the accessor is one the
@@ -75,7 +81,7 @@ def compiler_in(package_names: Sequence[str]) -> DeclaringCompiler | None:
             if not _defined_in(member, configured):
                 continue
             produced = _compiler_from_accessor(member)
-            if isinstance(produced, DeclaringCompiler):
+            if not isinstance(produced, type) and isinstance(produced, DeclaringCompiler):
                 return produced
     return None
 
@@ -113,12 +119,18 @@ def declared_projections(
                 bases_for_provider[provider] = ()
                 promoted_for_provider[provider] = ()
             recorded = bases_for_provider[provider]
-            bases_for_provider[provider] = recorded + tuple(base for base in bases if base not in recorded and base != provider)
+            bases_for_provider[provider] = recorded + tuple(
+                base
+                for base in bases
+                if base not in recorded and base != provider
+            )
             promotable = subtyping.get(surface, {}).get(provider, ())
             if promotable:
                 promoted = promoted_for_provider[provider]
                 promoted_for_provider[provider] = promoted + tuple(
-                    base for base in promotable if base not in promoted and base != provider
+                    base
+                    for base in promotable
+                    if base not in promoted and base != provider
                 )
     # The manifest keeps the ordinary Python class graph distinct from the
     # compiler relation. The latter supplies forwarded methods and subtyping; it
@@ -225,10 +237,13 @@ def _compiler_from_accessor(member: object) -> object | None:
     a return annotation that names anything else or does not resolve, each mean
     this is not the accessor.
     """
-    from inspect import Parameter, signature
+    from inspect import Parameter, isfunction, signature
     from typing import get_type_hints
 
-    if not callable(member):
+    # Only a function declares a return annotation. Any other callable, such as a
+    # parent instance of a Cython class (Sage's `AA`), declares nothing, and
+    # `signature` raises ValueError on it.
+    if not isfunction(member):
         return None
     variadic = (Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD)
     if any(
