@@ -3,7 +3,9 @@
 A research session module binds ready-made parents (a field, a ring) at module
 level. A Sage parent is callable, because calling it constructs an element, and
 its class is a Cython extension type, so `inspect.signature` cannot read it.
-Category discovery must still find the category defined here.
+The `relations` submodule defines functions named like the compiler protocol's
+methods. Category discovery must still find the category defined here, through
+the Sage oracle.
 """
 
 from __future__ import annotations
@@ -13,6 +15,8 @@ from sage.categories.category_singleton import Category_singleton  # type: ignor
 from sage.categories.sets_cat import Sets  # type: ignore[import-untyped]
 from sage.structure.parent import Parent  # type: ignore[import-untyped]
 from sage.structure.unique_representation import UniqueRepresentation  # type: ignore[import-untyped]
+
+from tests.fixtures.callable_parent_consumer import relations  # noqa: F401
 
 
 class PointedSets(Category_singleton):

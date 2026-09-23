@@ -534,11 +534,13 @@ def test_plugin_fails_clearly_when_no_categories_found_in_packages(
 def test_plugin_projects_categories_of_a_package_exporting_a_callable_parent(
     tmp_path: Path,
 ) -> None:
-    """A package that binds a parent instance at module level still projects.
+    """A package with a parent instance and relation functions still projects.
 
     A parent is callable, and its Cython class has no signature `inspect` can
-    read. Compiler discovery must pass over it and fall through to the Sage
-    oracle, which projects the package's category onto Sage's `Sets`.
+    read. A submodule defining functions named like the compiler protocol's
+    methods is not a compiler. Compiler discovery must pass over both and fall
+    through to the Sage oracle, which projects the package's category onto
+    Sage's `Sets`.
     """
     config_path = tmp_path / "mypy.ini"
     config_path.write_text(

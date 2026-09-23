@@ -18,6 +18,7 @@ functors reach, which is exactly the relation its forwarding follows.
 from __future__ import annotations
 
 from importlib import import_module
+from types import ModuleType
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from sage_mypy_category_plugin.imports import importable_module_name_or_none
@@ -25,7 +26,6 @@ from sage_mypy_category_plugin.projection import ProviderProjection, ProviderRol
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from types import ModuleType
 
 # The report keys a compiler uses for its three implementation surfaces, mapped
 # onto the provider roles this plugin already names.
@@ -68,8 +68,11 @@ def compiler_in(package_names: Sequence[str]) -> DeclaringCompiler | None:
             member = getattr(module, name)
             # The compiler is an instance. A class defining those two methods
             # satisfies the protocol too, because an unbound method is an
-            # attribute of the class, and calling one is missing `self`.
-            if not isinstance(member, type) and isinstance(member, DeclaringCompiler):
+            # attribute of the class, and calling one is missing `self`. So does
+            # a module defining two functions of those names.
+            if not isinstance(member, (type, ModuleType)) and isinstance(
+                member, DeclaringCompiler
+            ):
                 return member
     for module in modules:
         for name in dir(module):
