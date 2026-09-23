@@ -89,6 +89,19 @@ Previous suppressions (`_filter_postbind_method_assign_errors`,
 `_filter_bound_helper_non_method_errors`, `_filter_constructors_no_redef_errors`)
 existed only on the `main` branch pre-rewrite. They are not present in this branch.
 
+### Call-site hooks (CONTRACT.md BP7)
+
+- **`get_method_hook` on `Category.__call__`.** `C(data)` constructs an
+  object of the category `C`, an instance of `C.parent_class`, but the sidecar
+  stub can only type the result as `SageObject`, so every provider method on a
+  constructed object was an `attr-defined` error. The hook returns the parent
+  provider of the nearest category in the receiver's MRO that has a projected
+  `ParentMethods`. It applies only when the receiver's `__call__` is
+  `Category.__call__` itself; a category that declares its own `__call__` keeps
+  that type. It filters no diagnostic: a method no provider defines is still an
+  error. Structural test:
+  `test_calling_a_category_returns_an_object_of_its_parent_provider`.
+
 ## Known Limitations
 
 ### Self-returning descriptors in sidecar/debug stubs

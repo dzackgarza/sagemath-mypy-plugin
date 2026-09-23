@@ -11,8 +11,8 @@ from typing import Callable
 from mypy.errors import CompileError
 from mypy.nodes import Decorator, FuncDef, MypyFile, TypeInfo
 from mypy.options import Options
-from mypy.plugin import ClassDefContext, Plugin, ReportConfigContext
-from mypy.types import Instance
+from mypy.plugin import ClassDefContext, MethodContext, Plugin, ReportConfigContext
+from mypy.types import Instance, Type, get_proper_type
 from pydantic import ValidationError
 
 from sage_mypy_category_plugin.manifest import (
@@ -26,6 +26,7 @@ from sage_mypy_category_plugin.projection import ProviderProjection, ProviderRol
 CONFIG_SECTION = "sage-mypy-category-plugin"
 MYPY_OBJECT = "builtins.object"
 SAGE_PARENT = "sage.structure.parent.Parent"
+SAGE_CATEGORY = "sage.categories.category.Category"
 MYPY_DEP_PRIORITY = 10
 IGNORED_FORWARDED_METHODS = frozenset(
     {"__class__", "__dict__", "__doc__", "__init__", "__module__", "__weakref__"}
@@ -88,6 +89,41 @@ class SageCategoryProjectionPlugin(Plugin):
             projection=self._projection_by_provider[fullname],
         )
         return self._customize_provider_mro
+
+    def get_method_hook(
+        self,
+        fullname: str,
+    ) -> Callable[[MethodContext], Type] | None:
+        """Type `C(data)` as an object of the category `C`.
+
+        `Category.__call__` constructs an object of the category, an instance
+        of `C.parent_class`, whose methods the parent provider of `C` projects.
+        The sidecar stub can only say `SageObject`. GOALS.md Suppression
+        Registry records this hook under CONTRACT.md BP7.
+        """
+        # mypy names the method after the receiver's class, so the callback
+        # decides whether the receiver's `__call__` is `Category.__call__`.
+        if not fullname.endswith(".__call__"):
+            return None
+        return self._category_call_type
+
+    def _category_call_type(self, ctx: MethodContext) -> Type:
+        receiver = get_proper_type(ctx.type)
+        if not isinstance(receiver, Instance):
+            return ctx.default_return_type
+        defining_info = next(
+            (info for info in receiver.type.mro if "__call__" in info.names), None
+        )
+        if defining_info is None or defining_info.fullname != SAGE_CATEGORY:
+            return ctx.default_return_type
+        for category_info in receiver.type.mro:
+            symbol = category_info.names.get("ParentMethods")
+            if symbol is None or not isinstance(symbol.node, TypeInfo):
+                continue
+            projection = self._projection_by_provider.get(symbol.node.fullname)
+            if projection is not None and projection.role == "parent":
+                return Instance(symbol.node, [])
+        return ctx.default_return_type
 
     def get_additional_deps(self, file: MypyFile) -> list[tuple[int, str, int]]:
         provider_module = file.fullname

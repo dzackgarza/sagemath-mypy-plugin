@@ -11,6 +11,7 @@ the Sage oracle.
 from __future__ import annotations
 
 import sage.all  # type: ignore[import-untyped]  # noqa: F401
+from sage.categories.category import Category  # type: ignore[import-untyped]
 from sage.categories.category_singleton import Category_singleton  # type: ignore[import-untyped]
 from sage.categories.sets_cat import Sets  # type: ignore[import-untyped]
 from sage.structure.parent import Parent  # type: ignore[import-untyped]
@@ -22,7 +23,7 @@ from tests.fixtures.callable_parent_consumer import relations  # noqa: F401
 class PointedSets(Category_singleton):
     """Sets with a chosen base point."""
 
-    def super_categories(self) -> list[object]:
+    def super_categories(self) -> list[Category]:
         return [Sets()]
 
     class ParentMethods:

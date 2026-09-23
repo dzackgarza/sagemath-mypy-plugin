@@ -613,7 +613,46 @@ def test_container_bases_in_the_runtime_mro_stay_in_the_provider_typeinfo(
     )
 
 
-def test_plugin_generates_manifest_from_packages_config(tmp_path: Path) -> None:
+def test_calling_a_category_returns_an_object_of_its_parent_provider(
+    tmp_path: Path,
+) -> None:
+    """`PointedSets()(data)` has the methods of `PointedSets.ParentMethods`.
+
+    The call constructs an object of the category. Its projected provider
+    method type-checks, and a method no provider defines is still an error.
+    """
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                f"[{CONFIG_SECTION}]",
+                "packages = tests.fixtures.callable_parent_consumer",
+                "roles = parent",
+                f"cache_dir = {tmp_path / 'cache'}",
+                "",
+            )
+        )
+    )
+    package = "tests.fixtures.callable_parent_consumer"
+    package_dir = REPO_ROOT / "tests" / "fixtures" / "callable_parent_consumer"
+    result = _build_fixture(
+        config_path,
+        tmp_path,
+        fixture_sources=(
+            (package_dir / "__init__.py", package),
+            (package_dir / "relations.py", f"{package}.relations"),
+            (package_dir / "construction.py", f"{package}.construction"),
+        ),
+    )
+
+    construction = "tests/fixtures/callable_parent_consumer/construction.py"
+    assert [error.split(": error: ")[0] for error in result.errors] == [
+        f"{construction}:13"
+    ]
+    assert result.errors[0].endswith("[attr-defined]")
     """Package config auto-generates the production projection manifest."""
     cache_dir = tmp_path / "sage-category-cache"
     config_path = tmp_path / "mypy.ini"
