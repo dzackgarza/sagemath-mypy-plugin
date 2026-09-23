@@ -653,6 +653,44 @@ def test_calling_a_category_returns_an_object_of_its_parent_provider(
         f"{construction}:13"
     ]
     assert result.errors[0].endswith("[attr-defined]")
+
+
+def test_package_discovery_projects_a_category_over_a_base_ring(
+    tmp_path: Path,
+) -> None:
+    """A category that takes a base ring is discovered through `an_instance()`.
+
+    `PointedModules(R)` has no nullary constructor, but `Category_over_base`
+    declares `an_instance()`, so discovery builds `PointedModules(QQ)` and
+    projects its parent provider onto Sage's `Modules`.
+    """
+    config_path = tmp_path / "mypy.ini"
+    config_path.write_text(
+        "\n".join(
+            (
+                "[mypy]",
+                "plugins = sage_mypy_category_plugin.plugin",
+                "",
+                f"[{CONFIG_SECTION}]",
+                "packages = tests.fixtures.parametrized_consumer",
+                "roles = parent",
+                f"cache_dir = {tmp_path / 'cache'}",
+                "",
+            )
+        )
+    )
+    options = Options()
+    options.config_file = str(config_path)
+
+    plugin = SageCategoryProjectionPlugin(options)
+
+    provider = "tests.fixtures.parametrized_consumer.PointedModules.ParentMethods"
+    assert "sage.categories.modules.Modules.ParentMethods" in (
+        plugin._projection_by_provider[provider].provider_mro
+    )
+
+
+def test_plugin_generates_manifest_from_packages_config(tmp_path: Path) -> None:
     """Package config auto-generates the production projection manifest."""
     cache_dir = tmp_path / "sage-category-cache"
     config_path = tmp_path / "mypy.ini"

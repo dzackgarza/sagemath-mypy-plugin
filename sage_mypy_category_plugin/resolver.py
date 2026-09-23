@@ -293,7 +293,21 @@ def _is_discoverable_category_factory(
 ) -> bool:
     if issubclass(candidate, axiom_base):
         return _has_bound_axiom_metadata(candidate, axiom_base)
-    return _is_nullary_category_factory(candidate)
+    return _is_nullary_category_factory(candidate) or _declares_an_instance(candidate)
+
+
+def _declares_an_instance(candidate: type[object]) -> bool:
+    """Whether the class overrides `Category.an_instance`.
+
+    A category over a base (`Category_over_base`, hence every category over a
+    base ring) declares its own sample object, e.g. `Modules(QQ)`. A
+    base-dependent construction category declares none, so it stays out of the
+    discovered roots.
+    """
+    from sage.categories.category import Category  # type: ignore[import-untyped]
+
+    below_category = candidate.__mro__[: candidate.__mro__.index(Category)]
+    return any("an_instance" in vars(cls) for cls in below_category)
 
 
 def _classes_defined_in_module(module: ModuleType) -> tuple[type[object], ...]:
