@@ -23,7 +23,10 @@ class Compiler:
 
     def declared_type_aliases(self) -> dict[str, str]:
         provider = roles.AliasCategory.ParentMethods
-        return {f"{__name__}.Role": f"{provider.__module__}.{provider.__qualname__}"}
+        return {
+            f"{__name__}.Role": f"{provider.__module__}.{provider.__qualname__}",
+            f"{__name__}.native.NativeRole": f"{__name__}.native.InheritedCategory.ParentMethods",
+        }
 
 
 compiler = Compiler()

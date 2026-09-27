@@ -26,11 +26,17 @@ def test_declared_runtime_aliases_preserve_types_with_plugin_on_and_off(tmp_path
             argument = "7" if valid else "'wrong'"
             source.write_text(
                 f"from {package} import Role\n"
+                f"from {package}.native import NativeRole\n"
                 "def evaluate(value: Role[int]) -> int:\n"
                 f"    return value.echo({argument})\n"
                 "def evaluate_default(value: Role) -> int:\n"
                 f"    return value.echo({argument})\n"
-                + ("" if valid else "def wrong_arity(value: Role[int, str]) -> None:\n    pass\n")
+                "def evaluate_native(value: NativeRole[int]) -> int:\n"
+                f"    return value.echo({argument})\n"
+                + ("" if valid else
+                   "def wrong_arity(value: Role[int, str]) -> None:\n    pass\n"
+                   "Unreported = Role\n"
+                   "def unreported(value: Unreported[int]) -> int:\n    return value.echo(7)\n")
             )
             result = subprocess.run(
                 [sys.executable, "-m", "mypy", "--config-file", str(config),
@@ -46,9 +52,10 @@ def test_declared_runtime_aliases_preserve_types_with_plugin_on_and_off(tmp_path
                 assert result.returncode == 0, result.stdout + result.stderr
             else:
                 assert result.returncode == 1, result.stdout + result.stderr
-                assert result.stdout.count("[arg-type]") == 2, result.stdout
+                assert result.stdout.count("[arg-type]") == 3, result.stdout
                 assert "[type-arg]" in result.stdout, result.stdout
-                assert "[valid-type]" not in result.stdout, result.stdout
+                assert result.stdout.count("[valid-type]") == 1, result.stdout
+                assert 'Variable "consumer.Unreported" is not valid as a type' in result.stdout, result.stdout
 
 
 def test_alias_report_changes_invalidate_source_and_projection_caches(tmp_path: Path) -> None:
@@ -90,22 +97,3 @@ def test_alias_report_changes_invalidate_source_and_projection_caches(tmp_path: 
     missing = subprocess.run(command, env=environment, capture_output=True, text=True, check=False)
     assert missing.returncode != 0, missing.stdout + missing.stderr
     assert "The declaring compiler must report declared_type_aliases()" in missing.stdout + missing.stderr, missing.stdout + missing.stderr
-
-
-def test_unreported_runtime_class_variables_remain_invalid_types(tmp_path: Path) -> None:
-    config = tmp_path / "mypy.ini"
-    config.write_text(
-        "[mypy]\nplugins = sage_mypy_category_plugin.plugin\n"
-        "follow_imports = silent\n"
-        "[sage-mypy-category-plugin]\npackages = tests.fixtures.declared_alias_consumer\n"
-        f"cache_dir = {tmp_path / 'projection'}\n"
-    )
-    source = tmp_path / "consumer.py"
-    source.write_text("from tests.fixtures.declared_alias_consumer import Role\n"
-                      "Unreported = Role\n"
-                      "def evaluate(value: Unreported[int]) -> int:\n"
-                      "    return value.echo(7)\n")
-    result = subprocess.run([sys.executable, "-m", "mypy", "--config-file", str(config), str(source)],
-                            capture_output=True, text=True, check=False)
-    assert result.returncode == 1, result.stdout + result.stderr
-    assert 'Variable "consumer.Unreported" is not valid as a type' in result.stdout, result.stdout
