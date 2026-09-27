@@ -4,6 +4,53 @@ import os
 import subprocess
 import sys
 
+def test_runtime_alias_resolves_inherited_projected_role(tmp_path: Path) -> None:
+    """A projected stub may inherit the role written directly at runtime."""
+    fixture = Path(__file__).parent / "fixtures" / "declared_alias_consumer"
+    package = tmp_path / "projected_alias_consumer"
+    package.mkdir()
+    for source in fixture.glob("*.py"):
+        (package / source.name).write_text(source.read_text())
+    (package / "roles.pyi").write_text(
+        "from tests.fixtures.invariant_core.local_wrapper import LocalCategoryBase\n"
+        "class StaticRoles:\n"
+        "    class ParentMethods[T = int]:\n"
+        "        def echo(self, value: T) -> T: ...\n"
+        "class AliasCategory(StaticRoles, LocalCategoryBase): ...\n"
+    )
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = os.pathsep.join((str(tmp_path), str(Path(__file__).resolve().parents[1])))
+    for enabled in (False, True):
+        config = tmp_path / "mypy.ini"
+        config.write_text(
+            "[mypy]\n"
+            + ("plugins = sage_mypy_category_plugin.plugin\n" if enabled else "")
+            + "follow_imports = silent\n"
+            + f"cache_dir = {tmp_path / 'mypy-cache'}\n"
+            + "[sage-mypy-category-plugin]\npackages = projected_alias_consumer\n"
+            + f"cache_dir = {tmp_path / 'projection'}\n"
+        )
+        for valid in (True, False):
+            source = tmp_path / "consumer.py"
+            argument = "7" if valid else "'wrong'"
+            source.write_text(
+                "from projected_alias_consumer import Role\n"
+                "def evaluate(value: Role[int]) -> int:\n"
+                f"    return value.echo({argument})\n"
+            )
+            result = subprocess.run(
+                [sys.executable, "-m", "mypy", "--show-traceback", "--config-file", str(config), str(source)],
+                env=environment, capture_output=True, text=True, check=False,
+            )
+            if not enabled:
+                assert result.returncode == 1, result.stdout + result.stderr
+                assert "[valid-type]" in result.stdout, result.stdout
+            elif valid:
+                assert result.returncode == 0, result.stdout + result.stderr
+            else:
+                assert result.returncode == 1, result.stdout + result.stderr
+                assert "[arg-type]" in result.stdout, result.stdout
+
 def test_declared_runtime_aliases_preserve_types_with_plugin_on_and_off(tmp_path: Path) -> None:
     """Read the real Sage provider through an alias, retaining its type argument."""
     package = "tests.fixtures.declared_alias_consumer"
