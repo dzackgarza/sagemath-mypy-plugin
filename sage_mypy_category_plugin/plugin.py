@@ -104,7 +104,14 @@ class SageCategoryProjectionPlugin(Plugin):
             return None
 
         def analyze_alias(ctx: AnalyzeTypeContext) -> Type:
-            symbol = self.lookup_fully_qualified(target)
+            owner, _, member = target.rpartition(".")
+            owner_symbol = self.lookup_fully_qualified(owner)
+            if owner_symbol is not None and isinstance(owner_symbol.node, TypeInfo):
+                # Projected declarations can inherit their written role containers.
+                # Use mypy's member lookup, as its qualified type analysis does.
+                symbol = owner_symbol.node.get(member)
+            else:
+                symbol = self.lookup_fully_qualified(target)
             if symbol is None or not isinstance(symbol.node, TypeInfo):
                 raise CompileError([f"Compiler type alias {fullname!r} references missing declaration {target!r}"])
             assert isinstance(ctx.api, TypeAnalyser)
