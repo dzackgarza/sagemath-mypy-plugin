@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable
 
 from mypy.errors import CompileError
-from mypy.nodes import Decorator, FuncDef, MypyFile, TypeAlias, TypeInfo
+from mypy.nodes import Decorator, FuncDef, MypyFile, PlaceholderNode, TypeAlias, TypeInfo
 from mypy.options import Options
 from mypy.plugin import AnalyzeTypeContext, ClassDefContext, MethodContext, Plugin, ReportConfigContext
 from mypy.typeanal import TypeAnalyser
@@ -104,6 +104,7 @@ class SageCategoryProjectionPlugin(Plugin):
             return None
 
         def analyze_alias(ctx: AnalyzeTypeContext) -> Type:
+            assert isinstance(ctx.api, TypeAnalyser)
             owner, _, member = target.rpartition(".")
             owner_symbol = self.lookup_fully_qualified(owner)
             if owner_symbol is not None and isinstance(owner_symbol.node, TypeInfo):
@@ -113,8 +114,26 @@ class SageCategoryProjectionPlugin(Plugin):
             else:
                 symbol = self.lookup_fully_qualified(target)
             if symbol is None or not isinstance(symbol.node, TypeInfo):
+                unresolved = symbol if symbol is not None else owner_symbol
+                if (
+                    not ctx.api.api.final_iteration
+                    and (
+                        (
+                            unresolved is not None
+                            and isinstance(unresolved.node, PlaceholderNode)
+                            and unresolved.node.becomes_typeinfo
+                        )
+                        or ctx.api.api.is_incomplete_namespace(owner)
+                        or ctx.api.api.is_incomplete_namespace(
+                            _provider_module(target, source_modules=self._source_modules)
+                        )
+                    )
+                ):
+                    # anal_type discards this result after an incomplete reference,
+                    # then re-analyzes the original annotation once its owner exists.
+                    ctx.api.api.record_incomplete_ref()
+                    return ctx.type
                 raise CompileError([f"Compiler type alias {fullname!r} references missing declaration {target!r}"])
-            assert isinstance(ctx.api, TypeAnalyser)
             return ctx.api.analyze_type_with_type_info(
                 symbol.node, ctx.type.args, ctx.context, ctx.type.empty_tuple_index
             )
