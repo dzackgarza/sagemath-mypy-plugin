@@ -31,7 +31,7 @@ from sage_mypy_category_plugin.projection import (
     validate_module_name,
 )
 
-CURRENT_PLUGIN_SCHEMA_VERSION: Literal["1"] = "1"
+CURRENT_PLUGIN_SCHEMA_VERSION: Literal["2"] = "2"
 SHA256_HEX_PATTERN = re.compile(r"[0-9a-f]{64}")
 GIT_REVISION_PATTERN = re.compile(r"[0-9a-f]{40}")
 INTRINSIC_MODULES = frozenset(("builtins",))
@@ -159,7 +159,7 @@ class ProjectionManifest(BaseModel):
     schema_version: Literal[1]
     generated_by: StrictStr
     projection_oracle: Literal["sage_runtime", "declared_compiler"] = "sage_runtime"
-    plugin_schema_version: Literal["1"] = CURRENT_PLUGIN_SCHEMA_VERSION
+    plugin_schema_version: Literal["2"] = CURRENT_PLUGIN_SCHEMA_VERSION
     sage_version: StrictStr
     sage_git_revision: StrictStr | None = None
     mypy_min_version: StrictStr = "0.0.0"
@@ -172,6 +172,17 @@ class ProjectionManifest(BaseModel):
     source_modules: tuple[SourceModuleRecord, ...] = ()
     concrete_parents: tuple[ConcreteParentRecord, ...] = ()
     external_runtime_classes: tuple[ExternalRuntimeClassRecord, ...] = ()
+    type_aliases: dict[StrictStr, StrictStr] = {}
+
+    @field_validator("type_aliases")
+    @classmethod
+    def _validate_type_aliases(cls, aliases: dict[str, str]) -> dict[str, str]:
+        for alias, target in aliases.items():
+            validate_dotted_fullname(alias)
+            validate_dotted_fullname(target)
+            if target in aliases:
+                raise ValueError(f"Type alias {alias!r} must name a declaration, not alias {target!r}")
+        return aliases
 
     @model_validator(mode="after")
     def _validate_git_revision(self) -> Self:
@@ -448,6 +459,9 @@ class ProjectionManifest(BaseModel):
             )
 
         declared_source_modules = frozenset(source_modules)
+        for fullname in (*self.type_aliases, *self.type_aliases.values()):
+            if not any(fullname.startswith(f"{module}.") for module in declared_source_modules):
+                raise ValueError(f"Type alias declaration {fullname!r} has no source module metadata")
         missing_external_source_modules = tuple(
             record.source_module
             for record in self.external_runtime_classes
@@ -644,6 +658,7 @@ class ProjectionManifest(BaseModel):
         )
         digest_payload = json.dumps(
             {
+                "type_aliases": self.type_aliases,
                 "concrete_parents": tuple(
                     (
                         record.concrete_class,

@@ -1,14 +1,13 @@
 from pathlib import Path
+from importlib import import_module
+import os
 import subprocess
 import sys
 
-from tests.fixtures.declared_alias_consumer import Role
-
-
 def test_declared_runtime_aliases_preserve_types_with_plugin_on_and_off(tmp_path: Path) -> None:
     """Read the real Sage provider through an alias, retaining its type argument."""
-    assert Role().echo(7) == 7
     package = "tests.fixtures.declared_alias_consumer"
+    assert import_module(package).Role().echo(7) == 7
     for enabled in (False, True):
         for valid in (True, False):
             directory = tmp_path / f"{enabled}-{valid}"
@@ -18,9 +17,10 @@ def test_declared_runtime_aliases_preserve_types_with_plugin_on_and_off(tmp_path
                 "[mypy]\n"
                 + ("plugins = sage_mypy_category_plugin.plugin\n" if enabled else "")
                 + "follow_imports = silent\n"
+                + f"cache_dir = {tmp_path / 'mypy-cache'}\n"
                 + "\n[sage-mypy-category-plugin]\n"
                 + f"packages = {package}\nroles = parent\n"
-                + f"cache_dir = {directory / 'projection'}\n"
+                + f"cache_dir = {tmp_path / 'projection'}\n"
             )
             source = directory / "consumer.py"
             argument = "7" if valid else "'wrong'"
@@ -28,10 +28,15 @@ def test_declared_runtime_aliases_preserve_types_with_plugin_on_and_off(tmp_path
                 f"from {package} import Role\n"
                 "def evaluate(value: Role[int]) -> int:\n"
                 f"    return value.echo({argument})\n"
+                "def evaluate_default(value: Role) -> int:\n"
+                f"    return value.echo({argument})\n"
+                + ("" if valid else "def wrong_arity(value: Role[int, str]) -> None:\n    pass\n")
             )
             result = subprocess.run(
                 [sys.executable, "-m", "mypy", "--config-file", str(config),
-                 "--no-incremental", str(source)],
+                 str(source),
+                 str(Path(__file__).parent / "fixtures" / "declared_alias_consumer" / "__init__.py"),
+                 str(Path(__file__).parent / "fixtures" / "declared_alias_consumer" / "roles.py")],
                 capture_output=True, text=True, check=False,
             )
             if not enabled:
@@ -41,5 +46,66 @@ def test_declared_runtime_aliases_preserve_types_with_plugin_on_and_off(tmp_path
                 assert result.returncode == 0, result.stdout + result.stderr
             else:
                 assert result.returncode == 1, result.stdout + result.stderr
-                assert "[arg-type]" in result.stdout, result.stdout
+                assert result.stdout.count("[arg-type]") == 2, result.stdout
+                assert "[type-arg]" in result.stdout, result.stdout
                 assert "[valid-type]" not in result.stdout, result.stdout
+
+
+def test_alias_report_changes_invalidate_source_and_projection_caches(tmp_path: Path) -> None:
+    """A changed alias declaration changes real mypy results without clearing caches."""
+    fixture = Path(__file__).parent / "fixtures" / "declared_alias_consumer"
+    package = tmp_path / "alias_cache_consumer"
+    package.mkdir()
+    for source in fixture.glob("*.py"):
+        (package / source.name).write_text(source.read_text())
+    roles = package / "roles.py"
+    roles.write_text(roles.read_text() + "\nclass AlternateCategory(AliasCategory):\n"
+                     "    class ParentMethods[T]:\n"
+                     "        def echo(self, value: str) -> str:\n"
+                     "            return value\n")
+    config = tmp_path / "mypy.ini"
+    config.write_text(
+        "[mypy]\nplugins = sage_mypy_category_plugin.plugin\n"
+        "follow_imports = silent\n"
+        f"cache_dir = {tmp_path / 'mypy-cache'}\n"
+        "[sage-mypy-category-plugin]\npackages = alias_cache_consumer\n"
+        f"cache_dir = {tmp_path / 'projection'}\n"
+    )
+    source = tmp_path / "consumer.py"
+    source.write_text("from alias_cache_consumer import Role\n"
+                      "def evaluate(value: Role[int]) -> int:\n"
+                      "    return value.echo(7)\n")
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = os.pathsep.join((str(tmp_path), str(Path(__file__).resolve().parents[1])))
+    command = [sys.executable, "-m", "mypy", "--config-file", str(config), str(source)]
+    first = subprocess.run(command, env=environment, capture_output=True, text=True, check=False)
+    assert first.returncode == 0, first.stdout + first.stderr
+    declaration = package / "__init__.py"
+    declaration.write_text(declaration.read_text().replace("roles.AliasCategory", "roles.AlternateCategory"))
+    second = subprocess.run(command, env=environment, capture_output=True, text=True, check=False)
+    assert second.returncode == 1, second.stdout + second.stderr
+    assert "[arg-type]" in second.stdout, second.stdout
+    assert "[return-value]" in second.stdout, second.stdout
+    declaration.write_text(declaration.read_text().replace("def declared_type_aliases(", "def missing_alias_report("))
+    missing = subprocess.run(command, env=environment, capture_output=True, text=True, check=False)
+    assert missing.returncode != 0, missing.stdout + missing.stderr
+    assert "The declaring compiler must report declared_type_aliases()" in missing.stdout + missing.stderr, missing.stdout + missing.stderr
+
+
+def test_unreported_runtime_class_variables_remain_invalid_types(tmp_path: Path) -> None:
+    config = tmp_path / "mypy.ini"
+    config.write_text(
+        "[mypy]\nplugins = sage_mypy_category_plugin.plugin\n"
+        "follow_imports = silent\n"
+        "[sage-mypy-category-plugin]\npackages = tests.fixtures.declared_alias_consumer\n"
+        f"cache_dir = {tmp_path / 'projection'}\n"
+    )
+    source = tmp_path / "consumer.py"
+    source.write_text("from tests.fixtures.declared_alias_consumer import Role\n"
+                      "Unreported = Role\n"
+                      "def evaluate(value: Unreported[int]) -> int:\n"
+                      "    return value.echo(7)\n")
+    result = subprocess.run([sys.executable, "-m", "mypy", "--config-file", str(config), str(source)],
+                            capture_output=True, text=True, check=False)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert 'Variable "consumer.Unreported" is not valid as a type' in result.stdout, result.stdout

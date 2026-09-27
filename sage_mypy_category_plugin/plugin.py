@@ -9,9 +9,10 @@ from pathlib import Path
 from typing import Callable
 
 from mypy.errors import CompileError
-from mypy.nodes import Decorator, FuncDef, MypyFile, TypeInfo
+from mypy.nodes import Decorator, FuncDef, MypyFile, TypeAlias, TypeInfo
 from mypy.options import Options
-from mypy.plugin import ClassDefContext, MethodContext, Plugin, ReportConfigContext
+from mypy.plugin import AnalyzeTypeContext, ClassDefContext, MethodContext, Plugin, ReportConfigContext
+from mypy.typeanal import TypeAnalyser
 from mypy.types import Instance, Type, get_proper_type
 from pydantic import ValidationError
 from sage.categories.category import Category as _SageCategory  # type: ignore[import-untyped]
@@ -92,6 +93,27 @@ class SageCategoryProjectionPlugin(Plugin):
         )
         return self._customize_provider_mro
 
+    def get_type_analyze_hook(self, fullname: str) -> Callable[[AnalyzeTypeContext], Type] | None:
+        """Analyze a reported role alias using its declaration and original arguments."""
+        target = self._manifest.type_aliases.get(fullname)
+        if target is None:
+            return None
+        symbol = self.lookup_fully_qualified(fullname)
+        if symbol is not None and isinstance(symbol.node, TypeAlias):
+            # A source/stub type alias already has native mypy semantics.
+            return None
+
+        def analyze_alias(ctx: AnalyzeTypeContext) -> Type:
+            symbol = self.lookup_fully_qualified(target)
+            if symbol is None or not isinstance(symbol.node, TypeInfo):
+                raise CompileError([f"Compiler type alias {fullname!r} references missing declaration {target!r}"])
+            assert isinstance(ctx.api, TypeAnalyser)
+            return ctx.api.analyze_type_with_type_info(
+                symbol.node, ctx.type.args, ctx.context, ctx.type.empty_tuple_index
+            )
+
+        return analyze_alias
+
     def get_method_hook(
         self,
         fullname: str,
@@ -151,6 +173,12 @@ class SageCategoryProjectionPlugin(Plugin):
             )
             != provider_module
         }
+        dependent_modules.update(
+            _provider_module(target, source_modules=self._source_modules)
+            for alias, target in self._manifest.type_aliases.items()
+            if _provider_module(alias, source_modules=self._source_modules) == provider_module
+            and _provider_module(target, source_modules=self._source_modules) != provider_module
+        )
         return [
             (MYPY_DEP_PRIORITY, module_name, -1)
             for module_name in sorted(dependent_modules)

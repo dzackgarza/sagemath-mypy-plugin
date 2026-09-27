@@ -47,6 +47,14 @@ class DeclaringCompiler(Protocol):
         pass
 
 
+@runtime_checkable
+class DeclaringTypeAliases(DeclaringCompiler, Protocol):
+    """The compiler's exact source declarations for runtime role aliases."""
+
+    def declared_type_aliases(self) -> dict[str, str]:
+        pass
+
+
 def compiler_in(package_names: Sequence[str]) -> DeclaringCompiler | None:
     """Return the reporting compiler reached from the configured packages.
 

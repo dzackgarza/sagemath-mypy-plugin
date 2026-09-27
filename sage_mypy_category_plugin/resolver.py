@@ -12,6 +12,7 @@ from types import ModuleType
 from typing import Sequence, cast, get_args
 
 from mypy.version import __version__ as MYPY_VERSION
+from mypy.errors import CompileError
 
 from sage_mypy_category_plugin.manifest import (
     NamedClassRecord,
@@ -28,7 +29,7 @@ from sage_mypy_category_plugin.oracle import (
     provider_projections_for_categories,
     unsupported_provider_traces,
 )
-from sage_mypy_category_plugin.declared import compiler_in, declared_projections
+from sage_mypy_category_plugin.declared import DeclaringTypeAliases, compiler_in, declared_projections
 from sage_mypy_category_plugin.projection import (
     ConcreteParentRecord,
     ExternalRuntimeClassRecord,
@@ -55,7 +56,11 @@ def resolve_projection_manifest(
 
         sage_version = str(_sage_version)
 
-    if compiler_in(category_fullnames) is not None:
+    compiler = compiler_in(category_fullnames)
+    if compiler is not None:
+        if not isinstance(compiler, DeclaringTypeAliases):
+            raise CompileError(["The declaring compiler must report declared_type_aliases()"])
+        type_aliases = compiler.declared_type_aliases()
         projections = declared_projections(category_fullnames, roles)
         return ProjectionManifest(
             schema_version=1,
@@ -67,7 +72,12 @@ def resolve_projection_manifest(
             mypy_min_version=mypy_min_version,
             mypy_max_version=mypy_max_version,
             projections=projections,
-            source_modules=_source_module_records((), projections=projections),
+            type_aliases=type_aliases,
+            source_modules=_source_module_records(
+                (*type_aliases, *type_aliases.values()),
+                projections=projections,
+                extra_module_names=(type(compiler).__module__,),
+            ),
         )
 
     projection_map = provider_projections_for_categories(
@@ -462,6 +472,7 @@ def _source_module_records(
     projections: Iterable[ProviderProjection] = (),
     unsupported_providers: Iterable[UnsupportedProviderRecord] = (),
     concrete_parents: Iterable[ConcreteParentRecord] = (),
+    extra_module_names: Sequence[str] = (),
 ) -> tuple[SourceModuleRecord, ...]:
     module_names = tuple(
         dict.fromkeys(
@@ -473,6 +484,7 @@ def _source_module_records(
                 *_projection_module_names(projections),
                 *_unsupported_provider_module_names(unsupported_providers),
                 *_concrete_parent_module_names(concrete_parents),
+                *extra_module_names,
             )
         )
     )

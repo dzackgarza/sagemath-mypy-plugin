@@ -237,6 +237,19 @@ manifested values, keeping A1 true across incremental builds.
 
 ## This proof is why broad hooks are banned
 
+Compiler-declared runtime role aliases use one additional, bounded input to
+type analysis: the compiler's qualified alias-to-declaration relation. The
+plugin resolves the declaration's `TypeInfo` and delegates the original type
+arguments to mypy's class-type analyzer. Thus generic defaults, arity, bounds,
+and method signatures have the same semantics as the written declaration.
+Aliases do not alter the runtime value, provider MRO, or diagnostics. Both
+ends of the relation and its reporting compiler are source-digested; the alias
+relation participates in the manifest semantic digest and target modules are
+declared analysis dependencies. `test_declared_aliases.py` exercises source
+consumers, including cyclic source imports and forward annotations, generic
+arguments/defaults, invalid ordinary class-valued variables, and changed
+reports with caches retained.
+
 Every additional hook (`get_function_hook`, `get_method_hook`, etc.) would create a
 second semantic engine operating in parallel with mypy's ordinary logic. The interaction
 between the rewritten TypeInfo graph and a second hook is not captured by this proof.
