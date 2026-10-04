@@ -90,3 +90,19 @@ class Issue2AssignedChild(Issue2AssignedRoot):
         return [Issue2AssignedRoot()]
 
     ParentMethods = RefinedAssignedParentMethods
+
+
+class DeclaredReceiverOverride(LocalCategoryBase):
+    @override
+    def super_categories(self) -> list[Category]:
+        return []
+
+    class ParentMethods:
+        def an_element(self) -> int:
+            return 7
+
+
+def declared_receiver_override_value(
+    parent: DeclaredReceiverOverride.ParentMethods,
+) -> int:
+    return parent.an_element()

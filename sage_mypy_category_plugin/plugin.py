@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable
 
 from mypy.errors import CompileError
-from mypy.nodes import Decorator, FuncDef, MypyFile, PlaceholderNode, TypeAlias, TypeInfo
+from mypy.nodes import Decorator, FuncDef, MypyFile, OverloadedFuncDef, PlaceholderNode, TypeAlias, TypeInfo
 from mypy.options import Options
 from mypy.plugin import AnalyzeTypeContext, ClassDefContext, MethodContext, Plugin, ReportConfigContext
 from mypy.typeanal import TypeAnalyser
@@ -487,9 +487,18 @@ def _install_provider_receiver_surface(
         promotion_type = Instance(promotion_info, [])
         if promotion_type not in ctx.cls.info._promote:
             ctx.cls.info._promote.append(promotion_type)
+    declared_names = {
+        statement.name
+        for statement in ctx.cls.defs.body
+        if isinstance(statement, (FuncDef, Decorator, OverloadedFuncDef))
+    }
     for receiver_base in receiver_info.mro:
         for name, symbol in receiver_base.names.items():
-            if not name.startswith("_") and name not in ctx.cls.info.names:
+            if (
+                not name.startswith("_")
+                and name not in ctx.cls.info.names
+                and name not in declared_names
+            ):
                 ctx.cls.info.names[name] = symbol
     if projection.role == "subcategory":
         _install_subcategory_methods_on_category(receiver_info, ctx.cls.info)
