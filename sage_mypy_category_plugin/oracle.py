@@ -212,6 +212,149 @@ def _supported_provider_projections(
         if not _is_unsupported_provider(projection.role, provider)
     }
 
+def provider_projections_for_runtime_element_classes(
+    runtime_classes: Iterable[type[object]],
+    *,
+    provider_module_prefixes: Iterable[str],
+) -> dict[str, ProviderProjection]:
+    """Project source provider inheritance from live generated element classes."""
+    prefixes = tuple(dict.fromkeys(provider_module_prefixes))
+    projections: dict[str, ProviderProjection] = {}
+    for runtime_class in runtime_classes:
+        runtime_bases = tuple(runtime_class.__bases__)
+        runtime_mro = tuple(runtime_class.__mro__)
+        projected_bases = tuple(
+            candidate
+            for candidate in runtime_bases
+            if _projectable_runtime_class(candidate)
+        )
+        projected_mro = tuple(
+            candidate
+            for candidate in runtime_mro[1:]
+            if _projectable_runtime_class(candidate)
+        )
+        for position, provider_class in enumerate(projected_bases):
+            provider = _class_fullname(provider_class)
+            _PROVIDER_CLASS_BY_FULLNAME[provider] = provider_class
+            if not any(
+                provider_class.__module__ == prefix
+                or provider_class.__module__.startswith(f"{prefix}.")
+                for prefix in prefixes
+            ):
+                continue
+            try:
+                mro_position = projected_mro.index(provider_class)
+            except ValueError:
+                continue
+            provider_bases = tuple(
+                _class_fullname(base)
+                for base in projected_bases[position + 1 :]
+            )
+            provider_mro_classes = projected_mro[mro_position:]
+            provider_mro = tuple(
+                _class_fullname(base)
+                for base in provider_mro_classes
+            )
+            external_mro = tuple(
+                _class_fullname(base)
+                for base in provider_mro_classes
+                if not any(
+                    base.__module__ == prefix
+                    or base.__module__.startswith(f"{prefix}.")
+                    for prefix in prefixes
+                )
+            )
+            projection = ProviderProjection(
+                provider=provider,
+                role="element",
+                runtime_class=provider,
+                runtime_bases=provider_bases,
+                runtime_mro=provider_mro,
+                provider_bases=provider_bases,
+                provider_mro=provider_mro,
+                unprojected_runtime_mro=external_mro,
+            )
+            existing = projections.get(provider)
+            if existing is None:
+                projections[provider] = projection
+                continue
+            common_bases = tuple(
+                base
+                for base in existing.provider_bases
+                if base in projection.provider_bases
+            )
+            common_mro = tuple(
+                ancestor
+                for ancestor in existing.provider_mro
+                if ancestor in projection.provider_mro
+            )
+            projections[provider] = existing.model_copy(
+                update={
+                    "provider_bases": common_bases,
+                    "provider_mro": common_mro,
+                }
+            )
+    return projections
+
+
+def _projectable_runtime_class(runtime_class: type[object]) -> bool:
+    fullname = _class_fullname(runtime_class)
+    if runtime_class is object:
+        return False
+    if ".ArrowType" in fullname:
+        return False
+    if fullname.endswith(".element_class") or ".element_class." in fullname:
+        return False
+    if fullname.endswith(".parent_class") or ".parent_class." in fullname:
+        return False
+    return _is_source_class(runtime_class)
+
+
+def provider_projections_for_role_owners(
+    owners: Iterable[type[object]],
+    *,
+    roles: Iterable[ProviderRole],
+) -> dict[str, ProviderProjection]:
+    """Project role providers from classes that directly own runtime role classes.
+
+    Graph-generated morphism hierarchies use non-Category owner classes such as
+    ``ModuleMor`` / ``LatticeMor``: the owner declares ``ElementMethods`` and
+    exposes the composed runtime ``element_class``.  Their runtime MRO is the
+    authoritative provider-composition graph and must be projected just like a
+    Category named class.
+    """
+    selected_roles = tuple(roles)
+    for owner in owners:
+        namespace = vars(owner)
+        for role in selected_roles:
+            role_projection = ROLE_PROJECTIONS[role]
+            provider_class = namespace.get(role_projection.provider_attr)
+            runtime_class = namespace.get(role_projection.runtime_attr)
+            if not isinstance(provider_class, type) or not isinstance(runtime_class, type):
+                continue
+
+            provider = _class_fullname(provider_class)
+            _PROVIDER_CLASS_BY_FULLNAME[provider] = provider_class
+            existing_runtime_class = _RUNTIME_CLASS_BY_PROVIDER_ROLE.get((role, provider))
+            if (
+                existing_runtime_class is not None
+                and _class_fullname(existing_runtime_class) != _class_fullname(runtime_class)
+            ):
+                _record_unsupported_provider_runtime_classes(
+                    role=role,
+                    provider=provider,
+                    runtime_classes=(existing_runtime_class, runtime_class),
+                )
+                continue
+
+            _RUNTIME_CLASS_TO_PROVIDER_BY_ROLE[role][runtime_class] = provider
+            _RUNTIME_CLASS_BY_PROVIDER_ROLE[(role, provider)] = runtime_class
+
+    projections: dict[str, ProviderProjection] = {}
+    _record_discovered_runtime_provider_projections(projections)
+    return _supported_provider_projections(projections)
+
+
 def concrete_parent_records_for_factories(
     factory_fullnames: Iterable[str],
 ) -> dict[str, ConcreteParentRecord]:

@@ -27,6 +27,8 @@ from sage_mypy_category_plugin.oracle import (
     named_class_traces,
     provider_method_records_for_projections,
     provider_projections_for_categories,
+    provider_projections_for_role_owners,
+    provider_projections_for_runtime_element_classes,
     unsupported_provider_traces,
 )
 from sage_mypy_category_plugin.declared import DeclaringTypeAliases, compiler_in, declared_projections
@@ -104,6 +106,26 @@ def resolve_projection_manifest(
             )
             continue
         projection_map[provider] = projection
+
+    runtime_role_owner_projections = provider_projections_for_role_owners(
+        (
+            candidate
+            for module in _modules_defining_fullnames(category_fullnames)
+            for candidate in _classes_defined_in_module(module)
+        ),
+        roles=roles,
+    )
+    for provider, projection in runtime_role_owner_projections.items():
+        projection_map.setdefault(provider, projection)
+
+    if "element" in roles:
+        live_element_projections = provider_projections_for_runtime_element_classes(
+            _runtime_element_classes_from_declaring_categories(category_fullnames),
+            provider_module_prefixes=_provider_module_prefixes(category_fullnames),
+        )
+        for provider, projection in live_element_projections.items():
+            projection_map.setdefault(provider, projection)
+
     concrete_parents = tuple(concrete_parent_records.values())
     external_runtime_classes = _external_runtime_class_records(
         projections=projection_map.values(),
@@ -204,6 +226,98 @@ def write_projection_manifest(
     )
     write_manifest(output, manifest)
     return manifest
+
+
+_MOR_CONSTRUCTOR_NAMES: tuple[str, ...] = (
+    "Mor",
+    "Mono",
+    "Emb",
+    "Iso",
+    "Isom",
+    "Aut",
+)
+
+
+def _runtime_element_classes_from_declaring_categories(
+    category_fullnames: Sequence[str],
+) -> tuple[type[object], ...]:
+    runtime_classes: dict[type[object], None] = {}
+    for fullname in category_fullnames:
+        category_class = _import_fullname_class(fullname)
+        if category_class is None:
+            continue
+        parent_methods = vars(category_class).get("ParentMethods")
+        if not isinstance(parent_methods, type):
+            continue
+        direct_constructors = tuple(
+            name
+            for name in _MOR_CONSTRUCTOR_NAMES
+            if name in vars(parent_methods)
+        )
+        if not direct_constructors:
+            continue
+        an_instance = getattr(category_class, "an_instance", None)
+        if not callable(an_instance):
+            continue
+        try:
+            category = an_instance()
+            sample = category.an_object()
+        except (AttributeError, TypeError, ValueError, AssertionError, NotImplementedError):
+            continue
+        for name in direct_constructors:
+            constructor = getattr(sample, name, None)
+            if not callable(constructor):
+                continue
+            try:
+                mor_parent = constructor() if name == "Aut" else constructor(sample)
+            except (AttributeError, TypeError, ValueError, AssertionError, NotImplementedError):
+                continue
+            element_class = getattr(mor_parent, "element_class", None)
+            if isinstance(element_class, type):
+                runtime_classes[element_class] = None
+    return tuple(runtime_classes)
+
+
+def _import_fullname_class(fullname: str) -> type[object] | None:
+    module_name = importable_module_name_or_none(fullname)
+    if module_name is None:
+        return None
+    current: object = import_module(module_name)
+    remainder = fullname.removeprefix(f"{module_name}.")
+    for part in remainder.split("."):
+        current = getattr(current, part, None)
+        if current is None:
+            return None
+    return current if isinstance(current, type) else None
+
+
+def _provider_module_prefixes(category_fullnames: Sequence[str]) -> tuple[str, ...]:
+    modules = tuple(
+        module_name
+        for fullname in category_fullnames
+        if (module_name := importable_module_name_or_none(fullname)) is not None
+    )
+    if not modules:
+        return ()
+    split_modules = tuple(module.split(".") for module in modules)
+    common: list[str] = []
+    for parts in zip(*split_modules, strict=False):
+        if len(set(parts)) != 1:
+            break
+        common.append(parts[0])
+    while common and common[-1] in {"categories", "category"}:
+        common.pop()
+    return (".".join(common),) if common else ()
+
+
+def _modules_defining_fullnames(fullnames: Sequence[str]) -> tuple[ModuleType, ...]:
+    module_by_name: dict[str, ModuleType] = {}
+    for fullname in fullnames:
+        module_name = importable_module_name_or_none(fullname)
+        if module_name is None:
+            continue
+        module_by_name[module_name] = import_module(module_name)
+    return tuple(module_by_name.values())
 
 
 def _import_package_modules(package_names: Sequence[str]) -> tuple[ModuleType, ...]:
