@@ -158,7 +158,7 @@ class ProjectionManifest(BaseModel):
 
     schema_version: Literal[1]
     generated_by: StrictStr
-    projection_oracle: Literal["sage_runtime", "declared_compiler"] = "sage_runtime"
+    projection_oracle: Literal["sage_runtime", "declared_compiler", "hybrid"] = "sage_runtime"
     plugin_schema_version: Literal["2"] = CURRENT_PLUGIN_SCHEMA_VERSION
     sage_version: StrictStr
     sage_git_revision: StrictStr | None = None
@@ -650,6 +650,7 @@ class ProjectionManifest(BaseModel):
                 projection.provider_bases,
                 projection.provider_mro,
                 projection.unprojected_runtime_mro,
+                projection.projection_oracle,
             )
             for projection in sorted(
                 self.projections,

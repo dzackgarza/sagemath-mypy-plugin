@@ -262,7 +262,7 @@ class SageCategoryProjectionPlugin(Plugin):
                 missing=missing_mro,
             )
             return
-        if self._manifest.projection_oracle == "sage_runtime":
+        if projection.projection_oracle == "sage_runtime":
             object_info = _lookup_typeinfo(ctx, MYPY_OBJECT)
             if object_info is None:
                 return

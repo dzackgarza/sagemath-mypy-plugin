@@ -9,7 +9,7 @@ from pathlib import Path
 from pkgutil import walk_packages
 from sys import version_info
 from types import ModuleType
-from typing import Sequence, cast, get_args
+from typing import Literal, Sequence, cast, get_args
 
 from mypy.version import __version__ as MYPY_VERSION
 from mypy.errors import CompileError
@@ -63,22 +63,113 @@ def resolve_projection_manifest(
         if not isinstance(compiler, DeclaringTypeAliases):
             raise CompileError(["The declaring compiler must report declared_type_aliases()"])
         type_aliases = compiler.declared_type_aliases()
-        projections = declared_projections(category_fullnames, roles)
+        declared = declared_projections(category_fullnames, roles)
+        runtime_category_fullnames = tuple(
+            dict.fromkeys(
+                fullname
+                for module in _import_package_modules(category_fullnames)
+                for fullname in _category_fullnames_defined_in_module(module)
+            )
+        )
+        projection_map = provider_projections_for_categories(
+            runtime_category_fullnames,
+            roles=roles,
+        )
+        for projection in declared:
+            if projection.provider not in projection_map:
+                projection_map[projection.provider] = projection
+
+        concrete_parent_records, concrete_parent_projections = (
+            concrete_parent_records_and_provider_projections_for_factories(
+                concrete_parent_fullnames
+            )
+        )
+        for provider, projection in concrete_parent_projections.items():
+            existing_projection = projection_map.get(provider)
+            if existing_projection is not None:
+                if existing_projection.projection_oracle == "declared_compiler":
+                    continue
+                role_normalized_projection = projection
+                if roles_share_projection(existing_projection.role, projection.role):
+                    role_normalized_projection = projection.model_copy(
+                        update={"role": existing_projection.role}
+                    )
+                assert existing_projection == role_normalized_projection, (
+                    f"Conflicting projection for concrete parent provider {provider}: "
+                    f"{existing_projection!r} vs {projection!r}"
+                )
+                continue
+            projection_map[provider] = projection
+
+        runtime_role_owner_projections = provider_projections_for_role_owners(
+            (
+                candidate
+                for module in _import_package_modules(category_fullnames)
+                for candidate in _classes_defined_in_module(module)
+            ),
+            roles=roles,
+        )
+        for provider, projection in runtime_role_owner_projections.items():
+            projection_map.setdefault(provider, projection)
+
+        concrete_parents = tuple(concrete_parent_records.values())
+        declared_provider_names = frozenset(
+            projection.provider for projection in declared
+        )
+        unsupported_providers = tuple(
+            record
+            for record in _unsupported_provider_records()
+            if record.provider not in declared_provider_names
+        )
+        external_runtime_classes = _external_runtime_class_records(
+            projections=(
+                projection
+                for projection in projection_map.values()
+                if projection.projection_oracle == "sage_runtime"
+            ),
+            concrete_parents=concrete_parents,
+        )
+        runtime_projections = tuple(
+            projection
+            for projection in projection_map.values()
+            if projection.projection_oracle == "sage_runtime"
+        )
+        manifest_oracle: Literal["hybrid", "declared_compiler"] = (
+            "hybrid" if runtime_projections else "declared_compiler"
+        )
+        runtime_provider_names = frozenset(
+            projection.provider for projection in runtime_projections
+        )
+        named_classes = tuple(
+            record
+            for record in _named_class_records()
+            if record.provider in runtime_provider_names
+        )
         return ProjectionManifest(
             schema_version=1,
             generated_by=generated_by,
-            projection_oracle="declared_compiler",
+            projection_oracle=manifest_oracle,
             sage_version=sage_version,
             sage_git_revision=sage_git_revision,
             python_version=f"{version_info.major}.{version_info.minor}.{version_info.micro}",
             mypy_min_version=mypy_min_version,
             mypy_max_version=mypy_max_version,
-            projections=projections,
+            named_classes=named_classes,
+            unsupported_providers=unsupported_providers,
+            projections=tuple(projection_map.values()),
+            provider_methods=provider_method_records_for_projections(
+                runtime_projections,
+                concrete_parents=concrete_parents,
+            ),
+            concrete_parents=concrete_parents,
+            external_runtime_classes=external_runtime_classes,
             type_aliases=type_aliases,
             source_modules=_source_module_records(
-                (*type_aliases, *type_aliases.values()),
-                projections=projections,
-                extra_module_names=(type(compiler).__module__,),
+                (*runtime_category_fullnames, *type_aliases, *type_aliases.values()),
+                projections=projection_map.values(),
+                unsupported_providers=unsupported_providers,
+                concrete_parents=concrete_parents,
+                extra_module_names=(*category_fullnames, type(compiler).__module__),
             ),
         )
 

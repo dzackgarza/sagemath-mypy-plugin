@@ -159,6 +159,7 @@ def declared_projections(
         ProviderProjection(
             provider=provider,
             role=role_for_provider[provider],
+            projection_oracle="declared_compiler",
             runtime_class=provider,
             runtime_bases=_source_bases(provider),
             runtime_mro=_source_mro(provider),

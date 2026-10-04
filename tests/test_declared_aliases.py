@@ -77,6 +77,7 @@ def test_declared_runtime_aliases_preserve_types_with_plugin_on_and_off(tmp_path
                 "[mypy]\n"
                 + ("plugins = sage_mypy_category_plugin.plugin\n" if enabled else "")
                 + "follow_imports = silent\n"
+                + "ignore_missing_imports = True\n"
                 + f"cache_dir = {tmp_path / 'mypy-cache'}\n"
                 + "\n[sage-mypy-category-plugin]\n"
                 + f"packages = {package}\nroles = parent\n"
@@ -157,3 +158,84 @@ def test_alias_report_changes_invalidate_source_and_projection_caches(tmp_path: 
     missing = subprocess.run(command, env=environment, capture_output=True, text=True, check=False)
     assert missing.returncode != 0, missing.stdout + missing.stderr
     assert "The declaring compiler must report declared_type_aliases()" in missing.stdout + missing.stderr, missing.stdout + missing.stderr
+
+
+def test_declared_compiler_and_runtime_projection_coexist(tmp_path: Path) -> None:
+    """A partial declaring compiler must not replace Sage runtime projection."""
+    fixture = Path(__file__).parent / "fixtures" / "declared_alias_consumer"
+    package = tmp_path / "hybrid_projection_consumer"
+    package.mkdir()
+    for source in fixture.glob("*.py"):
+        (package / source.name).write_text(source.read_text())
+
+    roles = package / "roles.py"
+    original_roles = roles.read_text()
+    environment = dict(os.environ)
+    environment["PYTHONPATH"] = os.pathsep.join(
+        (str(tmp_path), str(Path(__file__).resolve().parents[1]))
+    )
+
+    for enabled in (False, True):
+        for valid in (True, False):
+            runtime_return = "int" if valid else "str"
+            runtime_value = "2" if valid else "'wrong'"
+            roles.write_text(
+                original_roles
+                + "\nfrom typing import override\n"
+                + "class RuntimeBaseCategory(LocalCategoryBase):\n"
+                + "    def super_categories(self) -> list[Category]:\n"
+                + "        return []\n"
+                + "    class ParentMethods:\n"
+                + "        def inherited(self) -> int:\n"
+                + "            return 1\n"
+                + "class RuntimeDerivedCategory(LocalCategoryBase):\n"
+                + "    def super_categories(self) -> list[Category]:\n"
+                + "        return [RuntimeBaseCategory()]\n"
+                + "    class ParentMethods:\n"
+                + "        @override\n"
+                + f"        def inherited(self) -> {runtime_return}:\n"
+                + f"            return {runtime_value}\n"
+            )
+            directory = tmp_path / f"{enabled}-{valid}"
+            directory.mkdir()
+            config = directory / "mypy.ini"
+            config.write_text(
+                "[mypy]\n"
+                + ("plugins = sage_mypy_category_plugin.plugin\n" if enabled else "")
+                + "follow_imports = silent\n"
+                + "ignore_missing_imports = True\n"
+                + f"cache_dir = {directory / 'mypy-cache'}\n"
+                + "[sage-mypy-category-plugin]\n"
+                + "packages = hybrid_projection_consumer\n"
+                + f"cache_dir = {directory / 'projection'}\n"
+            )
+            consumer = directory / "consumer.py"
+            consumer.write_text(
+                "from hybrid_projection_consumer import Role\n"
+                "def evaluate(value: Role[int]) -> int:\n"
+                "    return value.echo(7)\n"
+            )
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "mypy",
+                    "--config-file",
+                    str(config),
+                    str(consumer),
+                    str(roles),
+                ],
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if not enabled:
+                assert result.returncode == 1, result.stdout + result.stderr
+                assert "[valid-type]" in result.stdout, result.stdout
+                assert "[misc]" in result.stdout, result.stdout
+            elif valid:
+                assert result.returncode == 0, result.stdout + result.stderr
+            else:
+                assert result.returncode == 1, result.stdout + result.stderr
+                assert "[override]" in result.stdout, result.stdout
