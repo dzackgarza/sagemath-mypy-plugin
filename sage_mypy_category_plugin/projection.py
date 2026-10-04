@@ -76,6 +76,7 @@ class ProviderProjection(BaseModel):
     provider_mro: tuple[StrictStr, ...]
     promoted_bases: tuple[StrictStr, ...] = ()
     unprojected_runtime_mro: tuple[StrictStr, ...] = ()
+    projection_oracle: Literal["sage_runtime", "declared_compiler"] = "sage_runtime"
 
     @field_validator("provider", "runtime_class")
     @classmethod

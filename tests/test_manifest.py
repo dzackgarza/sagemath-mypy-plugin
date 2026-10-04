@@ -375,7 +375,7 @@ def test_manifest_round_trips_projection_records(tmp_path: Path) -> None:
     ("mutation", "expected_field"),
     (
         ({"schema_version": 2}, "schema_version"),
-        ({"plugin_schema_version": "2"}, "plugin_schema_version"),
+        ({"plugin_schema_version": "1"}, "plugin_schema_version"),
         (
             {
                 "mypy_min_version": str(Version(MYPY_VERSION).release[0] + 1),

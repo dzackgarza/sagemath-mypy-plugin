@@ -47,6 +47,14 @@ class DeclaringCompiler(Protocol):
         pass
 
 
+@runtime_checkable
+class DeclaringTypeAliases(DeclaringCompiler, Protocol):
+    """The compiler's exact source declarations for runtime role aliases."""
+
+    def declared_type_aliases(self) -> dict[str, str]:
+        pass
+
+
 def compiler_in(package_names: Sequence[str]) -> DeclaringCompiler | None:
     """Return the reporting compiler reached from the configured packages.
 
@@ -151,6 +159,7 @@ def declared_projections(
         ProviderProjection(
             provider=provider,
             role=role_for_provider[provider],
+            projection_oracle="declared_compiler",
             runtime_class=provider,
             runtime_bases=_source_bases(provider),
             runtime_mro=_source_mro(provider),

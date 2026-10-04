@@ -43,7 +43,7 @@ test-push:
     "tests/test_plugin_projection.py"
     "tests/test_production_lifecycle.py"
     "tests/test_resolver_cli.py"
-    "tests/test_behavior_matrix.py tests/test_role_behavior_matrix.py tests/test_issue2_semantics.py"
+    "tests/test_behavior_matrix.py tests/test_role_behavior_matrix.py tests/test_issue2_semantics.py tests/test_declared_aliases.py"
     "tests/test_automation_contract.py"
   )
 
@@ -91,7 +91,7 @@ test-resolver-cli *args:
 
 [group('test')]
 test-behavior *args:
-  just test tests/test_behavior_matrix.py tests/test_role_behavior_matrix.py tests/test_issue2_semantics.py {{args}}
+  just test tests/test_behavior_matrix.py tests/test_role_behavior_matrix.py tests/test_issue2_semantics.py tests/test_declared_aliases.py {{args}}
 
 [group('test')]
 test-mutation:

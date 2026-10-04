@@ -91,6 +91,14 @@ existed only on the `main` branch pre-rewrite. They are not present in this bran
 
 ### Call-site hooks (CONTRACT.md BP7)
 
+- **`get_type_analyze_hook` for compiler-declared aliases.** A runtime category
+  role is a class value, while source annotations need its exact declaration.
+  The compiler reports the alias relation; the plugin delegates the reported
+  target and original type arguments to ordinary mypy type analysis. It neither
+  infers consumer semantics nor filters errors. Unreported class-valued variables
+  remain ordinary variables. The real Sage-provider conjunction test is
+  `test_declared_runtime_aliases_preserve_types_with_plugin_on_and_off`.
+
 - **`get_method_hook` on `Category.__call__`.** `C(data)` constructs an
   object of the category `C`, an instance of `C.parent_class`, but the sidecar
   stub can only type the result as `SageObject`, so every provider method on a

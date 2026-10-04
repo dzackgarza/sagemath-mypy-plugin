@@ -200,13 +200,14 @@ def test_contract_no_banned_broad_hooks_in_plugin() -> None:
             "get_method_hook",
             "get_attribute_hook",
             "get_base_class_hook",
+            "get_type_analyze_hook",
         )
         if f"`{hook}`" in registry.split("## Known Limitations")[0]
     }
     hits = [
         hit
         for hit in _rg_count(
-            r"get_function_hook|get_method_hook|get_attribute_hook|get_base_class_hook",
+            r"get_function_hook|get_method_hook|get_attribute_hook|get_base_class_hook|get_type_analyze_hook",
             plugin_file,
         )
         if not any(hook in hit for hook in registered)

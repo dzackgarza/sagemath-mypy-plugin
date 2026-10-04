@@ -9,9 +9,10 @@ from pathlib import Path
 from typing import Callable
 
 from mypy.errors import CompileError
-from mypy.nodes import Decorator, FuncDef, MypyFile, TypeInfo
+from mypy.nodes import Decorator, FuncDef, MypyFile, OverloadedFuncDef, PlaceholderNode, TypeAlias, TypeInfo
 from mypy.options import Options
-from mypy.plugin import ClassDefContext, MethodContext, Plugin, ReportConfigContext
+from mypy.plugin import AnalyzeTypeContext, ClassDefContext, MethodContext, Plugin, ReportConfigContext
+from mypy.typeanal import TypeAnalyser
 from mypy.types import Instance, Type, get_proper_type
 from pydantic import ValidationError
 from sage.categories.category import Category as _SageCategory  # type: ignore[import-untyped]
@@ -92,6 +93,53 @@ class SageCategoryProjectionPlugin(Plugin):
         )
         return self._customize_provider_mro
 
+    def get_type_analyze_hook(self, fullname: str) -> Callable[[AnalyzeTypeContext], Type] | None:
+        """Analyze a reported role alias using its declaration and original arguments."""
+        target = self._manifest.type_aliases.get(fullname)
+        if target is None:
+            return None
+        symbol = self.lookup_fully_qualified(fullname)
+        if symbol is not None and isinstance(symbol.node, TypeAlias):
+            # A source/stub type alias already has native mypy semantics.
+            return None
+
+        def analyze_alias(ctx: AnalyzeTypeContext) -> Type:
+            assert isinstance(ctx.api, TypeAnalyser)
+            owner, _, member = target.rpartition(".")
+            owner_symbol = self.lookup_fully_qualified(owner)
+            if owner_symbol is not None and isinstance(owner_symbol.node, TypeInfo):
+                # Projected declarations can inherit their written role containers.
+                # Use mypy's member lookup, as its qualified type analysis does.
+                symbol = owner_symbol.node.get(member)
+            else:
+                symbol = self.lookup_fully_qualified(target)
+            if symbol is None or not isinstance(symbol.node, TypeInfo):
+                unresolved = symbol if symbol is not None else owner_symbol
+                if (
+                    not ctx.api.api.final_iteration
+                    and (
+                        (
+                            unresolved is not None
+                            and isinstance(unresolved.node, PlaceholderNode)
+                            and unresolved.node.becomes_typeinfo
+                        )
+                        or ctx.api.api.is_incomplete_namespace(owner)
+                        or ctx.api.api.is_incomplete_namespace(
+                            _provider_module(target, source_modules=self._source_modules)
+                        )
+                    )
+                ):
+                    # anal_type discards this result after an incomplete reference,
+                    # then re-analyzes the original annotation once its owner exists.
+                    ctx.api.api.record_incomplete_ref()
+                    return ctx.type
+                raise CompileError([f"Compiler type alias {fullname!r} references missing declaration {target!r}"])
+            return ctx.api.analyze_type_with_type_info(
+                symbol.node, ctx.type.args, ctx.context, ctx.type.empty_tuple_index
+            )
+
+        return analyze_alias
+
     def get_method_hook(
         self,
         fullname: str,
@@ -151,6 +199,12 @@ class SageCategoryProjectionPlugin(Plugin):
             )
             != provider_module
         }
+        dependent_modules.update(
+            _provider_module(target, source_modules=self._source_modules)
+            for alias, target in self._manifest.type_aliases.items()
+            if _provider_module(alias, source_modules=self._source_modules) == provider_module
+            and _provider_module(target, source_modules=self._source_modules) != provider_module
+        )
         return [
             (MYPY_DEP_PRIORITY, module_name, -1)
             for module_name in sorted(dependent_modules)
@@ -208,7 +262,7 @@ class SageCategoryProjectionPlugin(Plugin):
                 missing=missing_mro,
             )
             return
-        if self._manifest.projection_oracle == "sage_runtime":
+        if projection.projection_oracle == "sage_runtime":
             object_info = _lookup_typeinfo(ctx, MYPY_OBJECT)
             if object_info is None:
                 return
@@ -433,9 +487,18 @@ def _install_provider_receiver_surface(
         promotion_type = Instance(promotion_info, [])
         if promotion_type not in ctx.cls.info._promote:
             ctx.cls.info._promote.append(promotion_type)
+    declared_names = {
+        statement.name
+        for statement in ctx.cls.defs.body
+        if isinstance(statement, (FuncDef, Decorator, OverloadedFuncDef))
+    }
     for receiver_base in receiver_info.mro:
         for name, symbol in receiver_base.names.items():
-            if not name.startswith("_") and name not in ctx.cls.info.names:
+            if (
+                not name.startswith("_")
+                and name not in ctx.cls.info.names
+                and name not in declared_names
+            ):
                 ctx.cls.info.names[name] = symbol
     if projection.role == "subcategory":
         _install_subcategory_methods_on_category(receiver_info, ctx.cls.info)
